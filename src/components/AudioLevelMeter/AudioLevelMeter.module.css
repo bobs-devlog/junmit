@@ -1,0 +1,31 @@
+/* Audio Level Meter */
+.level-meter {
+  display: flex;
+  gap: 3px;
+  height: 24px;
+  padding: 0 4px;
+}
+
+.level-bar {
+  flex: 1;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  transition: background-color 0.05s ease;
+}
+
+.level-bar.active {
+  background: var(--accent);
+}
+
+/* 임계점별 색상: 정상(60% 미만) / 주의(60~85%) / 위험(85% 이상) */
+.level-bar.low {
+  background: var(--accent);
+}
+
+.level-bar.mid {
+  background: var(--warning);
+}
+
+.level-bar.high {
+  background: var(--danger);
+}

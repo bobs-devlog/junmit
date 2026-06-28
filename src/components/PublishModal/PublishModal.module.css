@@ -1,0 +1,148 @@
+/* width 고정 — 모드 전환 시 컨텐츠 길이 차이로 modal 가로 사이즈 변동 회피. */
+.dialog {
+  width: 640px;
+  min-width: 640px;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.published-badge {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 8px 12px;
+  border-radius: 4px;
+  border-left: 2px solid var(--accent);
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.published-badge code {
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+/* stack 라디오 list — 라벨이 길어도 줄바꿈 없이 한 줄에 하나씩.
+ * 표준 라디오 input은 그대로 노출 (직관성), accent-color로 톤 통일. */
+.mode-group {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.mode-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease;
+}
+
+.mode-option:hover:not(.checked) {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mode-option.checked {
+  background: rgba(74, 144, 226, 0.1);
+  font-weight: 500;
+}
+
+.mode-option input[type="radio"] {
+  accent-color: var(--accent);
+  cursor: pointer;
+  margin: 0;
+}
+
+/* 모드별 컨텐츠 — min-height로 모드 전환 시 modal 높이 변동 회피. */
+.mode-content {
+  min-height: 80px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+
+.input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.notice {
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px 14px;
+  border-radius: 4px;
+  border-left: 2px solid var(--border);
+  line-height: 1.6;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.cancel-btn {
+  padding: 8px 18px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-primary);
+  transition: background 0.15s ease;
+}
+
+.cancel-btn:hover {
+  background: var(--border);
+}
+
+.confirm-btn {
+  min-width: 180px;
+  padding: 8px 22px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.confirm-btn[aria-disabled="true"] {
+  background: #358ca8;
+  cursor: not-allowed;
+}

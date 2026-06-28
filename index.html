@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Junmit</title>
+    <!-- xterm.js의 char measure가 fallback 폰트로 계산되어 D2Coding swap 후 cell 어긋남이
+         발생하지 않도록 페이지 파싱과 동시에 폰트 fetch 시작. -->
+    <link rel="preload" href="/fonts/D2Coding-Regular.ttf" as="font" type="font/ttf" crossorigin />
+    <!-- reminder 윈도우는 webview 첫 페인트가 흰색이면 깜빡임이 보임.
+         HTML 파싱 즉시 transparent를 적용 — 메인 앱은 styles.css가, reminder는 reminderWindow.css가 덮어씀. -->
+    <style>
+      html,
+      body {
+        background: transparent;
+        margin: 0;
+        padding: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,21 @@
+dist
+node_modules
+src-tauri/target
+resources/bin
+output
+models
+Junmit.app
+.deps
+.venv
+resources/.claude
+swift-cli
+package-lock.json
+*.lock
+
+# 마크다운은 프로젝트 문서/AI 인스트럭션이라 자동 포매팅 제외
+# (테이블 padding이 한국어에 어색하게 들어가고, 사용자 스타일을 덮어씀)
+*.md
+
+# 라이선스 고지 생성용 handlebars 템플릿 — 공백이 출력 형식에 직접 영향(자동포맷 금지)
+scripts/licenses/about.hbs
+

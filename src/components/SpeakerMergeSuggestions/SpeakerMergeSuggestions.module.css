@@ -1,0 +1,99 @@
+/* 화자 합치기 제안 바 — 탭 줄과 본문 사이, sv-banner와 같은 위치 톤(accent hint + 좌측 강조선). */
+.sms-container {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.sms-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  animation: sms-enter 300ms ease-out;
+}
+
+.sms-card + .sms-card {
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+.sms-icon {
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+.sms-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.sms-meta {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.sms-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.sms-merge,
+.sms-dismiss {
+  padding: 4px 12px;
+  border-radius: 5px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition:
+    background 0.1s ease,
+    border-color 0.1s ease;
+}
+
+/* accent 배경엔 어두운 텍스트(#0f0f0f) — .btn-primary 관례. 밝은 시안(--accent)에 흰 글씨는 안 보임. */
+.sms-merge {
+  background: var(--accent);
+  color: #0f0f0f;
+  font-weight: 500;
+}
+.sms-merge:hover {
+  background: var(--accent-hover);
+}
+
+.sms-dismiss {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+.sms-dismiss:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+/* 잠금/진행 중 — opacity 페이드 대신 솔리드 muted 색(알파 합성 깜빡임 회피). .btn[aria-disabled]와 동일 색. */
+.sms-merge[aria-disabled="true"],
+.sms-dismiss[aria-disabled="true"],
+.sms-merge[aria-disabled="true"]:hover,
+.sms-dismiss[aria-disabled="true"]:hover {
+  cursor: not-allowed;
+  background: rgba(255, 255, 255, 0.06);
+  color: #4a525e;
+  border-color: transparent;
+}
+
+@keyframes sms-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

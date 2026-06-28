@@ -1,0 +1,78 @@
+.processing-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 32px;
+  gap: 16px;
+}
+
+.pp-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.pp-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.pp-step.current {
+  background: rgba(76, 201, 240, 0.08);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.pp-step.done {
+  color: var(--success);
+}
+
+.pp-step.error {
+  color: var(--danger);
+}
+
+.pp-step-icon {
+  width: 18px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.pp-logs {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--bg-terminal);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-family: "Geist Mono", "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  min-height: 0;
+}
+
+.pp-log-line {
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.pp-running {
+  color: var(--accent);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}

@@ -1,0 +1,217 @@
+.sidebar {
+  width: 260px;
+  min-width: 260px;
+  background: var(--bg-sidebar);
+  display: flex;
+  flex-direction: column;
+  /* titleBarStyle: Overlay 환경 — 좌상단 traffic light(~28px 높이)과 사이드바 logo가
+     겹치지 않도록 padding-top 충분히 확보. macOS Mail/Finder 패턴. */
+  padding: 44px 20px 24px;
+  gap: 24px;
+}
+
+.logo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.logo h1 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.logo .subtitle {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* 업데이트 가능 pill — 로고 영역, 업데이트가 있을 때만 노출. 클릭 시 설정>앱 업데이트로.
+   notification-badge와 같은 accent 톤이되 로고 밑에 들어갈 작은 알약 형태. */
+.updatePill {
+  margin-top: 12px;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: rgba(76, 201, 240, 0.12);
+  border: 1px solid rgba(76, 201, 240, 0.3);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.updatePill:hover {
+  background: rgba(76, 201, 240, 0.18);
+}
+
+/* Portal slot — 화면 컴포넌트가 createPortal로 컨트롤·stepper 등 사이드바 콘텐츠를 주입한다. */
+.slot {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+/* Status */
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 13px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+}
+
+.status.idle .status-dot {
+  background: var(--text-secondary);
+}
+
+.status.recording .status-dot {
+  background: var(--danger);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.status.processing .status-dot {
+  background: var(--accent);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.status.done .status-dot {
+  background: var(--success);
+}
+
+.status.review .status-dot {
+  background: var(--warning);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* idle 내비 현재 항목 — 채워진 CTA가 아닌 "선택됨" 느낌의 은은한 강조 (비클릭).
+   `button.` 한정으로 specificity(0,1,1)를 올려 전역 `.btn { border: none }`(0,1,0)을
+   확실히 이긴다 → 활성 테두리가 비활성(btn-secondary)과 같은 1px로 고정, 선택 시 밀림 방지. */
+button.nav-item-active {
+  background: rgba(76, 201, 240, 0.12);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  cursor: default;
+}
+
+.timer {
+  text-align: center;
+  font-size: 36px;
+  font-weight: 300;
+  font-variant-numeric: tabular-nums;
+  color: var(--danger);
+  padding: 4px 0;
+}
+
+.remaining {
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-secondary, #9ca3af);
+  font-variant-numeric: tabular-nums;
+  padding: 2px 0 6px;
+}
+
+.remaining.warn {
+  color: var(--warning, #f59e0b);
+  font-weight: 500;
+}
+
+.remaining-target {
+  opacity: 0.7;
+  font-size: 12px;
+}
+
+/* Notification badge */
+.notification-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(76, 201, 240, 0.12);
+  border: 1px solid rgba(76, 201, 240, 0.3);
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+  animation: notif-pulse 2s ease-in-out infinite;
+}
+
+.notification-badge:hover {
+  background: rgba(76, 201, 240, 0.18);
+}
+
+.notification-icon {
+  font-size: 16px;
+}
+
+@keyframes notif-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Process steps */
+.process-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.process-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.process-step.done {
+  color: var(--success);
+}
+
+.process-step.current {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.process-step-icon {
+  width: 14px;
+  text-align: center;
+}

@@ -1,0 +1,119 @@
+.markdown {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  /* 로드 전 빈 상태에서도 공간 점유 유지 — content 채워질 때 컨테이너 크기 급변 방지 */
+  min-height: 100%;
+}
+
+.markdown h1 {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 16px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.markdown h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 14px 0 6px;
+}
+
+.markdown h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 12px 0 4px;
+}
+
+.markdown p {
+  margin: 4px 0;
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 20px;
+  margin: 4px 0;
+}
+
+.markdown li {
+  margin: 2px 0;
+}
+
+.markdown strong {
+  color: var(--accent);
+}
+
+.markdown blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 12px;
+  margin: 6px 0;
+  color: var(--text-secondary);
+}
+
+.markdown code {
+  font-family: "Geist Mono", "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.markdown pre {
+  background: rgba(255, 255, 255, 0.04);
+  padding: 10px 14px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 6px 0;
+}
+
+.markdown pre code {
+  background: none;
+  padding: 0;
+}
+
+.markdown hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 12px 0;
+}
+
+/* GFM table — 결정사항·비교표 등에 사용. 회의록 본문 톤과 일관되게 미세 border + thead 강조. */
+.markdown table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+  /* 좁은 컨테이너에서 긴 cell이 column을 깨뜨리지 않도록 가로 스크롤 허용 */
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+  /* 매우 긴 단어(URL 등)는 줄바꿈으로 강제 */
+  word-break: break-word;
+}
+
+.markdown thead {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.markdown th {
+  font-weight: 600;
+}
+
+/* GFM task list (`- [ ]`, `- [x]`) — 액션 아이템에 사용. */
+.markdown li.task-list-item {
+  list-style: none;
+  margin-left: -16px;
+}
+
+.markdown li.task-list-item input[type="checkbox"] {
+  margin-right: 6px;
+  vertical-align: middle;
+}

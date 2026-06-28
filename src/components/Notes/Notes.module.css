@@ -1,0 +1,7 @@
+/* Notes 탭 컨테이너 — sv-body 프레임의 flex 자식으로 높이를 채우고, 본문(notes-pane-body)만 스크롤 */
+.notes-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}

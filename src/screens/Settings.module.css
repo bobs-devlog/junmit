@@ -1,0 +1,218 @@
+/* 설정 화면 — 빈도 낮은 앱 설정 모음 (v1: AI 도구. 추후 Atlassian 연결 등). */
+.settings-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 860px;
+  padding: 24px 32px;
+  overflow-y: auto;
+}
+
+.settings-header {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.settings-desc {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* 설정 항목 카드 — 좌측 라벨·설명, 우측 액션 버튼 */
+.settings-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.settings-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-card-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-card-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.settings-card-value {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* 라이선스 화면 — 컴포넌트 이름을 출처 링크로 (외부 브라우저 열기) */
+.settings-link {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.settings-link:hover {
+  opacity: 0.8;
+}
+
+/* 권한 화면 — 카드 우측의 상태 배지 + 액션 버튼 묶음 */
+.perm-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* 상태 배지 — 정적 표시라 솔리드 hue tint. opacity 토글 없음(깜빡임 회피 정책과 무관). */
+.perm-badge {
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.perm-badge-ok {
+  color: var(--success);
+  background: rgba(112, 240, 160, 0.12);
+}
+
+.perm-badge-warn {
+  color: var(--warning);
+  background: rgba(240, 208, 112, 0.12);
+}
+
+.perm-badge-danger {
+  color: var(--danger);
+  background: rgba(240, 112, 112, 0.12);
+}
+
+.perm-badge-neutral {
+  color: var(--text-secondary);
+  background: rgba(136, 146, 164, 0.12);
+}
+
+/* 하단 "다시 확인" + 재시작 안내 */
+.perm-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* 라이선스 화면 — THIRD_PARTY_LICENSES.md 렌더링 컨테이너 */
+.license-doc {
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.65;
+  word-break: break-word;
+}
+
+.license-doc h1,
+.license-doc h2,
+.license-doc h3 {
+  margin: 22px 0 10px;
+  font-weight: 600;
+}
+
+.license-doc h2 {
+  font-size: 16px;
+}
+
+.license-doc h3 {
+  font-size: 14px;
+}
+
+.license-doc p {
+  margin: 8px 0;
+  color: var(--text-secondary);
+}
+
+.license-doc a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.license-doc a:hover {
+  text-decoration: underline;
+}
+
+.license-doc table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+}
+
+.license-doc th,
+.license-doc td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.license-doc th {
+  background: var(--bg-secondary);
+  font-weight: 600;
+}
+
+.license-doc :not(pre) > code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  font-size: 12px;
+}
+
+/* 라이선스 전문 덤프 — 긴 줄은 줄바꿈(pre-wrap), 통제 불가한 가로 스크롤 방지 */
+.license-doc pre {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.license-doc pre code {
+  background: none;
+  padding: 0;
+}
+
+/* "전체 라이선스 전문 보기" 토글 — 요약과 덤프 사이 여백 */
+.license-toggle {
+  margin: 18px 0;
+}

@@ -1,0 +1,203 @@
+.select-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-primary);
+}
+
+.select-card {
+  max-width: 480px;
+  width: 100%;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.select-subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 선택 카드 — 클릭이 곧 동작(준비됐으면 진행, 아니면 설치/로그인 단계로). 버튼 리셋 + 카드 외형. */
+.choice-card {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  /* 평상시에도 테두리 노출 — 클릭 가능 카드의 앱 관례(회의 유형 목록과 동일). transparent면
+     hover 전까지 정보 패널처럼 보여 버튼 어포던스가 죽는다. */
+  border: 1.5px solid var(--border);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+/* soft 틴트는 --accent(#4cc9f0)와 같은 색조의 rgba 직접 사용 — 앱 전반 관례(Sidebar 등). */
+.choice-card:hover {
+  border-color: var(--accent);
+  background: rgba(76, 201, 240, 0.1);
+}
+
+/* 현재 사용 중인 도구 — 선택 상태를 카드 자체로 표현(라디오 카드 패턴). 칩은 보조 라벨. */
+.choice-card-active {
+  border-color: var(--accent);
+  background: rgba(76, 201, 240, 0.06);
+}
+
+/* 감지 중/진행 중엔 클릭 비활성(JS 가드) — hover 강조도 끔. */
+.choice-card[aria-disabled="true"] {
+  cursor: default;
+}
+
+.choice-card[aria-disabled="true"]:hover {
+  border-color: var(--border);
+  background: var(--bg-secondary);
+}
+
+/* 비활성 hover 리셋이 활성 카드의 선택 표시까지 지우지 않게 — 위 규칙보다 뒤에서 동일 특이성으로 복원. */
+.choice-card-active[aria-disabled="true"]:hover {
+  border-color: var(--accent);
+  background: rgba(76, 201, 240, 0.06);
+}
+
+.card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chevron {
+  flex-shrink: 0;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--text-secondary);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.card-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.badge-ok {
+  color: var(--success);
+  background: rgba(96, 192, 128, 0.12);
+}
+
+.badge-missing {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* 재진입(설정→변경) 시 현재 사용 중인 도구 표시 칩 — 상태 badge와 별도 슬롯 */
+.using-chip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: var(--accent);
+  background: rgba(76, 201, 240, 0.12);
+}
+
+.install {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ready {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--success);
+}
+
+.install-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* 실행될 명령을 보여주는 인라인 코드 칩(투명성용, 복사 없음) */
+.install-cmd {
+  font-family: "Geist Mono", "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* 설치 실패 시 공식 가이드 폴백 링크 */
+.link {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  align-self: flex-start;
+  font: inherit;
+  font-size: 11px;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* aria-disabled 버튼 외관 — 솔리드 다크(opacity 페이드 금지). 클릭은 JS 가드로 차단. */
+.actions .btn-disabled {
+  background: var(--bg-terminal);
+  color: var(--text-disabled, #6b6f76);
+  border-color: transparent;
+  cursor: default;
+}

@@ -1,0 +1,76 @@
+/* 본문 안의 교정 단어 — amber 배경 + position: relative로 popover 기준점 */
+.edited-word {
+  position: relative;
+  background: rgba(245, 158, 11, 0.18);
+  padding: 0 2px;
+  border-radius: 2px;
+  cursor: help;
+}
+
+/* 추정 마커 — popover 내 reason 앞에 표시. 본문은 확정과 동일 amber로 두고
+   호버 시점의 popover에서만 검토 필요를 알림. */
+.estimated-marker {
+  margin-right: 4px;
+}
+
+/* 호버 popover — 단어 바로 아래 floating. 기본은 left 정렬, 우측 뷰포트를
+   벗어나는 경우 .align-right 클래스로 right 정렬로 뒤집음. */
+.popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: max-content;
+  max-width: 320px;
+  padding: 8px 10px;
+  background: var(--bg-sidebar);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  font-size: 12px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+.align-right {
+  left: auto;
+  right: 0;
+}
+
+.change {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-family: "Geist Mono", "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  /* 매우 긴 단어도 popover 폭 안에서 줄바꿈되도록 */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+}
+
+.old {
+  color: var(--text-secondary);
+  min-width: 0;
+}
+
+.arrow {
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.new {
+  color: #f59e0b;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.reason {
+  color: var(--text-primary);
+  white-space: normal;
+}

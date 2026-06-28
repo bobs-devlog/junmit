@@ -1,0 +1,351 @@
+.transcript-editor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.te-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 0;
+  /* sv-body가 프레임(overflow hidden)이라 화자 범례는 flex-shrink:0으로 상단에 자연 고정,
+     본문(te-lines)만 스크롤된다. sticky 불필요. */
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.te-summary-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 1px solid;
+  border-radius: 14px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.te-summary-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  filter: brightness(1.15);
+}
+
+.te-summary-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.te-lines {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.te-line {
+  display: flex;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 13px;
+  line-height: 1.6;
+  align-items: baseline;
+}
+
+.te-speaker-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.te-speaker {
+  font-family: "Geist Mono", "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border: 1px solid;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.1s ease;
+}
+
+/* 매핑된 라벨은 inline 배경(speakerColor tint)이 :hover 배경을 우선순위로 이기므로,
+   filter로 hover 피드백을 줘 매핑·미매핑 모두 동일하게 반응하게 한다. */
+.te-speaker:hover {
+  background: rgba(255, 255, 255, 0.1);
+  filter: brightness(1.15);
+}
+
+/* 미매핑 화자 라벨 끝의 매핑 유도 아이콘(✎) — 화자색을 따르되 옅게. */
+.te-map-hint {
+  margin-left: 4px;
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+/* 3상태 칩 ───────────────────────────────────────────
+   확정 = 배경 채움(inline tint) + ✓ / 추정 = 점선(미채움) / 미확인 = 빈 칩 + ✎.
+   화자별 색은 inline(borderColor·color)이 담당하고, 여기선 상태별 테두리 스타일·마커만. */
+.te-speaker.te-speaker-confirmed {
+  border-style: solid;
+}
+
+/* AI 추정 — 아직 미확정. 점선으로 "확인 필요"를 시사(채움 없음). */
+.te-speaker.te-speaker-guess {
+  border-style: dashed;
+}
+
+/* 확정 표식 ✓ — 화자색(currentColor)을 따른다. */
+.te-confirm-mark {
+  margin-left: 4px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* 요약 줄 — 추정 항목은 점선(본문 칩과 동일 시각 언어) */
+.te-summary-item.te-summary-item-guess {
+  border-style: dashed;
+}
+
+/* triage 카운트(확정 K · 확인 필요 M) + 접기 토글 */
+.te-triage {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-left: 4px;
+}
+
+.te-needs-review {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.te-summary-collapsed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.te-summary-toggle {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.te-summary-toggle:hover {
+  color: var(--accent-hover);
+}
+
+/* LLM이 화자 판단을 유보한 구간 — 클릭 불가, 점선 테두리로 구분 */
+.te-speaker.te-speaker-unknown {
+  border-style: dashed;
+  cursor: help;
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.te-speaker.te-speaker-unknown:hover {
+  background: rgba(245, 158, 11, 0.16);
+}
+
+.te-summary-item.te-summary-item-unknown {
+  border-style: dashed;
+  cursor: default;
+  opacity: 0.85;
+}
+
+.te-badge {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  cursor: help;
+  flex-shrink: 0;
+}
+
+.te-badge.te-badge-raw {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.te-badge.te-badge-corrected {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.1);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+/* 직전 화자 교정 실행 취소 — 교정 직후 요약줄에 노출 ("교정됨" 배지가 margin-left:auto로 오른쪽 끝) */
+.te-undo {
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--accent);
+  background: rgba(76, 201, 240, 0.1);
+  border: 1px solid rgba(76, 201, 240, 0.35);
+  flex-shrink: 0;
+}
+
+.te-undo:hover {
+  background: rgba(76, 201, 240, 0.2);
+}
+
+/* 줄 선택 체크박스 — 화자 재할당용 (상시 노출) */
+.te-line-check {
+  flex-shrink: 0;
+  align-self: center;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.te-line-selected {
+  background: rgba(76, 201, 240, 0.08);
+  border-radius: 4px;
+}
+
+/* 근거 타임스탬프 점프 시 대상 줄 잠깐 강조 */
+.te-line-flash {
+  border-radius: 4px;
+  animation: te-flash 1.3s ease;
+}
+
+@keyframes te-flash {
+  0%,
+  25% {
+    background: rgba(76, 201, 240, 0.24);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* 선택 줄을 다른 화자로 재할당하는 액션바. 프레임 구조에서 flex-shrink:0으로 본문 아래 자연 고정. */
+.te-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-sidebar);
+}
+
+.te-action-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.te-action-assign {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0f0f0f;
+  background: var(--accent);
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.te-action-assign:hover {
+  filter: brightness(1.1);
+}
+
+.te-action-clear {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.te-action-clear:hover {
+  color: var(--text-primary);
+}
+
+/* 화자 재할당 직후 회의록 반영 안내 + 재작성 CTA (action-bar와 같은 하단 위치 idiom) */
+.te-reflect-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-sidebar);
+}
+
+.te-reflect-msg {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-right: auto;
+}
+
+.te-reflect-btn {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0f0f0f;
+  background: var(--accent);
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.te-reflect-btn:hover {
+  filter: brightness(1.1);
+}
+
+.te-time {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  min-width: 32px;
+}
+
+.te-text {
+  color: var(--text-primary);
+}
+
+.te-plain {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* 교정/작성 진행 중 잠금 — 화자 선택 표면을 비활성. opacity 페이드 대신 filter로 dim해
+   알파 블렌딩 깜빡임을 피하고, pointer-events로 클릭 자체를 차단(native disabled 미사용). */
+.te-locked {
+  pointer-events: none;
+  cursor: not-allowed;
+  filter: saturate(0.25) brightness(0.78);
+}
+
+.te-lock-banner {
+  flex-shrink: 0;
+  padding: 7px 11px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+}

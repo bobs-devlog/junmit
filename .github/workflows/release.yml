@@ -1,0 +1,77 @@
+name: release
+
+# v* 태그를 push하면 무인 릴리스 — 빌드 → ad-hoc 서명 → 업데이터(minisign) 서명
+# → latest.json 생성 → GitHub Release 업로드까지 한 번에.
+#   git tag v0.1.1 && git push origin v0.1.1
+# 미공증(notarization 없음) 무료 경로. arm64(Apple Silicon) 단일 타깃.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # Release 생성·자산 업로드
+
+jobs:
+  release:
+    runs-on: macos-14 # Apple Silicon(arm64). Xcode·Swift·cmake 기본 제공
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust 툴체인
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Rust 빌드 캐시
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Node 설치
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # sidecar 바이너리(whisper.cpp·Swift CLI·uv)와 pyannote 모델은 빌드가 무겁고
+      # 거의 안 변하므로 캐시. 소스(swift-cli)·스크립트가 바뀌면 키가 달라져 재빌드.
+      - name: sidecar 캐시
+        uses: actions/cache@v4
+        with:
+          path: |
+            .deps
+            resources/bin
+            resources/models
+          key: sidecar-${{ runner.os }}-${{ hashFiles('scripts/build-binaries.sh', 'swift-cli/**/Sources/**', 'swift-cli/**/Package.swift') }}
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: sidecar 바이너리 빌드 (whisper·diarize·dylib·pyannote)
+        # HF_TOKEN: pyannote 모델(gated repo) 다운로드용 개발자 토큰. 캐시 적중 시 미사용.
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: bash scripts/build-binaries.sh
+
+      - name: Codex 스킬 산출물 생성
+        run: bash scripts/gen-agent-skills.sh
+
+      - name: Tauri 빌드 + 서명 + Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 업데이터 서명(minisign/EdDSA) — Apple 서명과 무관. ad-hoc 서명은 tauri.conf.json이 담당.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          # tag에서 버전 추출. tauri-action이 .app.tar.gz(+.sig)·DMG 생성 후
+          # Release를 만들고 latest.json(uploadUpdaterJson 기본 true)까지 업로드한다.
+          tagName: ${{ github.ref_name }}
+          releaseName: "Junmit ${{ github.ref_name }}"
+          releaseDraft: false
+          prerelease: false
+          # 업데이터 아티팩트(.app.tar.gz+.sig) 생성은 릴리스(CI) 전용. base
+          # tauri.conf.json엔 두지 않는다 — 그러면 로컬·기여자의 `tauri build`가
+          # 서명 키 없이도 그냥 동작(서명 단계 자체가 안 생김). CI에서만 주입.
+          args: '--config {"bundle":{"createUpdaterArtifacts":true}}'

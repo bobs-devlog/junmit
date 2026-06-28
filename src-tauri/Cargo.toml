@@ -1,0 +1,22 @@
+[package]
+name = "junmit-app"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false  # 애플리케이션 crate — crates.io 발행 대상 아님 (cargo-about도 자기 자신 제외)
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
+tauri-plugin-shell = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"  # 자동 업데이트 설치 후 relaunch
+portable-pty = "0.9"
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["clock"] }
+libc = "0.2"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

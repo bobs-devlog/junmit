@@ -1,0 +1,90 @@
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  height: 44px;
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.editable-title {
+  composes: title;
+  cursor: text;
+  padding: 2px 6px;
+  margin: -2px -6px;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+  /* 아이콘과 텍스트 baseline 정렬 */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.editable-title:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* 평소엔 옅게 — affordance만 전달. 호버 시 강조해 클릭 가능성 명확화. */
+.edit-icon {
+  opacity: 0.4;
+  transition: opacity 0.15s ease;
+  flex-shrink: 0;
+}
+
+.editable-title:hover .edit-icon {
+  opacity: 1;
+}
+
+.title-input {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-input, rgba(0, 0, 0, 0.2));
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  margin: -2px -6px;
+  min-width: 200px;
+  outline: none;
+  font-family: inherit;
+}
+
+.title-input:focus {
+  border-color: var(--accent, #4a90e2);
+}
+
+.back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  /* 보조 액션이라 text-secondary로 — 타이틀(text-primary)이 페이지 정체성으로 강조됨. */
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 6px;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.back-button:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.back-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

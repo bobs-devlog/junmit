@@ -1,0 +1,183 @@
+.al-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.al-label {
+  /* MeetingSelector 섹션 헤더(.ms-section-label)와 동일 톤으로 통일 — 또렷한 primary 600. */
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.al-list-wrap {
+  position: relative;
+}
+
+.al-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 24px;
+  /* 참석자가 많아도 무한정 늘어나지 않게 — 약 6행 높이에서 내부 스크롤 */
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+/* 아래에 더 있을 때 하단 페이드 — 마지막 행이 배경(네이비)으로 자연스럽게 사라지며 "더 있음"을 암시.
+   순수 검정 대신 패널 배경색으로 dissolve해 얼룩처럼 보이지 않게 함. */
+.al-list-fade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 32px;
+  background: linear-gradient(transparent, var(--bg-primary));
+  border-radius: 0 0 6px 6px;
+  pointer-events: none;
+}
+
+.al-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: rgba(76, 201, 240, 0.1);
+  font-size: 13px;
+}
+
+/* 추정된 이름 — 확정 행과 구별해 점선·투명 배경. 확정하면 솔리드 행으로 바뀜. */
+.al-row-guess {
+  background: transparent;
+  border: 1px dashed var(--border);
+}
+
+/* 이름 + 연필을 한 묶음으로 — 연필을 이름 바로 옆에 붙여 편집 affordance를 명확히.
+   폭 흡수는 flex:1인 이메일이 담당하므로 래퍼는 줄지 않게(min-width:auto 기본 유지) 둔다. */
+.al-row-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.al-row-name {
+  color: var(--text-primary);
+  cursor: text;
+  white-space: nowrap;
+}
+
+.al-row-name:hover {
+  text-decoration: underline dotted;
+}
+
+.al-row-email {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.al-row-edit {
+  border: 1px solid var(--accent);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  min-width: 80px;
+}
+
+/* 행 끝 컨트롤(확정·수정·삭제) — 이메일이 없어도 항상 우측 정렬 */
+.al-row-controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* 추정 이름 확정("이대로 사용") — 긍정 액션이라 accent 보더. */
+.al-confirm-btn {
+  background: none;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+.al-confirm-btn:hover {
+  background: rgba(76, 201, 240, 0.12);
+}
+
+.al-edit-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+
+.al-edit-btn:hover {
+  color: var(--accent);
+}
+
+.al-remove {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.al-remove:hover {
+  color: var(--danger);
+}
+
+.al-empty {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* 추정행이 있을 때만 보이는 확인 안내 — 행별 배지 대신 리스트에서 1회. */
+.al-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.al-add-row {
+  display: flex;
+  gap: 6px;
+}
+
+.al-input {
+  flex: 1;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+.al-input:focus {
+  border-color: var(--accent);
+}

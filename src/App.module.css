@@ -1,0 +1,67 @@
+.app {
+  display: flex;
+  height: 100%;
+}
+
+.app-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  width: 100%;
+  padding: 40px;
+  text-align: center;
+}
+
+.app-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Header 아래의 콘텐츠 영역. 기존 화면들이 row flex 자식으로 동작하도록 wrapping.
+   border-left가 사이드바 우측 분리선 — Header 끝부터 시작해 가로 divider 하나로 통일된 시각. */
+.content-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+}
+
+/* 녹음 저장 중 안내 (status="saving" 전용) */
+.saving-indicator {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--text-primary);
+}
+
+/* 색만 지정 — 링 형태·회전은 Spinner 컴포넌트가 담당(currentColor를 따른다). */
+.saving-indicator-spinner {
+  color: var(--accent);
+}
+
+.saving-indicator-title {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.saving-indicator-body {
+  font-size: 14px;
+  color: var(--text-secondary);
+}

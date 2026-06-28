@@ -1,0 +1,88 @@
+.edit-marker {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.edit-button {
+  /* width를 고정하지 않고 content(ⓘ 글리프) 폭에 맞춤 — box 내 빈 공간이
+     line gap과 합쳐져 시각적으로 멀어 보이는 문제 방지 */
+  height: 16px;
+  padding: 0 2px;
+  color: #f59e0b;
+  cursor: help;
+  font-size: 13px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  transition: background 0.1s ease;
+}
+
+.edit-marker:hover .edit-button {
+  background: rgba(245, 158, 11, 0.18);
+}
+
+.edit-popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: max-content;
+  max-width: 320px;
+  padding: 10px 12px;
+  background: var(--bg-sidebar);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  font-size: 12px;
+  white-space: normal;
+}
+
+.edit-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.edit-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.15);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.edit-labels {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: "Geist Mono", "SF Mono", Menlo, monospace;
+  font-size: 11px;
+}
+
+.edit-label-from {
+  color: var(--text-secondary);
+}
+
+.edit-label-arrow {
+  opacity: 0.5;
+}
+
+.edit-label-to {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.edit-reason {
+  color: var(--text-primary);
+  line-height: 1.5;
+}

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicegui-org/nicegui-tauri/main/tauri2/src-tauri/.schema/tauri.conf.json",
+  "productName": "Junmit",
+  "version": "0.1.0",
+  "identifier": "app.junmit",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npx vite dev",
+    "beforeBuildCommand": "npx vite build"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "title": "Junmit",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 600,
+        "decorations": true,
+        "transparent": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "14.4",
+      "signingIdentity": "-"
+    },
+    "resources": {
+      "../resources/lib": "lib",
+      "../resources/bin": "bin",
+      "../resources/models": "models",
+      "../resources/.claude": ".claude",
+      "../resources/.agents": ".agents",
+      "../resources/AGENTS.md": "AGENTS.md",
+      "../resources/templates": "templates",
+      "../resources/vocabulary.json": "vocabulary.json",
+      "../resources/install.sh": "install.sh"
+    }
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENERUEyQkQ4QzdDQjc2MUUKUldRZWRzdkgyQ3Zxelp5NzVZdU83WnlNcWdqK0s3SkZtQmR5QWtjUm9Uc1V0Qkc5Q3lZQmt1ZWoK",
+      "endpoints": [
+        "https://github.com/bobs-devlog/junmit/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

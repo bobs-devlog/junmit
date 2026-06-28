@@ -1,0 +1,144 @@
+.setup-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-primary);
+}
+
+.setup-card {
+  max-width: 480px;
+  width: 100%;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.setup-subtitle {
+  font-size: 15px;
+  color: var(--text-secondary);
+}
+
+.setup-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--accent);
+}
+
+.setup-progress-icon {
+  animation: spin 1.5s linear infinite;
+}
+
+.setup-logs {
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--bg-terminal);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-family: "Geist Mono", "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.setup-log-line {
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+.setup-current-task {
+  font-size: 14px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.setup-progress-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.setup-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.setup-progress-fill.indeterminate {
+  width: 30%;
+  animation: indeterminate 1.5s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+  0% {
+    margin-left: 0%;
+  }
+  50% {
+    margin-left: 70%;
+  }
+  100% {
+    margin-left: 0%;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.setup-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.setup-progress-row .setup-progress-bar {
+  flex: 1;
+}
+
+.setup-progress-pct {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  min-width: 36px;
+  text-align: right;
+}
+
+.setup-cancel-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: rgba(240, 112, 112, 0.06);
+  border: 1px solid rgba(240, 112, 112, 0.2);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.setup-cancel-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.setup-done {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--success);
+  padding: 12px 0;
+}
+
+.setup-error {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--danger);
+}

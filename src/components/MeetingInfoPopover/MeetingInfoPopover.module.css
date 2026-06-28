@@ -1,0 +1,104 @@
+.mi-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.mi-trigger:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+/* 팝오버 — SpeakerPicker(sp-popover)와 같은 fixed 포지셔닝 idiom */
+.mi-popover {
+  position: fixed;
+  z-index: 100;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 280px;
+  max-width: 360px;
+  max-height: 460px;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mi-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mi-header-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mi-close {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.mi-close:hover {
+  color: var(--text-primary);
+}
+
+.mi-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mi-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.mi-value {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.mi-input {
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-input, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.mi-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.mi-agenda {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow-y: auto;
+  line-height: 1.5;
+}

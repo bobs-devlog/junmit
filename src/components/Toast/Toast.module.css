@@ -1,0 +1,58 @@
+.toast {
+  position: fixed;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 9999;
+  opacity: 0;
+  transition:
+    opacity 0.3s,
+    transform 0.3s;
+  cursor: pointer;
+  max-width: 480px;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.toast.visible {
+  opacity: 1;
+}
+
+/* 에러/경고: 상단 중앙 */
+.toast--error {
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  background: var(--danger);
+  color: #fff;
+}
+.toast--error.visible {
+  transform: translateX(-50%) translateY(0);
+}
+
+/* 성공: 우하단 */
+.toast--success {
+  bottom: 20px;
+  right: 20px;
+  transform: translateY(12px);
+  background: var(--bg-sidebar);
+  border: 1px solid var(--success);
+  color: var(--success);
+}
+.toast--success.visible {
+  transform: translateY(0);
+}
+
+/* 정보: 우하단 */
+.toast--info {
+  bottom: 20px;
+  right: 20px;
+  transform: translateY(12px);
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+.toast--info.visible {
+  transform: translateY(0);
+}

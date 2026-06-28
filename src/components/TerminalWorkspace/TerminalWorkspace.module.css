@@ -1,0 +1,145 @@
+/* 공통 작업 셸: 좌측 콘텐츠(풀너비) + 우측 drawer(push 방식). panel-width CSS 변수로 drag resize.
+   closed 시 drawer 0px. AI 토글은 우측 끝 absolute 버튼 (drawer 상태 무관 같은 픽셀 위치).
+   회의록 화면(WorkArea)·회의 유형 화면이 공통으로 사용. */
+.work-area {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 0;
+  min-height: 0;
+  min-width: 0;
+  transition: grid-template-columns 180ms ease;
+  position: relative; /* AI 토글 버튼의 absolute 기준 */
+  /* sv-toolbar 우측 padding 제어 — drawer closed 시 토글 영역 비워두고,
+     drawer open 시엔 panel-header가 토글 영역 처리하므로 padding 불필요 (탭 영역 ↑). */
+  --sv-toolbar-right: 58px;
+}
+
+.work-area.drawer-open {
+  grid-template-columns: 1fr var(--app-panel-width, 460px);
+  --sv-toolbar-right: 0;
+}
+
+/* drag 중엔 grid transition 끄기 — 마우스에 즉시 반응 */
+.work-area.dragging {
+  transition: none;
+}
+
+.viewer-area {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.drawer-area {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg-primary);
+  overflow: hidden;
+  position: relative;
+}
+
+/* Resize handle — drawer 좌측 경계 위에 absolute 배치. 시각상 1px border, hit area 6px.
+   collapsed 시엔 hide (resize 의미 없음). */
+.resize-handle {
+  position: absolute;
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 5;
+  background: transparent;
+  transition: background-color 0.15s ease;
+}
+
+.resize-handle:hover,
+.work-area.dragging .resize-handle {
+  background: var(--accent, #4cc9f0);
+  opacity: 0.4;
+}
+
+.work-area:not(.drawer-open) .resize-handle {
+  display: none;
+}
+
+/* collapsed 시: drawer 전체를 display:none.
+   TerminalPanel은 React 트리에 마운트 유지 (display:none이라도 PTY 끊김 X). */
+.work-area:not(.drawer-open) .drawer-area {
+  display: none;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  /* 우측 padding은 absolute AI 토글 버튼 영역(약 50px)만큼 비워둠 — 라벨 겹침 방지. */
+  padding: 6px 58px 6px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  min-height: 38px;
+}
+
+.panel-label {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.panel-label-done {
+  color: var(--accent);
+}
+
+/* AI 토글 버튼 — 셸 우측 끝 absolute. drawer 상태 무관 항상 같은 픽셀 위치.
+   icon-only square 버튼, border 없이 hover background로 affordance. */
+.ai-toggle-btn {
+  position: absolute;
+  top: 5px;
+  right: 8px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    color 0.1s ease,
+    background-color 0.1s ease;
+}
+
+.ai-toggle-btn:hover {
+  color: var(--accent);
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+}
+
+.panel-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* TerminalPanel wrap — spawnRequest 없을 땐 display:none으로 EmptyState만 노출.
+   React 트리에는 마운트 유지되어 PTY 이벤트 listener 살아있음. */
+.terminal-wrap {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+
+.terminal-wrap.hidden {
+  display: none;
+}

@@ -1,0 +1,33 @@
+# cargo-about 설정 — THIRD_PARTY_LICENSES.md의 Rust 의존성 섹션 생성용.
+#
+# 출하되는 .app 바이너리에 실제로 링크되는 crate만 대상으로 한다:
+#   - 타겟: aarch64-apple-darwin (Apple Silicon. 유일한 빌드 타겟)
+#   - build/dev-dependencies 제외 — 빌드 도구(tauri-build 등)는 배포물에 링크되지 않음
+#   - workspace 자체 crate 제외 — 프로젝트 자체 코드, 루트 LICENSE가 커버
+#
+# 재생성: scripts/licenses/regen.sh 참고.
+
+targets = ["aarch64-apple-darwin"]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+
+# 출하 의존성에서 실제로 등장하는 라이선스만 나열. 새 라이선스가 발견되면
+# cargo-about이 에러로 알려주므로, 출처를 확인한 뒤 여기에 추가한다.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "Unlicense",
+    "BSL-1.0",
+    "MPL-2.0",
+    "OpenSSL",
+]
+
+[private]
+ignore = true

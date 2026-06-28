@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.venv/
+.deps/
+
+# Build outputs
+dist/
+src-tauri/target/
+src-tauri/gen/
+/Junmit.app
+*.tsbuildinfo
+
+# Downloaded binaries and models
+resources/bin/
+models/
+
+# Codex 스킬 산출물 — gen-agent-skills.sh가 정본(.claude/skills)에서 파생 생성
+resources/.agents/
+resources/AGENTS.md
+
+# Session outputs
+output/
+output_backup_*/
+
+# OS
+.DS_Store
+*.log
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+/.claude/
+PLAN.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Swift (SPM)
+swift-cli/**/.build/
+swift-cli/**/.swiftpm/
+swift-cli/**/*.xcodeproj
+swift-cli/**/*.xcwo

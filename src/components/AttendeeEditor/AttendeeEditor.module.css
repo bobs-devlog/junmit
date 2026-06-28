@@ -1,0 +1,109 @@
+/* AttendeeEditor — 화자 매칭 탭 전용 태그(pill) 편집 (접힘/펼침) */
+.ae-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ae-editor-compact {
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.ae-compact-collapsed,
+.ae-compact-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ae-compact-collapsed {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.ae-summary {
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+.ae-toggle-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.ae-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.ae-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 24px;
+  align-items: center;
+}
+
+.ae-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: rgba(76, 201, 240, 0.12);
+  color: var(--text-primary);
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.ae-tag-remove {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+
+.ae-tag-remove:hover {
+  color: var(--danger);
+}
+
+.ae-empty {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.ae-add-row {
+  display: flex;
+  gap: 6px;
+}
+
+.ae-input {
+  flex: 1;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+.ae-input:focus {
+  border-color: var(--accent);
+}

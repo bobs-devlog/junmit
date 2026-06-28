@@ -1,0 +1,10 @@
+/* 레이아웃·drawer·리사이즈·토글 스타일은 공통 셸(TerminalWorkspace.module.css)로 이전.
+   여기는 회의록 화면 고유의 빈 상태만 남긴다. */
+.viewer-area-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: var(--text-secondary);
+  font-size: 13px;
+}

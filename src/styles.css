@@ -1,0 +1,279 @@
+/* D2Coding — 네이버 한글 monospace 폰트. claude code TUI의 한글·East Asian Ambiguous
+   문자(●, 따옴표 등)가 영문 cell의 정확히 2배 폭으로 렌더링되어 xterm.js cell 정렬과
+   일치 (macOS 기본 폰트 stack의 sans-serif Hangul fallback이 cell 폭을 어긋나게 하던
+   문제 해소). SIL Open Font License 1.1 (https://github.com/naver/d2codingfont). */
+@font-face {
+  font-family: "D2Coding";
+  src: url("/fonts/D2Coding-Regular.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg-primary: #1a1a2e;
+  --bg-sidebar: #16213e;
+  --bg-terminal: #0f0f0f;
+  --text-primary: #e0e0e0;
+  --text-secondary: #8892a4;
+  --accent: #4cc9f0;
+  --accent-hover: #7dd8f5;
+  --danger: #f07070;
+  --danger-hover: #f5a0a0;
+  --success: #70f0a0;
+  --warning: #f0d070;
+  --border: #2a2a4a;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+/* === SetupScreen 글로벌 유틸 (App.tsx도 사용) === */
+.setup-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.setup-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.btn-pulse {
+  animation: btn-glow 2s ease-in-out 3;
+}
+
+@keyframes btn-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(76, 201, 240, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(76, 201, 240, 0.3);
+  }
+}
+
+/* Buttons */
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* aria-disabled — opacity 페이드(.btn:disabled) 대신 솔리드 muted 색으로 alpha 합성 paint flicker 차단.
+   입력 중 활성/비활성이 잦게 토글되는 버튼에 사용 (.sv-action-btn과 동일 색 #4a525e).
+   hover도 함께 고정 — btn-secondary:hover의 :not(:disabled)는 aria-disabled엔 막히지 않으므로. */
+.btn[aria-disabled="true"],
+.btn[aria-disabled="true"]:hover {
+  color: #4a525e;
+  cursor: not-allowed;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.btn-icon {
+  font-size: 16px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #0f0f0f;
+}
+
+.btn-primary:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--accent-hover);
+}
+
+.btn-primary.recording {
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn-large {
+  padding: 14px 20px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.btn-danger {
+  background: rgba(240, 112, 112, 0.12);
+  color: var(--danger);
+  border: 1px solid rgba(240, 112, 112, 0.3);
+}
+
+.btn-danger:hover {
+  background: rgba(240, 112, 112, 0.2);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Error message */
+.error-msg {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: rgba(240, 112, 112, 0.15);
+  border: 1px solid rgba(240, 112, 112, 0.3);
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+/* === Meeting Selector / SessionList 공통 === */
+.ms-header {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ms-loading {
+  color: var(--text-secondary);
+  font-size: 14px;
+  padding: 40px 0;
+  text-align: center;
+}
+
+.ms-input {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  height: 36px;
+  flex-shrink: 0;
+}
+
+.ms-input:focus {
+  border-color: var(--accent);
+}
+
+.btn-small {
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+.sv-action-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.sv-action-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+/* 비활성: aria-disabled로 처리 — native disabled 토글의 글리프 anti-aliasing 재렌더 회피.
+   색상은 opacity 페이드 대신 text-secondary(#8892a4)의 darker variant 솔리드로 alpha 합성 flicker 차단. */
+.sv-action-btn[aria-disabled="true"] {
+  color: #4a525e;
+  cursor: not-allowed;
+}
+
+.sv-action-btn[aria-disabled="true"]:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: #4a525e;
+}
+
+/* Notes 탭 — preview/editor 공용 레이아웃 (action 바 + body) */
+.notes-pane-actions {
+  display: flex;
+  gap: 8px;
+  padding: 0 0 8px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.notes-pane-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* sv-body가 프레임(overflow hidden)이라 회의록 본문은 여기서 스크롤. 액션 바는 위에 고정. */
+  overflow-y: auto;
+}
+
+.sv-empty {
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 20px 0;
+}
+
+/* === 공통 다이얼로그 (확인/알림) === */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.dialog-box {
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 320px;
+  max-width: 420px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.dialog-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 12px 0;
+}
+
+.dialog-body {
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.6;
+  margin: 0 0 20px 0;
+}

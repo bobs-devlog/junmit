@@ -1,0 +1,149 @@
+/* VocabularyEditor — 용어 사전 전용 화면 본문 (태그 편집 + 일괄 붙여넣기) */
+/* 상단(.ve-header)은 고정, 칩 목록(.ve-tags)만 스크롤. */
+.ve-root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 720px;
+  padding: 24px 32px;
+}
+
+.ve-header {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ve-description {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.ve-add-row {
+  display: flex;
+  gap: 6px;
+}
+
+.ve-input {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+.ve-input:focus {
+  border-color: var(--accent);
+}
+
+.ve-bulk-toggle {
+  align-self: flex-start;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ve-bulk-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.ve-bulk {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.ve-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+}
+
+.ve-textarea:focus {
+  border-color: var(--accent);
+}
+
+.ve-bulk-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ve-bulk-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.ve-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.ve-tags {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-start;
+  align-content: flex-start;
+}
+
+.ve-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  background: rgba(76, 201, 240, 0.12);
+  color: var(--text-primary);
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.ve-tag-remove {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+
+.ve-tag-remove:hover {
+  color: var(--danger);
+}
+
+.ve-empty {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-style: italic;
+}

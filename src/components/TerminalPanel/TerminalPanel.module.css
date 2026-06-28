@@ -1,0 +1,18 @@
+.terminal-container {
+  flex: 1;
+  background: var(--bg-terminal);
+  padding: 8px;
+  display: flex;
+}
+
+.terminal {
+  flex: 1;
+}
+
+.terminal :global(.xterm) {
+  height: 100%;
+}
+
+.terminal :global(.xterm-viewport) {
+  overflow-y: auto !important;
+}
