@@ -868,11 +868,29 @@ fn mic_staging_path() -> PathBuf {
     app_data_dir().join("recording_mic_staging.wav")
 }
 
-/// 진단용 스템 보존 게이트. `app_data_dir/keep_stems` 센티넬 파일이 있으면 convert_recording이
-/// 믹스 후 마이크·시스템 원본 트랙을 세션 디렉토리에 남긴다(기본=삭제, 플랜의 MVP 정책 유지).
-/// 스피커 에코 등 믹스 품질 문제를 분리 트랙으로 진단하거나 향후 AEC 실험 입력으로 쓰기 위함.
-fn should_keep_stems() -> bool {
-    app_data_dir().join("keep_stems").exists()
+/// 녹음 오디오 보존 게이트(숨은 개발자 플래그). `app_data_dir/keep_recording` 센티넬 파일이
+/// 있으면 모든 오디오 산출물을 보존한다: ① 화자분리 후 recording.wav를 지우지 않고(기본=삭제),
+/// ② convert_recording이 믹스 후 마이크·시스템 원본 트랙(스템)도 남긴다. 회의 원본 오디오는
+/// 민감하므로 release는 전사·화자분리가 끝나면 자동 삭제하는 게 기본(Granola식); 이 플래그는
+/// 재처리·믹스 진단·AEC 실험을 위해 개발자가 직접 켜는 escape다(UI 없음, dev/release 동일).
+fn should_keep_recording() -> bool {
+    app_data_dir().join("keep_recording").exists()
+}
+
+/// 화자분리(오디오를 쓰는 마지막 단계) 완료 후 호출 — 회의 원본 오디오를 정리한다.
+/// recording.wav는 전사·화자분리 입력이지만 이후 `/meeting`(텍스트만 사용)·발행엔 불필요하다.
+/// 민감한 원본을 기본 삭제(프라이버시)하되, keep_recording 센티넬이 있으면 보존(재처리·진단).
+/// 삭제 실패는 비치명(로그만) — 정리 누락이 파이프라인을 막지 않는다.
+pub fn cleanup_recording_audio(session_dir: &str) {
+    if should_keep_recording() {
+        return;
+    }
+    let wav = PathBuf::from(session_dir).join("recording.wav");
+    if wav.exists() {
+        if let Err(e) = fs::remove_file(&wav) {
+            eprintln!("recording.wav 정리 실패(무시): {e}");
+        }
+    }
 }
 
 /// 16k mono s16le headerless raw 파일을 **청크 스트리밍**으로 읽어 윈도우별 RMS 엔벨로프만 만든다.
@@ -1620,7 +1638,7 @@ pub fn convert_recording(app: &tauri::AppHandle, session_dir: &str) -> Result<()
 
         // 진단 모드: 원본 스템을 세션에 보존(마이크 48k wav + 시스템 48k wav). 분리 트랙으로 에코·음량을
         // tap 단독 vs 믹스로 비교하거나 향후 AEC 입력으로 쓴다. 기본은 보존 안 함. 무음 시스템은 보존 의미 없음.
-        if should_keep_stems() && has_remote {
+        if should_keep_recording() && has_remote {
             let _ = fs::copy(&mic_path, session_path.join("recording_mic.wav"));
             let _ = fs::copy(&staging, session_path.join("recording_system.wav"));
         }
@@ -1700,8 +1718,12 @@ pub fn find_resumable_sessions() -> Result<Vec<ResumableSession>, String> {
             continue;
         }
 
-        // 녹음 파일 있어야 함
-        if !path.join("recording.flac").exists() && !path.join("recording.wav").exists() {
+        // 유효 세션 판정 — 녹음 원본이 있거나, 이미 전사된 흔적(segments.json)이 있어야 함.
+        // release는 화자분리 후 recording.wav를 자동 삭제(프라이버시)하므로, 오디오가 없어도
+        // 전사 산출물이 있으면 완료 세션으로 본다(cleanup_recording_audio 참조).
+        if !path.join("recording.wav").exists()
+            && !path.join("segments.json").exists()
+        {
             continue;
         }
 
@@ -1781,10 +1803,10 @@ fn reset_session_keeping(session_path: &str, keep: &[&str]) -> Result<(), String
 /// 나머지 처리 산출물을 전부 삭제한다. 앱이 "오디오 처리 시작" 상태로 복원돼
 /// 전사→화자분리를 다시 돌릴 수 있다(화자분리 파라미터 변경 후 재실행 등).
 pub fn reset_session_to_recording(session_path: &str) -> Result<(), String> {
-    // 보존: 녹음 원본·압축본·회의 메타(재처리에 필요)·녹음 메모(화자 힌트). 그 외는 전부 산출물.
+    // 보존: 녹음 원본·회의 메타(재처리에 필요)·녹음 메모(화자 힌트). 그 외는 전부 산출물.
     reset_session_keeping(
         session_path,
-        &["recording.wav", "recording.flac", "meeting.json", "notes.json"],
+        &["recording.wav", "meeting.json", "notes.json"],
     )
 }
 
@@ -1798,7 +1820,6 @@ pub fn reset_session_to_diarized(session_path: &str) -> Result<(), String> {
         session_path,
         &[
             "recording.wav",
-            "recording.flac",
             "meeting.json",
             "notes.json",
             "pipeline.log",

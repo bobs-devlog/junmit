@@ -695,6 +695,11 @@ async fn cmd_run_pipeline(
     }
 
     if status.success() {
+        // 화자분리는 오디오를 쓰는 마지막 단계 — 끝나면 회의 원본 오디오를 정리한다
+        // (기본 삭제=프라이버시, keep_recording 센티넬 시 보존). /meeting·발행은 텍스트만 쓴다.
+        if step == "diarize" {
+            session::cleanup_recording_audio(&session_dir);
+        }
         Ok(())
     } else {
         Err(format!("{step} 실패 (exit code: {:?})", status.code()))

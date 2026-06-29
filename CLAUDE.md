@@ -47,8 +47,7 @@
 
 | 파일 | 설명 |
 |------|------|
-| `recording.wav` | 녹음 (whisper 입력, 16k mono). 시스템 오디오 캡처 시 마이크↔시스템 RMS 상관으로 자동 분기: 헤드폰(에코 없음)=마이크+시스템 오프라인 믹스 / 스피커(원격이 마이크에 에코로 재유입)=마이크 단독(더블링·울림 회피). 분리트랙은 기본 미보존(`keep_stems` 센티넬 시 진단용 보존) |
-| `recording.flac` | 압축 보관용 |
+| `recording.wav` | 녹음 (whisper 입력, 16k mono). 시스템 오디오 캡처 시 마이크↔시스템 RMS 상관으로 자동 분기: 헤드폰(에코 없음)=마이크+시스템 오프라인 믹스 / 스피커(원격이 마이크에 에코로 재유입)=마이크 단독(더블링·울림 회피). **회의 원본 오디오는 민감하므로 화자분리 완료 후 기본 자동 삭제**(전사·화자분리만 오디오를 쓰고 `/meeting`·발행은 텍스트만 씀; Granola식 프라이버시 기본). 숨은 개발자 플래그 `keep_recording` 센티넬(`~/Library/Application Support/app.junmit/keep_recording`, 존재만 체크)이 있으면 보존 — recording.wav 유지 + 분리트랙(스템)도 진단용 보존(재처리·믹스 진단·AEC 실험용, UI 없음, dev/release 동일) |
 | `segments.json` | whisper 전사 세그먼트 (무음·크레딧 환각 필터 적용) |
 | `diarize.json` | 화자분리 결과 |
 | `transcript.txt` | 원본 전사본 ([SPEAKER_XX M:SS] text 형식) |
