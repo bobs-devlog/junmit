@@ -102,8 +102,14 @@ else
     # --disable-everything 후 코드가 실제 쓰는 컴포넌트만 enable. 입력은 전부 WAV(s16, 네이티브 캡처가
     # pcm_s16le로 기록), 출력은 16k mono pcm_s16le WAV/raw + 측정용 null. 리샘플/채널변환은 libswresample
     # (aresample 필터, 기본 on) 경유. swscale·avdevice·postproc·플랫폼 코덱(audiotoolbox 등)은 불필요.
+    #
+    # ★ --disable-autodetect 필수: 이게 없으면 configure가 빌드 호스트에 깔린 외부 라이브러리를
+    # 자동 감지해 링크한다 → 빌드 환경마다 결과가 달라지는 비-hermetic 빌드(실측: GitHub macos-14
+    # 러너엔 libX11이 있어 ffmpeg가 libX11.6.dylib를 동적 링크 → 그게 없는 사용자 머신에서 dyld
+    # 로드 실패로 실행 불가. 로컬 맥엔 libX11이 없어 못 잡던 release 전용 버그). autodetect를 끄면
+    # 명시적으로 enable한 내부 컴포넌트만 쓰고 호스트 외부 lib 링크를 차단 → 어디서 빌드해도 동일.
     ./configure \
-      --disable-everything --disable-gpl --disable-nonfree \
+      --disable-everything --disable-autodetect --disable-gpl --disable-nonfree \
       --disable-doc --disable-ffprobe --disable-ffplay --disable-network \
       --disable-shared --enable-static --enable-small \
       --disable-swscale --disable-avdevice \
