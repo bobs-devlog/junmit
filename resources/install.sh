@@ -12,7 +12,7 @@ warn() { printf "\033[1;33m[경고]\033[0m %s\n" "$1"; }
 err()  { printf "\033[1;31m[오류]\033[0m %s\n" "$1" >&2; }
 
 # 예기치 못한 실패(네트워크 끊김·디스크 부족 등)에 대한 친절한 catch-all 안내.
-# 명시적 검증(ffmpeg/uv)은 각자 구체 메시지를 출력하고 exit하며,
+# 명시적 검증(uv)은 구체 메시지를 출력하고 exit하며,
 # 그 분기들은 if 조건/else-exit 형태라 ERR을 트리거하지 않으므로 메시지가 중복되지 않는다.
 trap 'err "설치 중 예기치 못한 오류가 발생했습니다. 인터넷 연결과 디스크 여유 공간을 확인한 뒤 다시 시도해주세요."' ERR
 
@@ -60,22 +60,8 @@ if [[ "$(uname)" != "Darwin" ]]; then
   exit 1
 fi
 
-# ffmpeg 확인 (오디오 변환에 필요)
-if ! command -v ffmpeg &>/dev/null; then
-  if command -v brew &>/dev/null; then
-    info "ffmpeg 설치 중..."
-    brew install ffmpeg
-  else
-    err "Homebrew가 필요합니다 (ffmpeg 설치용)."
-    err ""
-    err "공식 가이드를 따라 Homebrew를 설치한 뒤 setup을 다시 시도하세요:"
-    err ""
-    err "  https://brew.sh/ko/"
-    err ""
-    exit 1
-  fi
-fi
-ok "ffmpeg 확인됨"
+# ffmpeg는 앱 번들에 동봉되어 있다(resources/bin/ffmpeg, audio-only LGPL — build-binaries.sh가 빌드).
+# brew·사전 설치가 더 이상 필요 없다.
 
 # Python 검증/설치는 uv가 자동 처리 (시스템 python3 의존 X).
 # AI CLI(claude/codex) 검증은 하지 않는다 — 온보딩 "AI 도구 선택" 화면이 공식 curl 인스톨러로

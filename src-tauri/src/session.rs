@@ -1478,7 +1478,7 @@ impl LoudnormStats {
 /// dual_mono는 의도적으로 쓰지 않는다: 마이크·시스템 모두 mono로 다운믹스해 mono 한 채널로 합치므로
 /// (stereo 재생 아님), mono를 stereo 재생 기준으로 -3dB 보정하는 dual_mono=true는 오히려
 /// 마이크를 시스템보다 3dB 작게 만들어 균형을 깨뜨린다(실측 확인). 둘 다 mono 기준 -16 LUFS로 맞춘다.
-fn measure_loudnorm(input: &std::path::Path, hpf: bool) -> Option<LoudnormStats> {
+fn measure_loudnorm(ffmpeg: &std::path::Path, input: &std::path::Path, hpf: bool) -> Option<LoudnormStats> {
     let mut chain = String::new();
     if hpf {
         chain.push_str("highpass=f=70,");
@@ -1487,8 +1487,7 @@ fn measure_loudnorm(input: &std::path::Path, hpf: bool) -> Option<LoudnormStats>
     chain.push_str("loudnorm=I=-16:TP=-1.5:LRA=11");
     chain.push_str(":print_format=json");
 
-    let output = Command::new("ffmpeg")
-        .env("PATH", get_user_shell_path())
+    let output = Command::new(ffmpeg)
         .args(["-i", input.to_str()?, "-af", &chain, "-f", "null", "-"])
         .output()
         .ok()?;
@@ -1505,9 +1504,8 @@ fn measure_loudnorm(input: &std::path::Path, hpf: bool) -> Option<LoudnormStats>
 }
 
 /// 마이크 녹음(네이티브 캡처 48k mono WAV)을 whisper 입력 WAV(16k mono, PCM 16bit)로 단일 변환.
-fn convert_mic_only(mic_path: &std::path::Path, wav_path: &std::path::Path) -> Result<(), String> {
-    let output = Command::new("ffmpeg")
-        .env("PATH", get_user_shell_path())
+fn convert_mic_only(ffmpeg: &std::path::Path, mic_path: &std::path::Path, wav_path: &std::path::Path) -> Result<(), String> {
+    let output = Command::new(ffmpeg)
         .args([
             "-i", mic_path.to_str().unwrap(),
             "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
@@ -1530,10 +1528,12 @@ fn convert_mic_only(mic_path: &std::path::Path, wav_path: &std::path::Path) -> R
 ///      tap을 섞으면 더블링/울림(comb-filter)으로 전사가 망가지므로(실측) 더블링을 원천 회피.
 ///   3. 원격 있음 + 마이크에 에코 없음(헤드폰) → 마이크+시스템 오프라인 믹스(loudnorm, capture_mode=mic+system).
 ///      tap이 유일한 원격 소스.
-pub fn convert_recording(session_dir: &str) -> Result<(), String> {
+pub fn convert_recording(app: &tauri::AppHandle, session_dir: &str) -> Result<(), String> {
     let session_path = PathBuf::from(session_dir);
     let mic_path = mic_staging_path();
     let wav_path = session_path.join("recording.wav");
+    // 앱 동봉 ffmpeg (PATH 의존 제거). dev/release 모두 resource_dir/bin/ffmpeg를 가리킨다.
+    let ffmpeg = resource_dir(app)?.join("bin/ffmpeg");
 
     if !mic_path.exists() {
         return Err("마이크 녹음 파일이 없습니다".into());
@@ -1550,8 +1550,7 @@ pub fn convert_recording(session_dir: &str) -> Result<(), String> {
         let mic_raw = session_path.join("~mic16.raw");
         let sys_raw = session_path.join("~sys16.raw");
         let to_raw = |src: &std::path::Path, dst: &std::path::Path| {
-            Command::new("ffmpeg")
-                .env("PATH", get_user_shell_path())
+            Command::new(&ffmpeg)
                 .args([
                     "-i", src.to_str().unwrap(),
                     "-ar", "16000", "-ac", "1", "-f", "s16le", "-y", dst.to_str().unwrap(),
@@ -1577,7 +1576,7 @@ pub fn convert_recording(session_dir: &str) -> Result<(), String> {
             //    (ducking 잔여 울림, 선형 AEC −4.6dB만 — 둘 다 실측). 더블링을 원천 회피: tap 버리고 마이크만.
             //    마이크가 원격(에코)+로컬을 다 담아 손실 없음. (tap 클린 음질까지면 신경망 AEC 필요 — 후속.)
             //    상관계수 기반이라 내장/외부/회의실 스피커 구분 없이 device-agnostic.
-            convert_mic_only(&mic_path, &wav_path)?;
+            convert_mic_only(&ffmpeg, &mic_path, &wav_path)?;
         } else {
             // 헤드폰 등(마이크에 원격 없음 → tap이 유일한 원격 소스). 마이크·시스템을 합치기 전에 per-source
             // 2-pass loudnorm(linear)으로 -16 LUFS에 맞춰 음량 불균형(낮은 마이크 게인 vs 디지털 풀레벨 원격)을
@@ -1586,14 +1585,14 @@ pub fn convert_recording(session_dir: &str) -> Result<(), String> {
             // (project_no_denoising). 정규화는 소스 분리·48k에서만 유효(16k/mono 뒤로 미루면 정확도 저하 +
             // 합친 뒤 분리 불가)하므로 여기서 한다. 마이크엔 가벼운 70Hz HPF(럼블 제거). 헤드폰이라 에코 없어
             // 더블링도 없다(이 경로엔 ducking/AEC 불필요).
-            let mic_branch = match measure_loudnorm(&mic_path, true) {
+            let mic_branch = match measure_loudnorm(&ffmpeg, &mic_path, true) {
                 Some(m) => format!(
                     "[0:a]highpass=f=70,aformat=channel_layouts=mono,{}[a0]",
                     m.apply_filter()
                 ),
                 None => "[0:a]highpass=f=70,aformat=channel_layouts=mono[a0]".to_string(),
             };
-            let sys_branch = match measure_loudnorm(&staging, false) {
+            let sys_branch = match measure_loudnorm(&ffmpeg, &staging, false) {
                 Some(m) => format!("[1:a]aformat=channel_layouts=mono,{}[a1]", m.apply_filter()),
                 None => "[1:a]aformat=channel_layouts=mono[a1]".to_string(),
             };
@@ -1603,8 +1602,7 @@ pub fn convert_recording(session_dir: &str) -> Result<(), String> {
                 "{mic_branch};{sys_branch};\
                  [a0][a1]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.97[mix]"
             );
-            let output = Command::new("ffmpeg")
-                .env("PATH", get_user_shell_path())
+            let output = Command::new(&ffmpeg)
                 .args([
                     "-i", mic_path.to_str().unwrap(),
                     "-i", staging.to_str().unwrap(),
@@ -1635,7 +1633,7 @@ pub fn convert_recording(session_dir: &str) -> Result<(), String> {
         );
     } else {
         // 마이크만 — 시스템 오디오 미포착(거부·무음·대면).
-        convert_mic_only(&mic_path, &wav_path)?;
+        convert_mic_only(&ffmpeg, &mic_path, &wav_path)?;
         let _ = fs::remove_file(&mic_path);
         let _ = fs::remove_file(&staging);
         set_capture_mode(&session_path, CAPTURE_MODE_MIC);
@@ -1838,6 +1836,7 @@ pub fn check_dependencies(app: &tauri::AppHandle) -> DepsStatus {
 
     if let Some(ref dir) = resource {
         if !dir.join("bin/whisper-cli").exists() { missing.push("whisper-cli".into()); }
+        if !dir.join("bin/ffmpeg").exists() { missing.push("ffmpeg".into()); }
         if !dir.join("bin/diarize").exists() { missing.push("diarize".into()); }
         if !dir.join("bin/whisper-parse").exists() { missing.push("whisper-parse".into()); }
         if !dir.join("bin/apply-edits").exists() { missing.push("apply-edits".into()); }
@@ -1851,15 +1850,6 @@ pub fn check_dependencies(app: &tauri::AppHandle) -> DepsStatus {
     // install.sh가 도중 중단되어도 다음 실행 시 SetupScreen이 다시 노출되도록 둘 다 검증.
     if !venv_dir().join("bin/python3").exists() { missing.push("pyannote.audio".into()); }
     if !models_dir().join("ggml-large-v3-turbo.bin").exists() { missing.push("whisper model".into()); }
-
-    // ffmpeg는 PATH에서 확인 (install.sh가 아닌 시스템 의존성)
-    let has_ffmpeg = Command::new("which")
-        .arg("ffmpeg")
-        .env("PATH", get_user_shell_path())
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    if !has_ffmpeg { missing.push("ffmpeg".into()); }
 
     let app_dir = resource.map(|p| p.to_string_lossy().into_owned());
     DepsStatus {

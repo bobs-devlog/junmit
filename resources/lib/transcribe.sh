@@ -4,6 +4,7 @@
 do_transcribe() {
   local session_dir="$1"
   local wav_file="$session_dir/recording.wav"
+  local ffmpeg="$SCRIPT_DIR/bin/ffmpeg"  # 앱 동봉 (PATH 의존 제거)
   local whisper_cli="$SCRIPT_DIR/bin/whisper-cli"
   local whisper_model="$MODELS_DIR/ggml-large-v3-turbo.bin"
   local json_file="$session_dir/recording_whisper.json"
@@ -61,7 +62,7 @@ do_transcribe() {
   # 임계 -50dB: 정상 발화 피크는 -40dB 이상, 무음 속 환각은 -60dB 안팎이라 그 사이를 가른다.
   # 산출 실패 시 인자 미전달 → 무음 드롭 생략(fail-open). 크레딧 문구 denylist는 whisper-parse 내장.
   local silence_file="$session_dir/silence_regions.json"
-  ffmpeg -i "$wav_file" -af "silencedetect=noise=-50dB:d=0.3" -f null /dev/null 2>&1 \
+  "$ffmpeg" -i "$wav_file" -af "silencedetect=noise=-50dB:d=0.3" -f null /dev/null 2>&1 \
     | awk '
         /silence_start/ { s=$NF }
         /silence_end/   { gsub(/\|/,"",$0); for(i=1;i<=NF;i++) if($i=="silence_end:"){e=$(i+1)}
@@ -108,7 +109,7 @@ do_transcribe() {
   # fail-open: 측정 실패 시 발화 있음으로 간주 (정상 녹음을 버리지 않는 쪽으로 안전).
   local result_file="$session_dir/transcribe_result.json"
   local mean_vol
-  mean_vol=$(ffmpeg -i "$wav_file" -af volumedetect -f null /dev/null 2>&1 \
+  mean_vol=$("$ffmpeg" -i "$wav_file" -af volumedetect -f null /dev/null 2>&1 \
     | awk -F': ' '/mean_volume/ {gsub(/ dB/, "", $2); print $2; exit}')
   local no_speech="false"
   if [[ -n "$mean_vol" ]] && awk -v v="$mean_vol" 'BEGIN { exit !(v < -50) }'; then

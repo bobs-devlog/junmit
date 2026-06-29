@@ -37,7 +37,6 @@ macOS 14.4+, Apple Silicon 전용. 처음 실행할 땐 보안 우회가 한 번
 
 - **macOS 14.4 (Sonoma) 이상, Apple Silicon.** Metal/MPS GPU 가속을 쓰고, 원격회의 시스템 오디오 캡처(CoreAudio Process Tap)가 macOS 14.4+를 요구합니다.
 - **AI 도구 구독.** 회의록 작성에 [Claude Code](https://claude.com/claude-code)(Claude Pro/Max)나 [Codex](https://developers.openai.com/codex/cli)(ChatGPT Plus/Pro 등) 중 하나의 구독이 필요합니다. CLI 설치와 로그인은 앱이 첫 실행 때 안내하므로 미리 준비할 것은 없습니다.
-- **[Homebrew](https://brew.sh/ko/).** 오디오 변환용 `ffmpeg` 자동 설치에 사용합니다(`ffmpeg`가 이미 있으면 없어도 됩니다).
 - **디스크 여유 약 3GB.** Whisper 모델(약 1.5GB)과 Python 환경(약 0.9GB), 앱을 합한 용량입니다. 한국어 전사 정확도를 위해 large급 모델(large-v3-turbo)을 써서 모델이 큽니다. 이후 회의 녹음과 결과물이 회의마다 더 쌓입니다(녹음 길이에 따라 수십에서 수백 MB).
 
 > Python 3.12는 앱이 portable 인터프리터를 자동으로 내려받습니다(uv). Python이나 Node.js를 따로 설치할 필요가 없습니다.
@@ -151,6 +150,7 @@ rm -rf "$HOME/Library/Application Support/app.junmit"
 | [pyannote.audio](https://github.com/pyannote/pyannote-audio) | 화자분리 라이브러리 | MIT |
 | [whisper.cpp](https://github.com/ggerganov/whisper.cpp) | 전사 엔진 (앱 동봉) | MIT |
 | [Whisper large-v3-turbo](https://github.com/openai/whisper) (© OpenAI) | 전사 모델 | MIT |
+| [FFmpeg](https://ffmpeg.org) | 오디오 변환·전처리 (앱 동봉, audio-only 빌드) | LGPL-2.1-or-later |
 | [PyTorch](https://github.com/pytorch/pytorch) | 화자분리 모델 실행 런타임 | BSD-3-Clause |
 | [uv](https://github.com/astral-sh/uv) (© Astral) | Python 인터프리터·패키지 관리 (앱 동봉) | Apache-2.0 / MIT |
 | [D2Coding](https://github.com/naver/d2codingfont) (© Naver) | 코드 표시용 글꼴 (앱 동봉) | OFL-1.1 |

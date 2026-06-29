@@ -75,6 +75,52 @@ else
   ok "whisper.cpp 빌드 완료"
 fi
 
+# === ffmpeg (오디오 변환·전처리, audio-only · LGPL · static) ===
+# 사용자 사전 설치(brew install ffmpeg)를 없애기 위해 앱에 동봉한다. whisper.cpp와 동일하게
+# 소스에서 핀 버전으로 빌드(재현성). audio-only + GPL 컴포넌트 제외(x264 등 미사용)로 MIT 앱과
+# 충돌 없는 LGPL 빌드. enable 집합은 코드의 실제 사용만 반영(transcribe.sh의 silencedetect·
+# volumedetect, session.rs convert_recording의 highpass·aformat·loudnorm·amix·alimiter + 16k/mono
+# 리샘플 + pcm_s16le WAV/raw 출력). ffprobe·ffplay·flac는 미사용이라 비활성.
+FFMPEG_DIR="$DEPS_DIR/ffmpeg"
+if [[ -x "$BIN_DIR/ffmpeg" ]] && "$BIN_DIR/ffmpeg" -version &>/dev/null; then
+  ok "ffmpeg 이미 빌드됨"
+else
+  # 버전 핀 — 개발/검증 환경 ffmpeg(8.1)와 정합. loudnorm은 버전 민감하므로 8.1 라인 최신 패치에
+  # 고정해 검증된 오디오 동작(전사 품질)과 어긋나지 않게 한다.
+  FFMPEG_REF="n8.1.2"
+  if [[ -d "$FFMPEG_DIR/.git" ]]; then
+    (cd "$FFMPEG_DIR" && git fetch --depth 1 origin tag "$FFMPEG_REF" --quiet && git checkout -q "$FFMPEG_REF")
+  else
+    rm -rf "$FFMPEG_DIR"
+    git clone --depth 1 --branch "$FFMPEG_REF" https://github.com/FFmpeg/FFmpeg "$FFMPEG_DIR"
+  fi
+
+  info "ffmpeg 빌드 중 (audio-only · LGPL · static)..."
+  (
+    cd "$FFMPEG_DIR"
+    # arm64는 NEON(Xcode gas)만 쓰므로 nasm/yasm 불필요(x86asm 미사용). C 컴파일러(clang)·make만 필요.
+    # --disable-everything 후 코드가 실제 쓰는 컴포넌트만 enable. 입력은 전부 WAV(s16, 네이티브 캡처가
+    # pcm_s16le로 기록), 출력은 16k mono pcm_s16le WAV/raw + 측정용 null. 리샘플/채널변환은 libswresample
+    # (aresample 필터, 기본 on) 경유. swscale·avdevice·postproc·플랫폼 코덱(audiotoolbox 등)은 불필요.
+    ./configure \
+      --disable-everything --disable-gpl --disable-nonfree \
+      --disable-doc --disable-ffprobe --disable-ffplay --disable-network \
+      --disable-shared --enable-static --enable-small \
+      --disable-swscale --disable-avdevice \
+      --disable-audiotoolbox --disable-videotoolbox \
+      --enable-demuxer=wav --enable-muxer=wav,pcm_s16le,null \
+      --enable-decoder=pcm_s16le,pcm_f32le --enable-encoder=pcm_s16le \
+      --enable-protocol=file,pipe \
+      --enable-filter=aresample,aformat,anull,highpass,loudnorm,amix,alimiter,silencedetect,volumedetect
+    make -j"$(sysctl -n hw.ncpu)"
+  )
+
+  # 정적 단일 바이너리 — whisper와 달리 동반 dylib 없음. 임시명으로 복사 후 이동(부분 상태 방지).
+  cp "$FFMPEG_DIR/ffmpeg" "$BIN_DIR/.ffmpeg-tmp"
+  mv "$BIN_DIR/.ffmpeg-tmp" "$BIN_DIR/ffmpeg"
+  ok "ffmpeg 빌드 완료 ($("$BIN_DIR/ffmpeg" -version | head -1))"
+fi
+
 # === Swift CLI (diarize, whisper-parse, apply-edits, mention-cache, adf) ===
 SWIFT_SRC="$SCRIPT_DIR/swift-cli/diarize"
 DIARIZE_BIN="$BIN_DIR/diarize"
