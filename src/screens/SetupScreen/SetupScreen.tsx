@@ -124,8 +124,9 @@ export default function SetupScreen() {
           {step === "ready" && (
             <>
               <p className="setup-desc">
-                whisper.cpp, pyannote.audio 등 음성 처리 엔진을 설치합니다. 처음 한 번만 실행하면
-                됩니다.
+                음성 인식·화자 구분 엔진과 모델을 내려받아 설치합니다. 처음 한 번만 하면 됩니다.
+                약 1.5GB 이상을 받으므로 네트워크에 따라 몇 분에서 더 걸릴 수 있어요. 설치 중에는
+                이 창을 닫지 말아 주세요.
               </p>
 
               <button className="btn btn-primary btn-large" onClick={handleStartInstall}>

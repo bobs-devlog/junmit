@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import clsx from "clsx";
 import { STEPS } from "@/constants";
 import { useDialog } from "@/contexts/DialogContext";
+import { useToast } from "@/contexts/ToastContext";
 import { invoke } from "@tauri-apps/api/core";
 import type { Session } from "@/types";
 import styles from "./SessionList.module.css";
@@ -13,6 +14,7 @@ interface SessionListProps {
 export default function SessionList({ onSelect }: SessionListProps) {
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const { confirm } = useDialog();
+  const toast = useToast();
 
   useEffect(() => {
     invoke?.<Session[]>("cmd_find_sessions")
@@ -24,8 +26,8 @@ export default function SessionList({ onSelect }: SessionListProps) {
   const handleDelete = async (e: React.MouseEvent, session: Session) => {
     e.stopPropagation();
     const ok = await confirm({
-      title: "세션을 삭제하시겠습니까?",
-      body: `"${session.title}" 세션의 모든 데이터(녹음, 전사, 회의록)가 삭제됩니다.`,
+      title: "이 회의를 삭제할까요?",
+      body: `"${session.title}" 회의의 모든 데이터(녹음, 전사, 회의록)가 삭제됩니다.`,
       confirmLabel: "삭제",
       danger: true,
     });
@@ -35,13 +37,14 @@ export default function SessionList({ onSelect }: SessionListProps) {
       setSessions((prev) => (prev ?? []).filter((s) => s.path !== session.path));
     } catch (err) {
       console.error("삭제 실패:", err);
+      toast.error("회의를 삭제하지 못했어요. 다시 시도해 주세요.");
     }
   };
 
   if (sessions === null) {
     return (
       <div className={styles.sessionList}>
-        <div className="ms-loading">세션 조회 중...</div>
+        <div className="ms-loading">회의 기록 불러오는 중...</div>
       </div>
     );
   }
@@ -49,7 +52,7 @@ export default function SessionList({ onSelect }: SessionListProps) {
   return (
     <div className={styles.sessionList}>
       {sessions.length === 0 ? (
-        <div className="ms-loading">회의 기록이 없습니다.</div>
+        <div className="ms-loading">아직 회의 기록이 없어요. 새 회의를 녹음하면 여기에 표시됩니다.</div>
       ) : (
         <div className={styles.slItems}>
           {sessions.map((s) => (

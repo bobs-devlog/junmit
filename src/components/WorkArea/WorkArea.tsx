@@ -10,7 +10,7 @@ import styles from "./WorkArea.module.css";
 function panelLabelFor(activity: Activity): string {
   switch (activity) {
     case Activity.Correcting:
-      return "AI가 후보정하는 중입니다";
+      return "AI가 회의 내용을 다듬는 중입니다";
     case Activity.Composing:
       return "AI가 회의록을 작성하는 중입니다";
     case Activity.Publishing:

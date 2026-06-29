@@ -131,7 +131,7 @@ export default function PublishModal({ open, sessionPath, onDismiss, onConfirm }
           <>
             지금 발행하면 새 Confluence 페이지가 생성됩니다.
             <br />
-            기존 페이지는 그대로 남고, 새 페이지 URL이 publish.json에 저장됩니다.
+            기존 페이지는 그대로 남고, 새로 만든 페이지가 이 회의의 발행 기록으로 저장됩니다.
             <br />
             계속할까요?
           </>

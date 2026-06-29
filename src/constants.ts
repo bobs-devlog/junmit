@@ -36,7 +36,7 @@ const ACTIVITY_META: Record<Activity, { label: string; tone: ActivityTone }> = {
   [Activity.Recording]: { label: "녹음 중", tone: "recording" },
   [Activity.Saving]: { label: "저장 중...", tone: "processing" },
   [Activity.Processing]: { label: "오디오 처리 중", tone: "processing" },
-  [Activity.Correcting]: { label: "AI 후보정 중", tone: "processing" },
+  [Activity.Correcting]: { label: "AI 다듬기 중", tone: "processing" },
   [Activity.Composing]: { label: "회의록 작성 중", tone: "processing" },
   [Activity.Publishing]: { label: "Confluence 등록 중", tone: "processing" },
 };
@@ -75,14 +75,14 @@ export const STEPS: ReadonlyArray<StepInfo> = [
   },
   {
     id: Step.Diarize,
-    label: "화자분리",
+    label: "화자 구분",
     description: "누가 말했는지 구분",
     icon: "🗣",
     field: "diarized",
   },
   {
     id: Step.Correct,
-    label: "AI 후보정",
+    label: "AI 다듬기",
     description: "화자 정리 + 정밀 시 전사 교정",
     icon: "✏️",
     field: "corrected",

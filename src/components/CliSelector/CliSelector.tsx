@@ -208,7 +208,8 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
             /* ── 1단계: AI 도구 선택 ── */
             <>
               <p className={styles.selectSubtitle}>
-                회의록 작성에 사용할 AI 도구를 선택하세요. 쓰시는 구독에 맞춰 하나만 고르면 됩니다.
+                Junmit은 회의를 녹음·전사하고 AI가 회의록을 작성합니다. 회의록 작성에는 Claude
+                또는 ChatGPT 구독 중 하나가 필요해요. 쓰시는 구독에 맞춰 하나만 고르세요.
               </p>
               <div className={styles.cards}>
                 {OPTIONS.map((o) => {

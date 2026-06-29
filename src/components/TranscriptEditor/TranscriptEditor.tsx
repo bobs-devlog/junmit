@@ -585,8 +585,8 @@ export default function TranscriptEditor({
     <div className={styles.transcriptEditor}>
       {isEditLocked && (
         <div className={styles.teLockBanner}>
-          AI가 {activity === Activity.Correcting ? "후보정" : "회의록을 작성"}하는 중입니다 — 완료
-          후 화자를 수정할 수 있습니다.
+          AI가 {activity === Activity.Correcting ? "회의 내용을 다듬는" : "회의록을 작성하는"} 중입니다.
+          완료 후 화자를 수정할 수 있습니다.
         </div>
       )}
       <div className={styles.teSummary}>

@@ -89,27 +89,46 @@ export default function RecordingScreen() {
         const err = e instanceof Error ? e : new Error(String(e));
         if (cancelled) return;
         if (err.name === MIC_PERMISSION_DENIED) {
-          const ok = await confirm({
+          const openSettings = await confirm({
             title: "마이크 권한이 필요합니다",
             body: (
               <>
                 Junmit가 회의를 녹음하려면 마이크 접근 권한이 필요합니다.
                 <br />
-                시스템 설정에서 권한을 허용한 뒤 앱을 재시작해주세요.
+                시스템 설정에서 허용한 뒤 다시 시도해 주세요. 앱을 재시작하지 않아도 됩니다.
               </>
             ),
             confirmLabel: "시스템 설정 열기",
             cancelLabel: "닫기",
           });
-          if (ok) {
+          if (openSettings && !cancelled) {
             try {
               await invoke<void>("cmd_open_path", { path: MIC_PRIVACY_SETTINGS_URL });
             } catch (openErr) {
-              toast.error(`설정 열기 실패: ${openErr}`);
+              console.error("설정 열기 실패", openErr);
+              toast.error(
+                "시스템 설정을 열지 못했어요. 설정 > 개인정보 보호 및 보안 > 마이크에서 직접 허용해 주세요."
+              );
+            }
+            // 권한을 허용했다면 재시작 없이 바로 재시도(마이크 권한은 실행 중 앱에 즉시 반영됨).
+            const retry = await confirm({
+              title: "권한을 허용하셨나요?",
+              body: "시스템 설정에서 마이크 접근을 허용했다면 다시 시도하세요. 그래도 안 되면 앱을 재시작해 주세요.",
+              confirmLabel: "다시 시도",
+              cancelLabel: "나중에",
+            });
+            if (retry && !cancelled) {
+              try {
+                await recorder.start();
+                return; // 재시도 성공 — 녹음 진행
+              } catch (retryErr) {
+                console.error("마이크 재시도 실패", retryErr);
+              }
             }
           }
         } else {
-          toast.error(`마이크 접근 실패: ${err.message}`);
+          console.error("마이크 접근 실패", err);
+          toast.error("마이크에 접근하지 못했어요. 다시 시도해 주세요.");
         }
         resetSession();
         navigate("/", { replace: true });

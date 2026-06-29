@@ -112,7 +112,9 @@ export default function NotesPreview({
   };
 
   const handleEditClick = () => {
-    if (!loaded) return;
+    // 다른 액션(다시 쓰기·유형 변경)과 동일하게 AI 작성 중에는 편집 진입을 막는다.
+    // 작성 중 편집하면 완료 시 화면이 새로고침되며 입력이 사라질 수 있음(소실 방지).
+    if (!loaded || isComposing) return;
     onEdit();
   };
 
@@ -129,8 +131,14 @@ export default function NotesPreview({
         <button
           className="sv-action-btn"
           onClick={handleEditClick}
-          aria-disabled={!loaded}
-          title={loaded ? "회의록 원본 편집 (SPEAKER_XX 라벨 유지 필수)" : "로딩 중..."}
+          aria-disabled={!loaded || isComposing}
+          title={
+            isComposing
+              ? "AI가 회의록을 작성하는 중입니다. 완료 후 편집할 수 있어요."
+              : loaded
+                ? "회의록 원본 편집 (SPEAKER_XX 라벨 유지 필수)"
+                : "로딩 중..."
+          }
         >
           ✏️ 편집
         </button>
