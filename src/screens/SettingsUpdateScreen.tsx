@@ -77,7 +77,7 @@ export default function SettingsUpdateScreen() {
               <span className={styles.settingsCardLabel}>✨ 새 버전 {newVersion}</span>
               <span className={styles.settingsCardDesc}>
                 {installed
-                  ? "설치 완료 — 앱을 완전히 종료한 뒤 다시 열면 새 버전이 적용됩니다."
+                  ? "설치 완료. 앱을 완전히 종료한 뒤 다시 열면 새 버전이 적용됩니다."
                   : installing
                     ? pct === null
                       ? "설치 중…"

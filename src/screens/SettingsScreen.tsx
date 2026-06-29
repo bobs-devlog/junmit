@@ -54,7 +54,7 @@ export default function SettingsScreen() {
             className="btn btn-secondary"
             onClick={() => navigate("/settings/permissions")}
           >
-            확인
+            관리
           </button>
         </section>
 
