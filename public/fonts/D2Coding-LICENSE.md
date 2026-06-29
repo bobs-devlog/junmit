@@ -1,39 +1,98 @@
-# D2 Coding 글꼴
-[![Github All Releases](https://img.shields.io/github/downloads/naver/d2codingfont/total.svg)](https://github.com/naver/d2codingfont)
-![image](https://user-images.githubusercontent.com/6773678/33363823-54504d84-d525-11e7-9b26-0d2b9aec53f9.png)
-### 다운로드
-   - [Ver 1.3.2 (2018.06.01 배포)](https://github.com/naver/d2codingfont/releases/tag/VER1.3.2)
-   - 기존 버전은 반드시 삭제후 설치 바랍니다.
-   - 이전 버전들은 [Release 링크](https://github.com/naver/d2codingfont/releases)에 있습니다.
-![image](https://user-images.githubusercontent.com/6773678/33355628-997fe52e-d4fb-11e7-9d1a-64c3b2d42de8.png)
-      - 다양한 OS 및 개발도구 지원 : window, mac, linux(ubuntu) 환경에서 다양한 개발도구에서도 사용하실 수 있습니다.
-![image](https://user-images.githubusercontent.com/6773678/33353005-fac0c8ec-d4ee-11e7-8e51-3077c1771144.png)
+Copyright (c) 2015, NAVER Corporation (https://www.navercorp.com/),
+with Reserved Font Name D2Coding.
 
-## 글꼴 소개
-D2 Coding 글꼴은 나눔바른고딕을 바탕으로 개발자의 코딩을 위해 가독성 및 유사 문자간 변별력 뿐만 아니라 디자인적으로 한글과의 조화를 고려해 최적화시킨 글꼴입니다. D2 Coding 글꼴은 코딩시 유사한 형태의 영문/숫자 뿐만 아니라 한글/특수문자 등에 대한 변별력과 가독성을 강화하였습니다.  또한 고정폭 글꼴로 제작이 되어 어떤 개발환경에서도 자간과 행간을 유지하도록 디자인되어 있습니다.
+Copyright (c) 2015, NAVER Corporation (https://www.navercorp.com/),
+with Reserved Font Name D2Coding-Bold.
 
-### 명확한  
-코딩시 영문자와 숫자 뿐만 아니라 한글 유사 기호간 변별력을 향상되도록 디자인하였습니다. 또한 8~18pt 사이의 크기에서 명확하게 보일 수 있도록 힌팅 처리를 하였습니다.
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+https://openfontlicense.org
 
-![1](https://cloud.githubusercontent.com/assets/6773678/19587983/8d1a2304-979d-11e6-8320-4e8f0546e716.JPG)
+D2Coding 글꼴 소개와 다운로드: https://github.com/naver/d2codingfont
 
-### 부드러운
-한글은 나눔바른고딕을 기반으로하여 제작하였기 때문에 서체가 부드러우면서도 영문 코드와도 자연스럽게 조화되어 보입니다.
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
 
-![2](https://cloud.githubusercontent.com/assets/6773678/19587989/9a990fae-979d-11e6-82e8-84316b4da96b.JPG)
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
 
-### 반듯한  
-고정폭 서체이므로 어떤 개발환경에서도 코드들이 가지런하게 보이며, 내부 개발자 베타 테스트를 통해 최적의 행간 및 자간을 적용함으로써 코드의 가독성을 향상하였습니다.
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded,
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply to any
+document created using the fonts or their derivatives.
 
-![3](https://cloud.githubusercontent.com/assets/6773678/19587988/9a9821f2-979d-11e6-8708-bd57220c219f.JPG)
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
 
-### 지원 언어
-한글, 영문자 및 확장자 332자에 대해 디자인이 되어 있으며 한자는 포함되어 있지 않습니다. (한자를 표시해야 할 경우 다른 글꼴로 대체됩니다.)
-제어 문자 31자가 포함되어 있습니다.
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
 
-## 라이센스  
-'누구나 사용'할 수 있고 또 OFL 라이센스 하에서 '누구나 재배포' 하실 수 있습니다.
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
 
-D2 Coding 글꼴은 OFL(Open Font License)이라는 국제적으로 인정받는 공개 글꼴을 위한 라이센스를 채택하여 사용에 대한 제약을 없앰과 동시에 재배포에 대한 제약도 획기적으로 완화하여, 이 라이센스를 명시하기만 하면 다른 프로그램(상용 프로그램 포함)에 이 개발자용 D2 Coding 글꼴을 포함하여 재배포하는 것도 허용합니다.
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
 
-자세한 사항은 아래 [OpenFontLicense](https://github.com/naver/d2codingfont/wiki/Open-Font-License)를 참고하세요~
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
