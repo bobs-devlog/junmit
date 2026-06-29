@@ -349,8 +349,14 @@ pub fn ensure_claude_config_dir(app: &tauri::AppHandle) {
             // sandbox — 앱 소유 관리 블록. 값이 다르면 통째 교체(Value PartialEq는 키 순서 무관).
             // allowWrite에 PTY cwd(resource_dir)도 포함 — cwd가 빠지면 claude가 스킬 bash를 sandboxed로
             // 구성 못 해 unsandboxed로 떨어뜨려 매번 승인 프롬프트가 뜬다(샌드박스 쓰기 범위 = cwd + allowWrite).
+            //
+            // ★ 반드시 **절대경로**로 넣는다(틸드 `~` 금지). 세션 산출물은 app_data_dir/output/...에
+            // 쓰는데(예: /meeting의 transcript_corrected.txt 생성·apply-edits), allowWrite의 `~`가
+            // 샌드박스에서 제대로 확장되지 않으면(공백 포함 "Application Support" 경로 엣지케이스, 실측)
+            // 그 쓰기가 범위 밖이 돼 unsandboxed로 떨어지고 "정적 분석 불가" 승인 프롬프트가 뜬다.
+            // 절대경로면 하위 트리(output/세션)까지 재귀 허용된다(공식 sandbox 문서). resource_dir도 절대경로.
             let mut allow_write: Vec<String> =
-                vec!["~/Library/Application Support/app.junmit".to_string()];
+                vec![app_data_dir().to_string_lossy().into_owned()];
             if let Ok(res) = resource_dir(app) {
                 allow_write.push(res.to_string_lossy().into_owned());
             }
