@@ -8,7 +8,7 @@
 녹음 → 전사 (whisper.cpp) → 화자분리 (pyannote.audio) → 회의록 (Claude Code / Codex) → Confluence
 ```
 
-<!-- 스크린샷 자리: 1) 회의 선택 화면  2) 회의록 문서 화면 (공개 전 추가) -->
+https://github.com/user-attachments/assets/bc688e98-08c8-4898-9960-5de9c422a8b9
 
 ---
 
