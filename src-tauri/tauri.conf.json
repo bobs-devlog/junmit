@@ -41,7 +41,8 @@
     ],
     "macOS": {
       "minimumSystemVersion": "14.4",
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "hardenedRuntime": false
     },
     "resources": {
       "../resources/lib": "lib",
