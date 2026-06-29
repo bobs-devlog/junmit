@@ -13,12 +13,15 @@ import { APP_DATA_DIR_SH, CLAUDE_CONFIG_DIR_SH, CODEX_HOME_SH } from "@/utils/pa
 // APP_SESSION_DIR env로 sessionDir 전달 — 슬래시 커맨드 파서가 공백 경로(예: "Application Support")를
 // quote 처리 안 해서다. 유형 관리처럼 세션 없는 경우 빈 문자열(스킬이 무시).
 // APP_SIGNAL_DIR — 이 앱 인스턴스 전용 신호 디렉토리. signal.sh가 비-tty(도구 실행)에서 신호 파일에 append.
+// APP_DIR — 작업 루트(cd 대상, lib/·bin/이 여기 있음). 스킬이 스크립트를 `$APP_DIR/lib|bin/...` 절대경로로
+//   호출하게 해 CWD 의존을 없앤다. 하네스가 "Base directory: …/skills/…"를 주입해 LLM이 cd하면 상대경로가
+//   깨지던 문제(신호 누락→UI 미갱신)를 방지. 모든 Bash 호출이 이 env를 상속.
 
 // claude/codex 공통 env + cd 프리픽스. (CLI 전용 env는 각 빌더가 exec 시점에 덧붙임)
 function envPrefix(appDir: string | null, sessionDir: string | null, signalDir: string): string {
   return (
     `export PATH="$HOME/.local/bin:$PATH" ` +
-    `APP_SESSION_DIR="${sessionDir ?? ""}" APP_SIGNAL_DIR="${signalDir}" && cd "${appDir}"`
+    `APP_DIR="${appDir ?? ""}" APP_SESSION_DIR="${sessionDir ?? ""}" APP_SIGNAL_DIR="${signalDir}" && cd "${appDir}"`
   );
 }
 

@@ -19,6 +19,8 @@ $ARGUMENTS는 사용하지 않음 — claude code 슬래시 커맨드 파서가 
 SESSION_DIR="$APP_SESSION_DIR"
 ```
 
+> **스크립트·바이너리는 `$APP_DIR`(이 세션이 시작된 작업 루트 — `lib/`·`bin/`이 여기 있음)에 있습니다.** 호출은 항상 `$APP_DIR/lib/…`·`$APP_DIR/bin/…` 절대경로로 하고 **절대 `cd` 하지 마세요.** 하네스가 "Base directory: …/skills/…"를 안내해도 스크립트는 거기 없습니다(스킬 폴더엔 문서만 있고 `lib/`·`bin/`은 없습니다). 특히 신호(`signal.sh`)는 앱 UI 전진의 **필수**라, `No such file`이 떠도 그건 경로/디렉토리 오류이지 생략 사유가 **아닙니다** — 신호를 임의로 건너뛰거나 "사용 불가"로 처리하지 마세요.
+
 이 스킬은 `$SESSION_DIR/publish.json`의 설정대로 회의록을 Confluence에 등록합니다. **`AskUserQuestion` 사용 금지** — 모든 동작은 `publish.json` 기반 결정론적 처리.
 
 **TodoWrite로 진행 상황 표시** — `confluence.mode === "create"` 분기 확인 직후 다음 3개 항목으로 todos를 초기화하고, 각 단계 진입 시 `in_progress`, 완료 시 `completed`로 마킹을 업데이트하세요. 사용자는 이 todos를 터미널 내 `⏺ Update Todos` 박스로 보며 진행 상황을 인지합니다. **공통 작성 규칙(영문 용어 금지·초기 상태·sub-agent 묶음)은 [.claude/CLAUDE.md](../../CLAUDE.md)의 "사용자 친화 출력 규칙" 참고.**
@@ -113,7 +115,7 @@ mention dict 작성은 main turn에서 처리하세요 (Atlassian MCP 인증·se
 **mention 후보 추출 + cache 일괄 조회** — sidecar 단일 호출로 처리 (LLM이 본문 직접 read X, 후보별 cache get 반복 호출도 X):
 
 ```bash
-bin/mention-cache resolve --input "$SESSION_DIR/meeting-notes.md"
+"$APP_DIR/bin/mention-cache" resolve --input "$SESSION_DIR/meeting-notes.md"
 ```
 
 출력 형식 (JSON):
@@ -144,7 +146,7 @@ bin/mention-cache resolve --input "$SESSION_DIR/meeting-notes.md"
 
 검증 통과 **첫 결과** 사용 → `accountId`, `displayName` 추출 → cache 저장:
 ```bash
-bin/mention-cache set "<firstName>" "<accountId>" "<displayName>"
+"$APP_DIR/bin/mention-cache" set "<firstName>" "<accountId>" "<displayName>"
 ```
 
 **검증 실패 또는 lookup 실패**: cache 저장 X, mention 노드 생성 X (다음 publish 시 다시 lookup). 회의록의 plain text `@<firstName>` 유지.
@@ -156,7 +158,7 @@ bin/mention-cache set "<firstName>" "<accountId>" "<displayName>"
 `misses` 처리 후 (또는 misses가 0개면 즉시), sidecar로 dict JSON 생성:
 
 ```bash
-bin/mention-cache build-dict Darin Bobs Floyd ... > "$SESSION_DIR/.publish-mentions.json"
+"$APP_DIR/bin/mention-cache" build-dict Darin Bobs Floyd ... > "$SESSION_DIR/.publish-mentions.json"
 ```
 
 - 인자: resolve 출력의 `all` 리스트를 positional args로 전달 (LLM이 JSON에서 추출해 그대로 나열)
@@ -190,7 +192,7 @@ ADF 변환·Confluence 페이지 생성을 sub-agent에 위임합니다. Agent t
 다음 작업을 순서대로 수행하고 최종 페이지 URL을 한 줄로 출력하라:
 
 1. ADF 변환 (SPEAKER → 이름 치환은 binary가 자동 처리):
-   bin/adf convert \
+   "$APP_DIR/bin/adf" convert \
      --input {SESSION_DIR}/meeting-notes.md \
      --mentions {SESSION_DIR}/.publish-mentions.json \
      --output {SESSION_DIR}/.publish-adf.json
@@ -290,7 +292,7 @@ RESULT_ERROR=$(echo "$SUB_AGENT_OUTPUT" | grep -m1 '^RESULT_ERROR=' | sed 's/^RE
 
 2. **macOS 알림**:
    ```bash
-   bash -c 'source lib/signal.sh && app_notify "회의록 등록이 완료되었습니다."'
+   bash -c 'source "$APP_DIR/lib/signal.sh" && app_notify "회의록 등록이 완료되었습니다."'
    ```
 
 3. **임시 파일 정리** — sub-agent가 만든 작업 파일 삭제 (다음 publish 시 stale 데이터 누적 방지):
@@ -302,7 +304,7 @@ RESULT_ERROR=$(echo "$SUB_AGENT_OUTPUT" | grep -m1 '^RESULT_ERROR=' | sed 's/^RE
 
 4. **완료 신호** (앱이 Activity.Idle 전환 + sidebar Primary "Confluence 열기"로 변경):
    ```bash
-   bash -c 'source lib/signal.sh && app_phase_done'
+   bash -c 'source "$APP_DIR/lib/signal.sh" && app_phase_done'
    ```
 
 5. **마무리 안내**:

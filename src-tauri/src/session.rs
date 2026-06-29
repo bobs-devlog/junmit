@@ -370,6 +370,17 @@ pub fn ensure_claude_config_dir(app: &tauri::AppHandle) {
                 s_changed = true;
             }
 
+            // auto mode 진입 고지(opt-in 다이얼로그) 억제 — 이 고지가 세션 시작 시 떠서 자동 /meeting
+            // 파이프라인을 멈추면 안 된다. claude는 userSettings의 skipAutoPermissionPrompt=true를
+            // "opt-in 다이얼로그 수락됨"으로 보고 고지를 건너뛴다(2.1.x 바이너리 실측: 게이트가
+            // `skipAutoPermissionPrompt===true || hasSeenAutoModeEntryWarning`이면 early-return).
+            // 위 defaultMode:"auto"와 **함께** 둬야 한다 — claude migration이 둘 중 하나만 있으면
+            // skipAutoPermissionPrompt를 리셋한다.
+            if obj.get("skipAutoPermissionPrompt").and_then(|v| v.as_bool()) != Some(true) {
+                obj.insert("skipAutoPermissionPrompt".to_string(), serde_json::json!(true));
+                s_changed = true;
+            }
+
             // permissions.allow — 관리 항목 union(사용자/claude가 /permissions로 추가한 항목 보존).
             let want_allow = [
                 "Read(~/Library/Application Support/app.junmit/**)",
@@ -383,6 +394,15 @@ pub fn ensure_claude_config_dir(app: &tauri::AppHandle) {
                 .or_insert_with(|| serde_json::json!({}))
                 .as_object_mut()
             {
+                // auto mode — 변수확장 든 bash처럼 정적 분석 불가라 sandbox 자동허용이 못 잡는
+                // 명령을 분류기 모델이 의도 기준으로 판단해 프롬프트 없이 실행한다(위험 행동은 여전히
+                // 차단). 스킬 bash마다 wrapper로 확장을 숨기는 대신 모드로 일괄 해결. `defaultMode:"auto"`
+                // 는 **user settings에서만** 인정되는데 이 config dir(CLAUDE_CONFIG_DIR)이 user settings
+                // 자리라 적용된다. sandbox 설정은 그대로 둬 실행 격리(defense-in-depth)는 유지. claude 2.1.83+.
+                if perms.get("defaultMode").and_then(|v| v.as_str()) != Some("auto") {
+                    perms.insert("defaultMode".to_string(), serde_json::json!("auto"));
+                    s_changed = true;
+                }
                 if let Some(arr) = perms
                     .entry("allow")
                     .or_insert_with(|| serde_json::json!([]))
@@ -447,6 +467,35 @@ pub fn ensure_claude_config_dir(app: &tauri::AppHandle) {
     // claude 기본값 사용).
     if root.get("hasCompletedOnboarding").and_then(|v| v.as_bool()) != Some(true) {
         root.insert("hasCompletedOnboarding".to_string(), serde_json::json!(true));
+        changed = true;
+    }
+
+    // "Claude in Chrome extension detected · use my browser?" 프롬프트 차단. Chrome/Edge 확장이
+    // 설치된 머신에선 세션 시작 시 이 프롬프트가 매번 뜬다("No"를 골라도 onboarding 마커를 안 남겨
+    // 반복). claude 2.1.x 바이너리 실측: 표시 게이트가 `!hasCompletedClaudeInChromeOnboarding`라,
+    // 이를 true로 베이크하면 프롬프트 자체가 안 뜬다. 앱 세션은 브라우저 도구를 쓰지 않으므로
+    // claudeInChromeDefaultEnabled=false로 도구는 off 유지. 둘 다 전역 키. 사용자의 일반 Claude
+    // Code(다른 CONFIG_DIR)에는 영향 없음.
+    if root
+        .get("hasCompletedClaudeInChromeOnboarding")
+        .and_then(|v| v.as_bool())
+        != Some(true)
+    {
+        root.insert(
+            "hasCompletedClaudeInChromeOnboarding".to_string(),
+            serde_json::json!(true),
+        );
+        changed = true;
+    }
+    if root
+        .get("claudeInChromeDefaultEnabled")
+        .and_then(|v| v.as_bool())
+        != Some(false)
+    {
+        root.insert(
+            "claudeInChromeDefaultEnabled".to_string(),
+            serde_json::json!(false),
+        );
         changed = true;
     }
 

@@ -15,6 +15,8 @@ $ARGUMENTS는 사용하지 않음 — 산문 placeholder도 일관성을 위해 
 SESSION_DIR="$APP_SESSION_DIR"
 ```
 
+> **스크립트는 `$APP_DIR`(이 세션이 시작된 작업 루트)에 있습니다.** `signal.sh` 호출은 `$APP_DIR/lib/signal.sh` 절대경로로 하고 **절대 `cd` 하지 마세요.** `app_refresh`는 앱 회의록 탭 갱신의 신호라, `No such file`이 떠도 경로 오류이지 생략 사유가 아닙니다.
+
 사용자가 사이드바 "AI에게 추가 요청" 또는 panel 빈 상태 버튼을 눌러 진입한 자유 대화 스킬.
 `meeting`·`publish` 스킬과 달리 **`AskUserQuestion` 사용 허용**.
 
@@ -115,7 +117,7 @@ cp "$SESSION_DIR/meeting-notes.md" "$SESSION_DIR/meeting-notes.bak.$(date +%Y%m%
 작업 완료 후:
 
 ```bash
-app_refresh
+bash -c 'source "$APP_DIR/lib/signal.sh" && app_refresh'
 ```
 
 → 앱의 SessionViewer 자동 reload.
