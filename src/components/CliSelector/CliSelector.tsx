@@ -337,6 +337,9 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
                     className={clsx("btn btn-primary", busy && styles.btnDisabled)}
                     aria-disabled={busy}
                     onClick={() => proceed(setupOpt.id)}
+                    // 준비 완료로 전환되며 새로 마운트될 때 포커스를 받아, 자동 내비게이션의
+                    // 위험(flaky 감지에 끌려감) 없이 Enter 한 번으로 진행 가능하게 한다.
+                    autoFocus
                   >
                     {setupOpt.name}로 시작
                   </button>
