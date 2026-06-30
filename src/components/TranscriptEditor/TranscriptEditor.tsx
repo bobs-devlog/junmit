@@ -123,7 +123,7 @@ function SpeakerLabel({
       <span
         className={clsx(styles.teSpeaker, styles.teSpeakerUnknown)}
         style={{ color, borderColor: color }}
-        title="LLM이 판단 유보한 구간 — 줄을 체크해 화자 지정"
+        title="AI가 판단 유보한 구간 — 줄을 체크해 화자 지정"
       >
         UNKNOWN
       </span>

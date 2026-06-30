@@ -20,13 +20,13 @@ export default function SpeakerEditMarker({ edit }: SpeakerEditMarkerProps) {
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      <span className={styles.editButton} aria-label="LLM 화자 교정">
+      <span className={styles.editButton} aria-label="AI 화자 교정">
         ⓘ
       </span>
       {hover && (
         <span className={styles.editPopover} role="tooltip">
           <span className={styles.editHeader}>
-            <span className={styles.editTitle}>LLM 교정</span>
+            <span className={styles.editTitle}>AI 교정</span>
             <span className={styles.editLabels}>
               <span className={styles.editLabelFrom}>{edit.original_label}</span>
               <span className={styles.editLabelArrow}>→</span>
