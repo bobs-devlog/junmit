@@ -207,15 +207,36 @@ pub fn ensure_codex_home(app: &tauri::AppHandle) {
     }
 
     // PTY cwd(resources) trust 베이크 — 격리 home은 projects 기록이 없어 첫 인터랙티브 실행 시
-    // 폴더-신뢰 프롬프트("Do you trust...")가 뜬다. 동봉 디렉토리라 신뢰가 자명하므로 미리 박아
-    // 프롬프트 자체를 없앤다. 앱 이동으로 경로가 바뀌면 아래 멱등 체크가 실패해 rewrite로 갱신.
-    let trust = match resource_dir(app) {
-        Ok(p) => format!("\n[projects.\"{}\"]\ntrust_level = \"trusted\"\n", p.display()),
-        Err(e) => {
-            eprintln!("resource_dir 확인 실패(트러스트 베이크 생략): {e}");
-            String::new()
+    // 폴더-신뢰 프롬프트("Do you trust...")가 뜬다. 동봉 디렉토리(앱 자신의 Resources)라 신뢰가
+    // 자명하므로 미리 박아 프롬프트를 없앤다(claude hasTrustDialogAccepted 베이크와 패리티).
+    //
+    // ★ union 보존 — dev·release 앱이 같은 CODEX_HOME을 공유하면 cwd가 달라(<ws>/resources vs
+    // /Applications/Junmit.app/Contents/Resources) 단일 항목을 서로 덮어써 한쪽이 매번 신뢰
+    // 프롬프트를 본다. 기존 [projects."..."] 경로를 모두 모아 현재 cwd와 합집합으로 다시 쓴다.
+    let config_path = home.join("config.toml");
+    let existing = fs::read_to_string(&config_path).unwrap_or_default();
+    let cur_path = resource_dir(app)
+        .map_err(|e| eprintln!("resource_dir 확인 실패(트러스트 베이크 생략): {e}"))
+        .ok()
+        .map(|p| p.display().to_string());
+    let mut trusted: Vec<String> = existing
+        .lines()
+        .filter_map(|l| {
+            l.trim()
+                .strip_prefix("[projects.\"")
+                .and_then(|s| s.strip_suffix("\"]"))
+                .map(str::to_string)
+        })
+        .collect();
+    if let Some(ref p) = cur_path {
+        if !trusted.contains(p) {
+            trusted.push(p.clone());
         }
-    };
+    }
+    let trust: String = trusted
+        .iter()
+        .map(|p| format!("\n[projects.\"{p}\"]\ntrust_level = \"trusted\"\n"))
+        .collect();
 
     // junmit 소유 config.toml — 필요한 것만 명시, 나머지는 codex 기본값.
     // - cli_auth_credentials_store="file": ChatGPT 자격을 이 home의 auth.json에 격리.
@@ -230,7 +251,6 @@ pub fn ensure_codex_home(app: &tauri::AppHandle) {
     // 모두 현존하고 atlassian 선언 상태가 플래그와 일치하면 rewrite를 생략해 그 상태를 보존한다.
     // 관리 내용이 바뀐 경우(플래그 토글·MCP 엔드포인트 변경·앱 이동)에만 전체 rewrite.
     let want_atlassian = atlassian_enabled();
-    let config_path = home.join("config.toml");
     let mut managed_keys = vec![
         "cli_auth_credentials_store = \"file\"".to_string(),
         "[agents]".to_string(),
@@ -241,13 +261,19 @@ pub fn ensure_codex_home(app: &tauri::AppHandle) {
         managed_keys.push("[mcp_servers.atlassian]".to_string());
         managed_keys.push(format!("url = \"{ATLASSIAN_MCP_URL}\""));
     }
-    if let Ok(existing) = fs::read_to_string(&config_path) {
-        let trust_ok = trust.is_empty() || existing.contains(trust.trim());
-        // 선언 상태가 플래그와 일치해야 한다 — 켜졌는데 없으면 추가, 꺼졌는데 있으면 제거(둘 다 rewrite).
-        let atlassian_ok = existing.contains("[mcp_servers.atlassian]") == want_atlassian;
-        if trust_ok && atlassian_ok && managed_keys.iter().all(|k| existing.contains(k)) {
-            return;
-        }
+    // 멱등 — 현재 cwd 신뢰가 이미 있고(또는 resource_dir 못 구함) 관리키·atlassian 선언이 일치하면
+    // rewrite 생략(codex가 같은 파일에 쓰는 자체 상태 보존). 현재 cwd가 빠진 clobber 상황이면
+    // 위 union으로 두 경로를 모두 담아 다시 쓴다.
+    let trust_ok = cur_path
+        .as_ref()
+        .is_none_or(|p| existing.contains(&format!("[projects.\"{p}\"]")));
+    let atlassian_ok = existing.contains("[mcp_servers.atlassian]") == want_atlassian;
+    if !existing.is_empty()
+        && trust_ok
+        && atlassian_ok
+        && managed_keys.iter().all(|k| existing.contains(k))
+    {
+        return;
     }
 
     let atlassian_block = if want_atlassian {
