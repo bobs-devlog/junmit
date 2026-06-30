@@ -1966,21 +1966,24 @@ pub fn check_dependencies(app: &tauri::AppHandle) -> DepsStatus {
 /// 셸 시작 출력 오염 제거). 버전매니저 경로를 열거하지 않고 로그인 셸이 올린 PATH를 신뢰하되,
 /// nvm default 한 개만 안전망으로 덧붙인다(셸 설정이 nvm을 PATH에 못 올린 경우 codex 등 누락 방지).
 pub fn get_user_shell_path() -> String {
-    static CACHED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    CACHED
-        .get_or_init(|| {
-            let mut path = capture_shell_path().unwrap_or_else(fallback_shell_path);
-            // 알려진 설치 위치를 안전망으로 보강(캡처에 없을 때만 뒤에 덧붙여 기존 우선순위 보존):
-            // curl/native 인스톨러 → ~/.local/bin, npm node CLI → nvm default bin.
-            // 버전매니저 전체 열거 같은 추측성 하드코딩은 하지 않는다.
-            let home = PathBuf::from(std::env::var("HOME").unwrap_or_default());
-            ensure_dir_in_path(&mut path, home.join(".local/bin"));
-            if let Some(bin) = nvm_default_bin() {
-                ensure_dir_in_path(&mut path, bin);
-            }
-            path
-        })
-        .clone()
+    // 로그인 셸 캡처만 캐시한다(셸을 1회 기동하므로 비쌈). rc 파일은 프로세스 수명 중
+    // 바뀌지 않으므로 이 부분은 캐시가 안전하다.
+    static CAPTURED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    let mut path = CAPTURED
+        .get_or_init(|| capture_shell_path().unwrap_or_else(fallback_shell_path))
+        .clone();
+    // 알려진 설치 위치 안전망은 매 호출 재평가한다(캡처에 없을 때만 뒤에 덧붙여 기존 우선순위 보존):
+    // curl/native 인스톨러 → ~/.local/bin, npm node CLI → nvm default bin.
+    // 이 디렉토리들은 런타임에 생길 수 있어(예: 온보딩 중 claude 설치) 캐시하면 안 된다 —
+    // 캐시하면 설치 직후 같은 프로세스의 감지가 앱 재시작 전까지 실패한다. 둘 다 디렉토리
+    // stat·작은 파일 1회 read라 저렴하므로 매번 현재 존재 여부를 본다. 버전매니저 전체
+    // 열거 같은 추측성 하드코딩은 하지 않는다.
+    let home = PathBuf::from(std::env::var("HOME").unwrap_or_default());
+    ensure_dir_in_path(&mut path, home.join(".local/bin"));
+    if let Some(bin) = nvm_default_bin() {
+        ensure_dir_in_path(&mut path, bin);
+    }
+    path
 }
 
 /// 존재하는 디렉토리를 PATH에 아직 없을 때만 뒤에 덧붙인다(우선순위 보존).
