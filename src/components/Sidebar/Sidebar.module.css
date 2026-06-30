@@ -27,20 +27,22 @@
   color: var(--text-secondary);
 }
 
-/* 업데이트 가능 pill — 로고 영역, 업데이트가 있을 때만 노출. 클릭 시 설정>앱 업데이트로.
-   notification-badge와 같은 accent 톤이되 로고 밑에 들어갈 작은 알약 형태. */
+/* 업데이트 가능 — 로고 영역, 업데이트가 있을 때만 노출. 클릭 시 설정>앱 업데이트로.
+   아래 내비 카드(.btn btn-secondary)와 폭·radius는 맞춰 정렬하되(언발란스 방지), 높이·글자는
+   한 단계 작게 둬 "메뉴가 아니라 알림"이라는 위계를 준다. accent 톤으로 "업데이트 있음" 구분. */
 .updatePill {
   margin-top: 12px;
-  align-self: flex-start;
-  display: inline-flex;
+  align-self: stretch;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 5px 11px;
-  border-radius: 999px;
+  padding: 8px 14px;
+  border-radius: 8px;
   background: rgba(76, 201, 240, 0.12);
   border: 1px solid rgba(76, 201, 240, 0.3);
   color: var(--accent);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
 }
