@@ -12,6 +12,7 @@ import { useDialog } from "@/contexts/DialogContext";
 import useNavigationBlocker from "@/hooks/useNavigationBlocker";
 import useRecordingNotes from "@/hooks/useRecordingNotes";
 import useRecordingReminder from "@/hooks/useRecordingReminder";
+import useRecordingAutoStop from "@/hooks/useRecordingAutoStop";
 import useRecordingTray from "@/hooks/useRecordingTray";
 import { DEFAULT_DURATION_MIN, Activity, MIC_PRIVACY_SETTINGS_URL } from "@/constants";
 import { saveRecording } from "@/utils/saveRecording";
@@ -203,6 +204,15 @@ export default function RecordingScreen() {
     isRecording: recorder.isRecording,
     elapsed: recorder.elapsed,
     durationMin,
+    isCalendar: meeting?.source === "calendar",
+    onStop: handleStop,
+  });
+
+  // 자동 종료 안전망 — 무음·상한·시스템 슬립 시 저장 후 종료("종료 깜빡 후 퇴근" 방어).
+  useRecordingAutoStop({
+    activity,
+    isRecording: recorder.isRecording,
+    level: recorder.level,
     isCalendar: meeting?.source === "calendar",
     onStop: handleStop,
   });

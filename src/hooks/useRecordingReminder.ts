@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Activity, REMINDER_SNOOZE_MIN } from "@/constants";
-import { initReminderWindow, showReminderWindow, hideReminderWindow } from "@/utils/reminderWindow";
+import {
+  initReminderWindow,
+  showReminderWindow,
+  hideReminderWindow,
+  type ReminderAction,
+} from "@/utils/reminderWindow";
 
 // 사용자가 "다시 알림"을 누른 시점부터 재트리거까지 간격(초). 상수라 effect deps에 넣지 않는다.
 const SNOOZE_INTERVAL_SEC = REMINDER_SNOOZE_MIN * 60;
@@ -67,6 +72,8 @@ export default function useRecordingReminder(
         elapsedSec: elapsed,
         overSec: Math.max(0, elapsed - durationMin * 60),
         isCalendar,
+        kind: "duration",
+        snoozeMin: REMINDER_SNOOZE_MIN,
       });
     }
   }, [activity, isRecording, elapsed, nextTriggerSec, durationMin, isCalendar]);
@@ -78,12 +85,14 @@ export default function useRecordingReminder(
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | null = null;
-    listen<string>("reminder:action", (event) => {
+    listen<ReminderAction>("reminder:action", (event) => {
       if (cancelled) return;
+      const { action, kind } = event.payload;
+      // snooze는 duration만 여기서 처리(cap·silence는 useRecordingAutoStop). hide·stop은 종류 무관.
       void hideReminderWindow();
-      if (event.payload === "stop") {
+      if (action === "stop") {
         onStopRef.current();
-      } else if (event.payload === "snooze") {
+      } else if (action === "snooze" && kind === "duration") {
         setNextTriggerSec(elapsedRef.current + SNOOZE_INTERVAL_SEC);
       }
     })

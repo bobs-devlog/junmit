@@ -118,6 +118,15 @@ export const DEFAULT_DURATION_MIN = 60; // duration 지정 없을 때 기본값
 // snooze(다시 알림) 누르면 아래 간격만큼 뒤에 다시 표시. 사용자가 "지금 종료"를 누를 때까지 반복.
 export const REMINDER_SNOOZE_MIN = 10; // 모든 회의 공통 snooze 간격
 
+// 자동 종료 안전망(useRecordingAutoStop) — 리마인더는 알림만 하므로, 이 값들로 실제 저장 후 종료한다.
+// 무음·상한은 종료 전 경고를 띄운다(사용자가 "계속 녹음"으로 살릴 수 있게). 슬립은 PowerManagement(네이티브)가 처리.
+export const AUTO_STOP_SILENCE_MIN = 20; // 무음 지속 이 시간(분) → 저장 후 종료
+export const AUTO_STOP_SILENCE_LEVEL = 0.05; // 레벨(0~1, -45dB 이하는 0으로 게이팅) 이 값 이하면 무음
+export const AUTO_STOP_SILENCE_WARN_LEAD_MIN = 3; // 무음 종료 몇 분 전 경고
+export const MAX_RECORDING_MIN = 180; // 절대 상한(분)
+export const MAX_RECORDING_WARN_LEAD_MIN = 3; // 상한 도달 몇 분 전 경고
+export const MAX_RECORDING_SNOOZE_MIN = 30; // 상한 경고 "다시 알림" 시 연장(분)
+
 // macOS 시스템 설정의 마이크 개인정보 페이지 — 권한 거부/제한 시 "시스템 설정 열기"가 가리키는 URL.
 // MeetingSelector·RecordingScreen이 공유(한쪽만 고치면 어긋나는 매직스트링 제거).
 export const MIC_PRIVACY_SETTINGS_URL =

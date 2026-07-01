@@ -5,7 +5,7 @@
 //
 // 통신:
 //  - 메인 → reminder: "reminder:data" 이벤트로 payload 전달
-//  - reminder → 메인: "reminder:action" 이벤트로 "stop" | "snooze" 통보
+//  - reminder → 메인: "reminder:action" 이벤트로 { action: "stop"|"snooze", kind: "duration"|"cap" } 통보
 //
 // 라이프사이클:
 //  - initReminderWindow(): 회의 시작 시 1회 (visible:false로 백그라운드 webview 준비)
@@ -25,6 +25,16 @@ export interface ReminderPayload {
   elapsedSec: number;
   overSec: number;
   isCalendar: boolean;
+  // "duration"(기본) = 예정 종료 시각 리마인더(알림만). "cap" = 절대 상한 경고. "silence" = 무음 지속 경고.
+  // cap·silence는 무반응 시 자동 종료. 창은 kind로 문구·버튼 라벨을 분기하고, snoozeMin으로 버튼 텍스트를 맞춘다.
+  kind?: "duration" | "cap" | "silence";
+  snoozeMin?: number;
+}
+
+// reminder 창의 사용자 액션 — 메인의 리스너들이 kind로 자기 종류만 처리하도록 함께 실어 보낸다.
+export interface ReminderAction {
+  action: "stop" | "snooze";
+  kind: "duration" | "cap" | "silence";
 }
 
 // 윈도우 인스턴스 캐시. 동시 다중 init 호출 방어 + 이미 만들어진 경우 재사용.

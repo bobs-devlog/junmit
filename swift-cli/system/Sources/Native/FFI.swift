@@ -75,6 +75,26 @@ public func native_system_audio_level() -> Float {
     return systemAudioLevel()
 }
 
+// 녹음 중 전원 관리 — App Nap/유휴 슬립 방지 + 슬립 감지(PowerManagement).
+
+// 녹음 시작 시 호출 — App Nap·유휴 슬립을 막고 willSleep 관찰을 시작한다.
+@_cdecl("native_begin_recording_activity")
+public func native_begin_recording_activity() {
+    PowerManagement.shared.begin()
+}
+
+// 녹음 종료 시 호출 — 활동·관찰을 해제한다.
+@_cdecl("native_end_recording_activity")
+public func native_end_recording_activity() {
+    PowerManagement.shared.end()
+}
+
+// 앱 시작 시 1회 호출 — 시스템 willSleep 시 호출될 콜백을 등록한다(Rust가 Tauri 이벤트로 중계).
+@_cdecl("native_set_sleep_callback")
+public func native_set_sleep_callback(_ cb: @convention(c) @escaping () -> Void) {
+    PowerManagement.shared.setSleepCallback(cb)
+}
+
 @_cdecl("native_free_string")
 public func native_free_string(_ ptr: UnsafeMutablePointer<CChar>?) {
     if let ptr = ptr { free(ptr) }

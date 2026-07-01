@@ -25,6 +25,15 @@ extern "C" {
     fn native_start_system_audio_capture(path: *const c_char) -> i32;
     fn native_stop_system_audio_capture() -> i32;
     fn native_system_audio_level() -> f32;
+    // 녹음 중 전원 관리 — App Nap/유휴 슬립 방지 + willSleep 감지.
+    fn native_begin_recording_activity();
+    fn native_end_recording_activity();
+    fn native_set_sleep_callback(cb: extern "C" fn());
+}
+
+/// 앱 시작 시 1회 — 시스템 willSleep 시 호출될 C 콜백을 네이티브에 등록.
+pub fn set_sleep_callback(cb: extern "C" fn()) {
+    unsafe { native_set_sleep_callback(cb) }
 }
 
 /// FFI가 반환한 C 문자열을 Rust로 가져오면서 즉시 해제.
@@ -1140,11 +1149,17 @@ pub fn start_mic_capture() -> i32 {
         Ok(c) => c,
         Err(_) => return -4,
     };
-    unsafe { native_start_mic_capture(path.as_ptr()) }
+    let code = unsafe { native_start_mic_capture(path.as_ptr()) };
+    // 마이크 캡처는 모든 녹음의 공통 진입점 — 성공 시에만 전원 관리(App Nap·유휴 슬립 방지) 활동을 건다.
+    if code == 0 {
+        unsafe { native_begin_recording_activity() }
+    }
+    code
 }
 
 /// 마이크 캡처 정지. 반환: 0=ok, 음수=미실행 등.
 pub fn stop_mic_capture() -> i32 {
+    unsafe { native_end_recording_activity() } // 멱등 — begin 안 걸렸어도 안전
     unsafe { native_stop_mic_capture() }
 }
 

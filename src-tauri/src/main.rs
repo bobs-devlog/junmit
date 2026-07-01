@@ -15,6 +15,18 @@ type ChildHandle = Arc<Mutex<Option<Child>>>;
 struct PipelineChild(ChildHandle);
 struct InstallChild(ChildHandle);
 
+/// willSleep 콜백(C 함수라 캡처 불가)이 이벤트를 emit할 수 있도록 AppHandle을 전역 보관. setup에서 1회 채움.
+static SLEEP_APP_HANDLE: Mutex<Option<tauri::AppHandle>> = Mutex::new(None);
+
+/// 네이티브 willSleep 콜백 — 녹음 중 슬립(주로 뚜껑 닫기)을 프론트에 중계해 저장 후 종료시킨다.
+extern "C" fn on_native_sleep() {
+    if let Ok(guard) = SLEEP_APP_HANDLE.lock() {
+        if let Some(handle) = guard.as_ref() {
+            let _ = handle.emit("app:sleep_detected", ());
+        }
+    }
+}
+
 /// 녹음 상태 + 창 닫기 시도 횟수.
 /// 녹음이 진행 중이 아닐 때는 prevent_close를 호출하지 않아 빈 화면/에러 상태에서도
 /// OS 기본 닫기 동작이 그대로 작동한다. 녹음이 진행 중일 때 두 번째 X 클릭은
@@ -931,6 +943,12 @@ fn main() {
             if let Err(e) = session::seed_user_vocabulary(app.handle()) {
                 eprintln!("vocabulary 시드 실패: {e}");
             }
+
+            // 슬립 감지 콜백 등록(핸들 보관 후) — 녹음 중 슬립 시 네이티브가 on_native_sleep 호출.
+            if let Ok(mut guard) = SLEEP_APP_HANDLE.lock() {
+                *guard = Some(app.handle().clone());
+            }
+            session::set_sleep_callback(on_native_sleep);
 
             // 신호 파일 감시 스레드 (Claude Code Bash에서 보낸 신호를 수신).
             // signal.sh가 append(`>>`)로 라인 단위 기록 → thread가 라인별로 emit.
