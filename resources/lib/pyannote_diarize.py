@@ -20,7 +20,7 @@ import time
 os.environ["HF_HUB_OFFLINE"] = "1"
 
 import torch
-import torchaudio
+import soundfile as sf
 from pyannote.audio import Pipeline
 
 
@@ -78,7 +78,10 @@ if hasattr(pipeline, "_embedding") and hasattr(pipeline._embedding, "batch_size"
     pipeline._embedding.batch_size = 32
 
 print("pyannote.audio: 오디오 로딩 중...", file=sys.stderr)
-waveform, sample_rate = torchaudio.load(audio_path)
+# torchaudio.load는 2.11부터 torchcodec에 위임 → FFmpeg 공유 라이브러리를 런타임 dlopen하는데
+# 앱 동봉 ffmpeg는 static이라 못 채운다. soundfile은 libsndfile 내장이라 표준 WAV를 의존성 없이 읽는다.
+data, sample_rate = sf.read(audio_path, dtype="float32", always_2d=True)  # (frames, channels)
+waveform = torch.from_numpy(data.T).contiguous()                          # (channels, frames)
 audio_input = {"waveform": waveform, "sample_rate": sample_rate}
 
 # 화자 수 힌트: max_speakers를 상한으로 전달.
@@ -149,7 +152,8 @@ try:
             continue
         vecs = []
         for _dur, st, e in long_segs:
-            emb = emb_inference.crop(audio_path, Segment(st, e))
+            # 경로가 아니라 로드된 waveform dict를 넘긴다 — 경로면 pyannote가 재디코딩하며 torchcodec를 탄다.
+            emb = emb_inference.crop(audio_input, Segment(st, e))
             vecs.append(np.asarray(emb).reshape(-1))
         mean = np.mean(vecs, axis=0)
         speaker_vecs[spk] = mean / (np.linalg.norm(mean) + 1e-9)

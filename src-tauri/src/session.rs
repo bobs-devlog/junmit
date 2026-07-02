@@ -1945,6 +1945,20 @@ pub struct DepsStatus {
     pub app_dir: Option<String>,
 }
 
+/// venv에 soundfile(화자분리 오디오 로더)이 있는지 확인. python 마이너 버전에 하드코딩하지 않으려고
+/// `lib/python3.*/site-packages/soundfile.py`를 스캔한다(soundfile은 단일 모듈로 설치됨).
+fn venv_has_soundfile() -> bool {
+    let lib = venv_dir().join("lib");
+    std::fs::read_dir(&lib)
+        .ok()
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .any(|e| e.path().join("site-packages/soundfile.py").exists())
+        })
+        .unwrap_or(false)
+}
+
 /// 의존성 설치 상태 확인 — 핵심 자산이 모두 있는지 검증.
 /// 번들된 리소스(bin/*, models/pyannote)는 항상 존재해야 정상; venv만 사용자 setup 대상.
 pub fn check_dependencies(app: &tauri::AppHandle) -> DepsStatus {
@@ -1965,7 +1979,13 @@ pub fn check_dependencies(app: &tauri::AppHandle) -> DepsStatus {
     }
     // venv + Whisper 모델은 사용자 데이터 영역(Application Support).
     // install.sh가 도중 중단되어도 다음 실행 시 SetupScreen이 다시 노출되도록 둘 다 검증.
-    if !venv_dir().join("bin/python3").exists() { missing.push("pyannote.audio".into()); }
+    if !venv_dir().join("bin/python3").exists() {
+        missing.push("pyannote.audio".into());
+    } else if !venv_has_soundfile() {
+        // soundfile 없이 pyannote만 있는 구버전 venv → 재설치 유도(SetupScreen→install.sh 재구성).
+        // import 검사는 pyannote가 torch를 끌어와 매 기동 느려서 파일 stat으로 대체.
+        missing.push("pyannote.audio".into());
+    }
     if !models_dir().join("ggml-large-v3-turbo.bin").exists() { missing.push("whisper model".into()); }
 
     let app_dir = resource.map(|p| p.to_string_lossy().into_owned());

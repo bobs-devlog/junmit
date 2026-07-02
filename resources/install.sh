@@ -70,7 +70,7 @@ fi
 # === Python venv + pyannote.audio (화자 분리 엔진) ===
 # 무거운 Whisper 모델 다운로드 전에 먼저 검증 — SSL/네트워크 문제를 fail-fast로 노출.
 info "Python 환경 확인 중..."
-if [[ -d "$VENV_DIR" ]] && "$VENV_DIR/bin/python3" -c "import pyannote.audio" 2>/dev/null; then
+if [[ -d "$VENV_DIR" ]] && "$VENV_DIR/bin/python3" -c "import pyannote.audio, soundfile" 2>/dev/null; then
   ok "pyannote.audio 이미 설치됨"
 else
   info "Python 3.12 인터프리터 다운로드 중 (uv)..."
@@ -87,6 +87,7 @@ else
   "$UV" pip install --python "$VENV_DIR/bin/python3" \
     "torch~=2.11.0" \
     "torchaudio~=2.11.0" \
+    "soundfile~=0.13.0" \
     "pyannote.audio~=4.0.4" \
     "huggingface_hub~=1.12.0"
   ok "PyTorch + pyannote.audio 설치 완료"
