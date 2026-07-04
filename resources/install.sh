@@ -102,18 +102,23 @@ else:
 fi
 
 # === Whisper 모델 다운로드 (Python 환경 검증 후 무거운 다운로드 시작) ===
-WHISPER_MODEL="$MODELS_DIR/ggml-large-v3-turbo.bin"
-WHISPER_MODEL_TMP="$MODELS_DIR/ggml-large-v3-turbo.bin.tmp"
+# q8_0 양자화 모델을 쓴다: FP16(1.5GB)과 전사 품질은 동급이나 용량이 절반 근처(874MB)다(실측 —
+# 한국어 본문·영어 고유명사 모두 FP16과 구분 불가, q5_0은 영어 이름 열화로 기각, large-v3는
+# 3배 느리고 이점 없어 기각). Metal에서 turbo는 이미 빨라 양자화의 속도 이득은 없고 이득은 용량뿐.
+WHISPER_MODEL="$MODELS_DIR/ggml-large-v3-turbo-q8_0.bin"
+WHISPER_MODEL_TMP="$MODELS_DIR/ggml-large-v3-turbo-q8_0.bin.tmp"
+# 구 FP16 모델(1.5GB) 정리 — q8_0로 전환하며 남은 파일이 디스크만 차지하지 않게 제거(1회성).
+rm -f "$MODELS_DIR/ggml-large-v3-turbo.bin"
 if [[ -f "$WHISPER_MODEL" ]]; then
   ok "Whisper large-v3-turbo 모델 이미 다운로드됨"
 else
   # 이전에 중단된 임시 파일이 있으면 삭제
   rm -f "$WHISPER_MODEL_TMP"
-  info "Whisper large-v3-turbo 모델 다운로드 중 (~1.5GB)..."
+  info "Whisper large-v3-turbo 모델 다운로드 중 (약 870MB)..."
   # -f: HTTP 에러(404·프록시 등) 시 실패 처리 — 에러 페이지가 모델 파일로 저장되는 것 방지.
   # --retry: 일시적 네트워크 끊김 자동 재시도.
   curl -fL --retry 3 --retry-delay 2 --progress-bar \
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin" \
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q8_0.bin" \
     -o "$WHISPER_MODEL_TMP"
   # 다운로드 완료 후에만 최종 파일로 이동
   mv "$WHISPER_MODEL_TMP" "$WHISPER_MODEL"

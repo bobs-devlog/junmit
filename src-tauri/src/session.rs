@@ -1966,7 +1966,7 @@ pub fn check_dependencies(app: &tauri::AppHandle) -> DepsStatus {
     // venv + Whisper 모델은 사용자 데이터 영역(Application Support).
     // install.sh가 도중 중단되어도 다음 실행 시 SetupScreen이 다시 노출되도록 둘 다 검증.
     if !venv_dir().join("bin/python3").exists() { missing.push("pyannote.audio".into()); }
-    if !models_dir().join("ggml-large-v3-turbo.bin").exists() { missing.push("whisper model".into()); }
+    if !models_dir().join("ggml-large-v3-turbo-q8_0.bin").exists() { missing.push("whisper model".into()); }
 
     let app_dir = resource.map(|p| p.to_string_lossy().into_owned());
     DepsStatus {

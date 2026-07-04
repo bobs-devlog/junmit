@@ -6,7 +6,7 @@ do_transcribe() {
   local wav_file="$session_dir/recording.wav"
   local ffmpeg="$SCRIPT_DIR/bin/ffmpeg"  # 앱 동봉 (PATH 의존 제거)
   local whisper_cli="$SCRIPT_DIR/bin/whisper-cli"
-  local whisper_model="$MODELS_DIR/ggml-large-v3-turbo.bin"
+  local whisper_model="$MODELS_DIR/ggml-large-v3-turbo-q8_0.bin"
   local json_file="$session_dir/recording_whisper.json"
 
   if [[ ! -f "$wav_file" ]]; then
