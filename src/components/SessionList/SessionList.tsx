@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import clsx from "clsx";
-import { STEPS } from "@/constants";
+import { stepsForCli } from "@/constants";
 import { useDialog } from "@/contexts/DialogContext";
+import { useSession } from "@/contexts/SessionContext";
 import { useToast } from "@/contexts/ToastContext";
 import { invoke } from "@tauri-apps/api/core";
 import type { Session } from "@/types";
@@ -15,6 +16,8 @@ export default function SessionList({ onSelect }: SessionListProps) {
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const { confirm } = useDialog();
   const toast = useToast();
+  // 활성 백엔드에 따라 카드 단계 표시 필터 — mlx는 AI 다듬기·Confluence 등록 단계가 없다.
+  const { cli } = useSession();
 
   useEffect(() => {
     invoke?.<Session[]>("cmd_find_sessions")
@@ -52,7 +55,9 @@ export default function SessionList({ onSelect }: SessionListProps) {
   return (
     <div className={styles.sessionList}>
       {sessions.length === 0 ? (
-        <div className="ms-loading">아직 회의 기록이 없어요. 새 회의를 녹음하면 여기에 표시됩니다.</div>
+        <div className="ms-loading">
+          아직 회의 기록이 없어요. 새 회의를 녹음하면 여기에 표시됩니다.
+        </div>
       ) : (
         <div className={styles.slItems}>
           {sessions.map((s) => (
@@ -87,7 +92,7 @@ export default function SessionList({ onSelect }: SessionListProps) {
               </div>
               <div className={styles.slTitle}>{s.title}</div>
               <div className={styles.slSteps}>
-                {STEPS.map((step) => (
+                {stepsForCli(cli).map((step) => (
                   <span
                     key={step.id}
                     className={clsx(styles.slStep, s.steps[step.field] && styles.done)}

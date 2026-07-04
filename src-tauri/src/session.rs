@@ -84,6 +84,103 @@ pub fn venv_dir() -> PathBuf {
     app_data_dir().join(".venv")
 }
 
+/// 로컬 LLM(MLX) 모델 변형 — Gemma 4 12B 2종. 사용자가 "AI 도구 선택"에서 고른다.
+/// 디렉토리명은 install.sh·local_meeting.py의 매핑과 일치해야 함.
+///   표준: 순수 4bit 6.8GB(실행 피크 ~9.4GB, 16GB Mac) / 고품질: 혼합 정밀도 11GB(~13GB, 24GB+).
+pub const LOCAL_MODEL_STANDARD: &str = "gemma-4-12b-4bit";
+pub const LOCAL_MODEL_HIGH: &str = "gemma-4-12b-qat";
+
+fn local_model_file() -> PathBuf {
+    app_data_dir().join("local_model")
+}
+
+/// 선택된 로컬 모델(디렉토리명). 미선택·손상 시 표준판.
+pub fn read_local_model() -> String {
+    fs::read_to_string(local_model_file())
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| s == LOCAL_MODEL_STANDARD || s == LOCAL_MODEL_HIGH)
+        .unwrap_or_else(|| LOCAL_MODEL_STANDARD.to_string())
+}
+
+pub fn write_local_model(model: &str) -> Result<(), String> {
+    if model != LOCAL_MODEL_STANDARD && model != LOCAL_MODEL_HIGH {
+        return Err(format!("알 수 없는 로컬 모델: {model}"));
+    }
+    fs::create_dir_all(app_data_dir()).map_err(|e| e.to_string())?;
+    fs::write(local_model_file(), model).map_err(|e| e.to_string())
+}
+
+/// 로컬 LLM 모델 저장 디렉토리 (install.sh가 여기에 다운로드).
+pub fn local_model_dir() -> PathBuf {
+    models_dir().join("mlx")
+}
+
+pub fn local_model_path() -> PathBuf {
+    local_model_dir().join(read_local_model())
+}
+
+/// 로컬 LLM 모델이 설치되어 있는지 — config.json + 실제 가중치(.safetensors)가 모두 있어야 함.
+/// config만 받다 만 부분 다운로드를 "설치됨"으로 오판하지 않도록 가중치 존재까지 확인한다.
+/// 샤드 인덱스(model.safetensors.index.json)가 있으면 weight_map의 모든 샤드를 요구 —
+/// Gemma 12B는 2샤드 구성(실측)이라 샤드 하나만 받다 만 상태를 놓치면 회의 때마다
+/// 로드 실패가 반복되는데 UI엔 재다운로드 진입점이 없다. false면 /local-model로 라우팅되어
+/// install.sh(snapshot_download resume)가 나머지를 이어받는다.
+pub fn local_model_present() -> bool {
+    model_present_at(&local_model_path())
+}
+
+/// 이름으로 지정한 변형의 설치 여부 — 설치 목록 조회·미사용 변형 삭제 UI용.
+pub fn local_model_present_named(name: &str) -> bool {
+    model_present_at(&local_model_dir().join(name))
+}
+
+/// 임의 변형 디렉토리에 대한 동일 판정 — 변형 복원(revert) 등 선택 외 변형 확인용.
+fn model_present_at(dir: &std::path::Path) -> bool {
+    if !dir.join("config.json").exists() {
+        return false;
+    }
+    let index = dir.join("model.safetensors.index.json");
+    if index.exists() {
+        let Ok(txt) = std::fs::read_to_string(&index) else {
+            return false;
+        };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) else {
+            return false;
+        };
+        let Some(map) = v.get("weight_map").and_then(|m| m.as_object()) else {
+            return false;
+        };
+        let shards: std::collections::HashSet<&str> =
+            map.values().filter_map(|f| f.as_str()).collect();
+        return !shards.is_empty() && shards.iter().all(|f| dir.join(f).exists());
+    }
+    std::fs::read_dir(&dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .any(|e| e.file_name().to_string_lossy().ends_with(".safetensors"))
+        })
+        .unwrap_or(false)
+}
+
+/// 변형 선택을 다운로드 시작 전에 되돌아갈 때의 복원 — 선택 변형이 미설치인데 다른 변형이
+/// 설치돼 있으면 그쪽으로 되돌린다. 안 하면 멀쩡히 설치된 앱이 "다운로드 필요" 표시 +
+/// 다음 부팅에 /local-model 강제 진입으로 남는다(선택 영속이 다운로드 확정보다 앞서는 구조 보완).
+pub fn revert_local_model_if_missing() {
+    if local_model_present() {
+        return;
+    }
+    let other = if read_local_model() == LOCAL_MODEL_STANDARD {
+        LOCAL_MODEL_HIGH
+    } else {
+        LOCAL_MODEL_STANDARD
+    };
+    if model_present_at(&local_model_dir().join(other)) {
+        let _ = write_local_model(other);
+    }
+}
+
 /// 참석자 이메일 → 표시 이름 매핑 캐시. 사용자가 인라인 편집으로 교정한 이름을 영구 보관.
 /// 캘린더 attendee 이름 결정의 최우선 소스. `{ "email": "name" }` 단순 객체.
 fn attendee_names_path() -> PathBuf {
@@ -110,7 +207,7 @@ pub fn write_attendee_names(
 }
 
 /// LLM 작업을 수행하는 CLI 선택 — 사용자가 명시 선택한 값을 영구 보관(`active_cli` 텍스트 파일).
-/// 값은 "claude" 또는 "codex". 없으면 미선택(앱이 감지 결과로 선택 UI를 띄움).
+/// 값은 "claude"·"codex"·"mlx"(로컬 LLM). 없으면 미선택(앱이 감지 결과로 선택 UI를 띄움).
 fn active_cli_path() -> PathBuf {
     app_data_dir().join("active_cli")
 }
@@ -119,11 +216,11 @@ pub fn read_active_cli() -> Option<String> {
     fs::read_to_string(active_cli_path())
         .ok()
         .map(|s| s.trim().to_string())
-        .filter(|s| s == "claude" || s == "codex")
+        .filter(|s| s == "claude" || s == "codex" || s == "mlx")
 }
 
 pub fn write_active_cli(cli: &str) -> Result<(), String> {
-    if cli != "claude" && cli != "codex" {
+    if cli != "claude" && cli != "codex" && cli != "mlx" {
         return Err(format!("알 수 없는 CLI: {cli}"));
     }
     let path = active_cli_path();
@@ -1967,6 +2064,10 @@ pub fn check_dependencies(app: &tauri::AppHandle) -> DepsStatus {
     // install.sh가 도중 중단되어도 다음 실행 시 SetupScreen이 다시 노출되도록 둘 다 검증.
     if !venv_dir().join("bin/python3").exists() { missing.push("pyannote.audio".into()); }
     if !models_dir().join("ggml-large-v3-turbo-q8_0.bin").exists() { missing.push("whisper model".into()); }
+    // 로컬 LLM(mlx) 선택 시 회의록 모델도 필수 — 없으면 SetupScreen이 다시 노출돼 다운로드.
+    if read_active_cli().as_deref() == Some("mlx") && !local_model_present() {
+        missing.push("로컬 AI 모델".into());
+    }
 
     let app_dir = resource.map(|p| p.to_string_lossy().into_owned());
     DepsStatus {

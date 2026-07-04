@@ -65,6 +65,11 @@ export function buildCodexCommand(
   );
 }
 
+// 주: 로컬 AI(mlx)는 PTY를 쓰지 않는다 — Rust cmd_run_local_meeting(일반 서브프로세스,
+// 전사·화자분리와 같은 결)이 실행·스트리밍을 담당하며 SessionContext.runLocalMeeting이 호출한다.
+// 결정론적 1회성 파이프라인이라 터미널 상호작용이 무의미하기 때문 (실측 후 PTY에서 전환).
+// mlx는 명시적으로 throw — 조용히 claude로 폴백하면 게이팅이 새는 진입점(미래 회귀 포함)이
+// 미설치 CLI를 spawn하는 막다른 길이 된다. UI 진입점은 전부 cliHasAgent로 가드돼 있어야 한다.
 export function buildCommand(
   cli: Cli,
   appDir: string | null,
@@ -72,6 +77,9 @@ export function buildCommand(
   sessionDir: string | null,
   signalDir: string
 ): string {
+  if (cli === "mlx") {
+    throw new Error("로컬 AI(mlx)는 터미널 스킬을 지원하지 않습니다 (진입점 게이팅 누락)");
+  }
   return cli === "codex"
     ? buildCodexCommand(appDir, slashCommand, sessionDir, signalDir)
     : buildClaudeCommand(appDir, slashCommand, sessionDir, signalDir);

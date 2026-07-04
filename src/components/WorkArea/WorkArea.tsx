@@ -1,6 +1,7 @@
 import TerminalWorkspace from "../TerminalWorkspace";
 import SessionViewer from "../SessionViewer";
 import EmptyState from "./EmptyState";
+import LocalProgressPanel from "./LocalProgressPanel";
 import { Activity } from "@/constants";
 import type { SpawnRequest } from "@/types";
 import styles from "./WorkArea.module.css";
@@ -51,6 +52,10 @@ interface WorkAreaProps {
   onToggleDrawer: () => void;
   // panel 빈 상태 UI 분기 + 진입점 버튼. 사이드바의 "AI에게 추가 요청"과 동일 핸들러.
   notesWritten: boolean;
+  // 대화형 추가 요청(/assist) 가능 여부 — mlx(로컬 LLM)는 에이전트가 없어 false.
+  assistAvailable?: boolean;
+  // 로컬 AI 백엔드 — 터미널 대신 진행 패널(local:output 스트림)을 drawer에 표시.
+  localBackend?: boolean;
   // 무음("발화 없음")으로 diarize·회의록을 건너뛴 세션 — SessionViewer가 전용 빈 상태 표시.
   noSpeech?: boolean;
   // escape hatch — "그래도 회의록 작성하기". 무음 빈 상태 버튼이 호출.
@@ -76,6 +81,8 @@ export default function WorkArea({
   onUserTabChange,
   onToggleDrawer,
   notesWritten,
+  assistAvailable = true,
+  localBackend = false,
   noSpeech = false,
   onForceCompose,
   onRequestAi,
@@ -88,6 +95,14 @@ export default function WorkArea({
     (completedActivity !== null ? doneLabelFor(completedActivity) : panelLabelFor(activity));
   const headerDone = labelOverride == null && completedActivity !== null;
 
+  const emptyState = (
+    <EmptyState
+      notesWritten={notesWritten}
+      assistAvailable={assistAvailable}
+      onRequestAi={onRequestAi}
+    />
+  );
+
   return (
     <TerminalWorkspace
       spawnRequest={spawnRequest}
@@ -97,7 +112,13 @@ export default function WorkArea({
       onToggleDrawer={onToggleDrawer}
       panelLabel={headerLabel}
       panelDone={headerDone}
-      emptyState={<EmptyState notesWritten={notesWritten} onRequestAi={onRequestAi} />}
+      emptyState={emptyState}
+      panelContent={
+        // 로컬 AI는 상호작용할 터미널이 없다 — 진행 라인 패널로 대체 (전사·화자분리와 같은 결).
+        localBackend ? (
+          <LocalProgressPanel activity={activity} emptyState={emptyState} />
+        ) : undefined
+      }
     >
       {sessionDir ? (
         <SessionViewer

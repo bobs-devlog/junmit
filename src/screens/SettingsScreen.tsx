@@ -1,12 +1,19 @@
+import { useEffect, useState } from "react";
+import { LOCAL_MODEL_HIGH } from "@/constants";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
+import { invoke } from "@tauri-apps/api/core";
 import SidebarNav from "@/components/Sidebar/SidebarNav";
 import { useSidebarTarget } from "@/components/MainLayout";
 import { useSession } from "@/contexts/SessionContext";
 import type { Cli } from "@/types";
 import styles from "./Settings.module.css";
 
-const CLI_LABELS: Record<Cli, string> = { claude: "Claude Code", codex: "Codex" };
+const CLI_LABELS: Record<Cli, string> = {
+  claude: "Claude Code",
+  codex: "Codex",
+  mlx: "로컬 AI (Gemma)",
+};
 
 // 앱 설정 화면 — 빈도 낮은 설정의 모음 자리. 자주 쓰는 콘텐츠 관리(용어 사전·회의 유형)는
 // 사이드바 직접 항목으로, 한두 번 만지는 설정은 여기로 모은다.
@@ -15,6 +22,14 @@ export default function SettingsScreen() {
   const sidebarTarget = useSidebarTarget();
   const navigate = useNavigate();
   const { cli } = useSession();
+  // 로컬 AI일 때 선택된 변형(표준/고품질)까지 표기 — 어떤 모델이 도는지 한눈에.
+  const [localVariant, setLocalVariant] = useState<string>("");
+  useEffect(() => {
+    if (cli !== "mlx") return;
+    invoke<string>("cmd_get_local_model")
+      .then((m) => setLocalVariant(m === LOCAL_MODEL_HIGH ? " · 고품질" : " · 표준"))
+      .catch(() => {});
+  }, [cli]);
 
   return (
     <>
@@ -27,10 +42,13 @@ export default function SettingsScreen() {
 
         <section className={styles.settingsCard}>
           <div className={styles.settingsCardMeta}>
-            <span className={styles.settingsCardLabel}>AI 도구</span>
+            <span className={styles.settingsCardLabel}>회의록 AI</span>
             <span className={styles.settingsCardDesc}>
               회의록 작성에 사용 중:{" "}
-              <span className={styles.settingsCardValue}>{CLI_LABELS[cli]}</span>
+              <span className={styles.settingsCardValue}>
+                {CLI_LABELS[cli]}
+                {cli === "mlx" ? localVariant : ""}
+              </span>
             </span>
           </div>
           <button

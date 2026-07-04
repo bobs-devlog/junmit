@@ -2,6 +2,8 @@
 # 사용자 머신용 setup. 사용자 데이터(.venv, models, python-runtime)와 캘린더 권한 안내만 책임.
 # AI CLI(claude/codex)는 온보딩 "AI 도구 선택" 화면이 설치·로그인을 보장하고, Atlassian MCP는
 # 앱이 각 CLI의 junmit 전용 환경에 자동 등록하므로 여기서 할 일이 없다.
+# 단 로컬 AI(mlx)는 CLI가 아니라서 이 스크립트가 런타임(mlx-vlm)·모델 다운로드까지 책임진다
+# (INSTALL_MODE=model, 아래 참조).
 # sidecar 바이너리(whisper-cli, diarize, uv 등)는 앱 번들에 포함되어 있으므로 여기서 빌드하지 않는다.
 # 바이너리 빌드는 scripts/build-binaries.sh (개발자 머신 전용).
 set -euo pipefail
@@ -10,6 +12,24 @@ info() { printf "\033[1;34m[INFO]\033[0m %s\n" "$1"; }
 ok()   { printf "\033[1;32m[완료]\033[0m %s\n" "$1"; }
 warn() { printf "\033[1;33m[경고]\033[0m %s\n" "$1"; }
 err()  { printf "\033[1;31m[오류]\033[0m %s\n" "$1" >&2; }
+
+# 용량 기반 다운로드 진행 표시 — $1 감시 경로(파일/디렉토리), $2 예상 MB, $3 다운로드 프로세스 PID.
+# 앱(SetupScreen)이 "(NN%)"로 게이지를, "MB" 포함 줄을 본문으로 표기한다.
+# curl/HF 자체 진행바를 안 쓰는 이유(둘 다 실측): curl -L은 리다이렉트 응답마다 바를 새로
+# 그려 시작 직후 100%→0%로 보이고, HF 바는 파일 개수 기준이라 수 GB 샤드 동안 멈춘 듯 보인다.
+progress_du() {
+  local target="$1" total_mb="$2" pid="$3" cur_kb cur_mb pct
+  while kill -0 "$pid" 2>/dev/null; do
+    cur_kb=$(du -sk "$target" 2>/dev/null | cut -f1 || echo 0)
+    cur_mb=$(( cur_kb * 1024 / 1000000 ))  # 십진 MB — Finder·모델 용량 표기(6.8GB 등)와 단위 통일
+    # 총량은 예상값이라 실측(부가 파일·블록 오버헤드)이 넘칠 수 있다 — 표시가 "6748/6700"처럼
+    # 모순되지 않게 총량으로 클램프 (게이지도 99%에 머묾, 완료 판정은 wait가 담당).
+    [[ $cur_mb -gt $total_mb ]] && cur_mb=$total_mb
+    pct=$(( cur_mb * 100 / total_mb )); [[ $pct -gt 99 ]] && pct=99
+    echo "  받는 중... ${cur_mb}MB / ${total_mb}MB (${pct}%)"
+    sleep 3
+  done
+}
 
 # 예기치 못한 실패(네트워크 끊김·디스크 부족 등)에 대한 친절한 catch-all 안내.
 # 명시적 검증(uv)은 구체 메시지를 출력하고 exit하며,
@@ -27,16 +47,36 @@ VENV_DIR="${VENV_DIR:-$APP_DATA_DIR/.venv}"
 export UV_PYTHON_INSTALL_DIR="$APP_DATA_DIR/python-runtime"
 mkdir -p "$APP_DATA_DIR" "$MODELS_DIR" "$UV_PYTHON_INSTALL_DIR"
 
-# 선택된 AI CLI — 앱 "AI 도구 선택"이 기록한 값(claude/codex). 파일이 없거나 값이 다르면
-# claude(앱 기본값과 동일)로 본다. 표시 라벨에만 사용 — 설치·로그인은 양쪽 모두 온보딩
-# 선택 화면이 junmit 전용 환경 기준으로 보장하므로 setup에서 검증하지 않는다.
+# 선택된 AI 백엔드 — 앱 "AI 도구 선택"이 기록한 값(claude/codex/mlx). 파일이 없거나 값이 다르면
+# claude(앱 기본값과 동일)로 본다. claude/codex의 설치·로그인은 온보딩 선택 화면이 보장하므로
+# setup에서 검증하지 않는다. mlx(로컬 LLM)만 이 스크립트가 런타임·모델 설치를 책임진다.
 ACTIVE_CLI="claude"
 if [[ -f "$APP_DATA_DIR/active_cli" ]]; then
   ACTIVE_CLI="$(tr -d '[:space:]' < "$APP_DATA_DIR/active_cli")"
-  [[ "$ACTIVE_CLI" == "codex" ]] || ACTIVE_CLI="claude"
+  case "$ACTIVE_CLI" in claude|codex|mlx) ;; *) ACTIVE_CLI="claude" ;; esac
 fi
-LLM_LABEL="Claude Code"
-[[ "$ACTIVE_CLI" == "codex" ]] && LLM_LABEL="Codex"
+LLM_LABEL="Claude Code"; LLM_MODE="(대화형)"
+case "$ACTIVE_CLI" in
+  codex) LLM_LABEL="Codex" ;;
+  mlx) LLM_LABEL="로컬 AI (Gemma 4 12B)"; LLM_MODE="(로컬·오프라인)" ;;
+esac
+
+# 로컬 LLM(MLX) 모델 — 사용자가 앱 "AI 도구 선택"에서 고른 변형(local_model 파일, Rust가 기록).
+# 디렉토리명은 session.rs LOCAL_MODEL_* / local_meeting.py local_model_name()과 일치해야 함.
+#   gemma-4-12b-4bit : 표준 (순수 4bit, 6.8GB, 실행 피크 ~9.4GB — 16GB Mac)
+#   gemma-4-12b-qat  : 고품질 (혼합 정밀도, 11GB, 실행 피크 ~13GB — 24GB+ Mac)
+LOCAL_MODEL_NAME="gemma-4-12b-4bit"
+if [[ -f "$APP_DATA_DIR/local_model" ]]; then
+  v="$(tr -d '[:space:]' < "$APP_DATA_DIR/local_model")"
+  case "$v" in gemma-4-12b-4bit|gemma-4-12b-qat) LOCAL_MODEL_NAME="$v" ;; esac
+fi
+LOCAL_MODEL_REPO="mlx-community/gemma-4-12B-it-4bit"; LOCAL_MODEL_SIZE="약 6.8GB"; LOCAL_MODEL_MB=6773
+if [[ "$LOCAL_MODEL_NAME" == "gemma-4-12b-qat" ]]; then
+  LOCAL_MODEL_REPO="mlx-community/gemma-4-12B-it-qat-4bit"; LOCAL_MODEL_SIZE="약 11GB"; LOCAL_MODEL_MB=11020
+fi
+LOCAL_MODEL_DIR="$MODELS_DIR/mlx/$LOCAL_MODEL_NAME"
+# 로컬 AI 런타임 패키지 (base·model 모드 공유 — 버전 정책은 model 모드 설치부 주석 참조)
+MLX_RUNTIME_PKGS=("mlx-vlm~=0.6.3" "transformers~=5.12.1" "truststore")
 
 # uv 바이너리 (앱 번들 또는 워크스페이스 bin/에 있음)
 UV="$SCRIPT_DIR/bin/uv"
@@ -46,12 +86,89 @@ if [[ ! -x "$UV" ]]; then
   exit 1
 fi
 
+# 실행 모드 — 기초 설치(base)와 로컬 LLM 모델 다운로드(model)를 분리.
+# base(기본): venv·whisper·pyannote 등 백엔드 중립 기초. model: 모델만(venv 선행 필요).
+# 온보딩은 base → (mlx면) model 순, 설정 전환은 model만 재사용한다.
+INSTALL_MODE="${INSTALL_MODE:-base}"
+
+if [[ "$INSTALL_MODE" == "model" ]]; then
+  echo "=== 로컬 AI 모델 준비 (Gemma 4 12B) ==="
+  echo ""
+  if [[ ! -f "$VENV_DIR/bin/python3" ]]; then
+    err "기초 설치가 먼저 필요합니다. 앱의 초기 설정을 완료해주세요."
+    exit 1
+  fi
+  # 런타임 설치는 모델 존재 체크보다 앞 — base 재설치가 venv를 재생성(--clear)하면 모델은
+  # 남고 런타임만 사라질 수 있어, 조기 종료가 런타임 복구를 건너뛰면 회의 시점에 터진다.
+  # 이미 설치돼 있으면 uv가 수 초 내 no-op.
+  # Gemma 4(unified 아키텍처)는 mlx-lm 정식 릴리스가 아직 미지원 — mlx-vlm이 실행 경로 (2026-07 실측).
+  info "로컬 AI 런타임(mlx-vlm) 설치 중..."
+  # transformers는 5.12 계열 고정 — 5.13.0이 mlx-lm 0.31의 토크나이저 등록(str 키)과 충돌해
+  # import 자체가 죽는다 (AttributeError: 'str' object has no attribute '__module__', 실측 2026-07-04).
+  # 5.12.1은 Qwen·Gemma 스모크 통과 실측. 상향은 mlx-lm/mlx-vlm 호환 확인 후 의도적으로.
+  # truststore: python HTTP가 macOS 키체인을 신뢰하게 주입 — 사내 TLS 프록시(zscaler)가
+  # 모델 CDN(us.aws.cdn.hf.co)을 가로채면 기본 인증서 묶음(certifi)으론 SSL 검증이 실패한다
+  # (실측 2026-07-04: 주입 전 CERTIFICATE_VERIFY_FAILED / 주입 후 정상. curl·uv는 원래 키체인 사용).
+  "$UV" pip install --python "$VENV_DIR/bin/python3" "${MLX_RUNTIME_PKGS[@]}"
+
+  # 의도적으로 "이미 설치됨" 조기 종료를 두지 않는다 — 설치 여부 판정은 Rust
+  # local_model_present()(config.json + 샤드 인덱스의 모든 가중치)가 단일 진실 원천이고,
+  # 이 모드는 그 판정이 "부족"일 때만 라우팅된다. 여기서 자체 판정(예: config.json 존재)으로
+  # 조기 종료하면 부분 다운로드(중단 잔재)가 "설치됨"으로 오판돼 다운로드가 영영 재개되지
+  # 않는 루프에 갇힌다. snapshot_download는 이어받기라 완전 설치 상태여도 부담이 작다.
+
+  info "로컬 AI 모델 다운로드 중 ($LOCAL_MODEL_SIZE, Gemma 4 12B)..."
+  mkdir -p "$LOCAL_MODEL_DIR"
+  # 사용자 데이터 영역에 직접 받는다(HF 캐시 아님) — 앱 정리 시 함께 삭제. 공개 리포라 토큰 불필요.
+  # snapshot_download는 부분 다운로드 resume을 지원해 중단돼도 이어받는다.
+  # 진행률은 "받은 용량" 기준으로 이 스크립트가 직접 출력 — HF 진행바는 파일 개수 기준이라
+  # 수 GB 샤드 하나를 받는 몇 분 동안 갱신이 없어 UI 게이지가 0%에 멈춘 것처럼 보인다(실측).
+  # 다운로드는 백그라운드, 진행 루프는 포그라운드 — 실패·취소 시 루프가 고아로 남아
+  # stdout 파이프를 잡고 있으면 Rust 스트림 스레드가 영영 안 끝난다.
+  # HF_HUB_DISABLE_XET=1 — Xet 백엔드는 청크를 전역 캐시(~/.cache/huggingface/xet)에 받다가
+  # 재조립 때 한 번에 목적지로 옮겨, 목적지 용량 기반 게이지가 "정체 후 점프"로 보인다(실측).
+  # 고전 HTTP는 목적지 안 .incomplete에 직접 이어써 진행률이 연속이고 속도도 충분(실측 ~50MB/s).
+  HF_HUB_DISABLE_XET=1 HF_HUB_DISABLE_PROGRESS_BARS=1 "$VENV_DIR/bin/python3" - "$LOCAL_MODEL_REPO" "$LOCAL_MODEL_DIR" <<'PY' &
+import logging, sys, warnings
+import truststore
+truststore.inject_into_ssl()  # 사내 TLS 프록시(zscaler) 대응 — macOS 키체인 신뢰 (위 설치 주석 참조)
+# "unauthenticated requests … set a HF_TOKEN" 경고 숨김 — 공개 리포라 토큰 불필요이고
+# (HF 계정 없이 쓰게 하는 게 제품 원칙), 사용자에겐 조치 불가능한 소음이라서.
+warnings.filterwarnings("ignore")
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+from huggingface_hub import snapshot_download
+repo, dest = sys.argv[1], sys.argv[2]
+snapshot_download(repo_id=repo, local_dir=dest)
+PY
+  DL_PID=$!
+  progress_du "$LOCAL_MODEL_DIR" "$LOCAL_MODEL_MB" "$DL_PID"
+  wait "$DL_PID"   # 실패 시 비0 종료 → set -e가 여기서 중단
+  echo "  다운로드 완료 (100%)"
+
+  # 스모크 테스트 — 현재 런타임에서 로드·생성 가능한지 지금 검증(첫 회의 때 실패 방지).
+  info "모델 호환성 확인 중..."
+  "$VENV_DIR/bin/python3" - "$LOCAL_MODEL_DIR" <<'PY'
+import sys
+from mlx_vlm import load, generate
+from mlx_vlm.prompt_utils import apply_chat_template
+from mlx_vlm.utils import load_config
+model, processor = load(sys.argv[1])
+config = load_config(sys.argv[1])
+prompt = apply_chat_template(processor, config, "안녕하세요", num_images=0)
+generate(model, processor, prompt, max_tokens=5, verbose=False)
+PY
+  echo ""
+  ok "로컬 AI 모델 준비 완료 ($LOCAL_MODEL_NAME)"
+  echo "설치 위치: $LOCAL_MODEL_DIR"
+  exit 0
+fi
+
 echo "=== Junmit 설치 ==="
 echo ""
 echo "엔진:"
 echo "  - 전사: whisper.cpp (Metal GPU 가속)"
 echo "  - 화자분리: pyannote.audio (MPS GPU 가속)"
-echo "  - 회의록: $LLM_LABEL (대화형)"
+echo "  - 회의록: $LLM_LABEL $LLM_MODE"
 echo ""
 
 # macOS 확인
@@ -101,6 +218,15 @@ else:
 "
 fi
 
+# 로컬 AI(mlx) 활성이면 런타임도 base가 함께 보장 — venv를 재생성(--clear)하는 주체가
+# 이 모드라서다. 여기서 복구하지 않으면 "모델 파일은 있는데 런타임만 없는" 상태가 되는데,
+# 프론트는 모델 존재만 보고 model 모드를 건너뛰므로 회의 시점 import 실패로만 표면화되는
+# 복구 불가 막다른 길이 된다 (dev+release venv 재생성 실사고 2026-07-04). 설치돼 있으면 수 초 no-op.
+if [[ "$ACTIVE_CLI" == "mlx" ]]; then
+  info "로컬 AI 런타임(mlx-vlm) 확인 중..."
+  "$UV" pip install --python "$VENV_DIR/bin/python3" "${MLX_RUNTIME_PKGS[@]}"
+fi
+
 # === Whisper 모델 다운로드 (Python 환경 검증 후 무거운 다운로드 시작) ===
 # q8_0 양자화 모델을 쓴다: FP16(1.5GB)과 전사 품질은 동급이나 용량이 절반 근처(874MB)다(실측 —
 # 한국어 본문·영어 고유명사 모두 FP16과 구분 불가, q5_0은 영어 이름 열화로 기각, large-v3는
@@ -116,14 +242,20 @@ else
   rm -f "$WHISPER_MODEL_TMP"
   info "Whisper large-v3-turbo 모델 다운로드 중 (약 870MB)..."
   # -f: HTTP 에러(404·프록시 등) 시 실패 처리 — 에러 페이지가 모델 파일로 저장되는 것 방지.
-  # --retry: 일시적 네트워크 끊김 자동 재시도.
-  curl -fL --retry 3 --retry-delay 2 --progress-bar \
+  # --retry: 일시적 네트워크 끊김 자동 재시도. 진행 표시는 progress_du(정의부 주 참조).
+  curl -fsSL --retry 3 --retry-delay 2 \
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q8_0.bin" \
-    -o "$WHISPER_MODEL_TMP"
+    -o "$WHISPER_MODEL_TMP" &
+  CURL_PID=$!
+  progress_du "$WHISPER_MODEL_TMP" 874 "$CURL_PID"
+  wait "$CURL_PID"   # 실패 시 비0 종료 → set -e가 여기서 중단
   # 다운로드 완료 후에만 최종 파일로 이동
   mv "$WHISPER_MODEL_TMP" "$WHISPER_MODEL"
   ok "Whisper large-v3-turbo 모델 다운로드 완료"
 fi
+
+# 로컬 LLM(MLX) 모델은 기초 설치와 분리했다(INSTALL_MODE=model). 온보딩은 이 base 완료 후
+# 별도 "모델 준비" 단계로, 설정 전환은 그 단계만 재사용한다. 여기(base)선 다루지 않는다.
 
 # pyannote 화자분리 모델은 앱 번들에 동봉되어 있다 (resources/models/pyannote,
 # CC-BY-4.0 — build-binaries.sh가 배치). HF 계정·토큰·prefetch 단계 없음.
@@ -146,7 +278,7 @@ echo ""
 echo "엔진:"
 echo "  전사:     whisper.cpp (Metal GPU 가속)"
 echo "  화자분리: pyannote.audio (MPS GPU 가속)"
-echo "  회의록:   $LLM_LABEL (대화형)"
+echo "  회의록:   $LLM_LABEL $LLM_MODE"
 echo ""
 echo "설치 위치:"
 echo "  모델:           $MODELS_DIR"

@@ -3,7 +3,7 @@ import { useNavigate, Outlet } from "react-router-dom";
 import { useDialog } from "@/contexts/DialogContext";
 import { useSession } from "@/contexts/SessionContext";
 import { useRecorderContext } from "@/contexts/RecorderContext";
-import { Activity } from "@/constants";
+import { Activity, isCli } from "@/constants";
 import { saveRecording } from "@/utils/saveRecording";
 import { routeAfterCliSelected } from "@/utils/bootstrap";
 import { invoke } from "@tauri-apps/api/core";
@@ -43,7 +43,7 @@ export default function AppShell() {
       .catch(() => {});
     invoke<string>("cmd_get_active_cli")
       .then((c) => {
-        if (!cancelled && (c === "claude" || c === "codex")) session.setCli(c);
+        if (!cancelled && isCli(c)) session.setCli(c);
       })
       .catch(() => {});
     invoke<string>("cmd_get_app_dir")
