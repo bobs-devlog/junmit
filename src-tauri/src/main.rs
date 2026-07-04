@@ -14,6 +14,7 @@ type ChildHandle = Arc<Mutex<Option<Child>>>;
 
 struct PipelineChild(ChildHandle);
 struct InstallChild(ChildHandle);
+struct LocalMeetingChild(ChildHandle);
 
 /// willSleep 콜백(C 함수라 캡처 불가)이 이벤트를 emit할 수 있도록 AppHandle을 전역 보관. setup에서 1회 채움.
 static SLEEP_APP_HANDLE: Mutex<Option<tauri::AppHandle>> = Mutex::new(None);
@@ -67,6 +68,15 @@ fn has_active_children(app: &tauri::AppHandle) -> bool {
     {
         return true;
     }
+    if app
+        .state::<LocalMeetingChild>()
+        .0
+        .lock()
+        .map(|g| g.is_some())
+        .unwrap_or(false)
+    {
+        return true;
+    }
     false
 }
 
@@ -92,6 +102,16 @@ fn cleanup_all_children(app_handle: &tauri::AppHandle) {
         state.0.lock().ok().and_then(|mut g| g.take())
     };
     if let Some(mut child) = install_child {
+        kill_process_group(child.id());
+        let _ = child.wait();
+    }
+
+    // 로컬 LLM 회의록 작성
+    let local_meeting_child = {
+        let state = app_handle.state::<LocalMeetingChild>();
+        state.0.lock().ok().and_then(|mut g| g.take())
+    };
+    if let Some(mut child) = local_meeting_child {
         kill_process_group(child.id());
         let _ = child.wait();
     }
@@ -174,10 +194,10 @@ fn cmd_get_app_dir(app: tauri::AppHandle) -> Result<String, String> {
 #[tauri::command]
 fn cmd_get_active_cli(app: tauri::AppHandle) -> String {
     let cli = session::read_active_cli().unwrap_or_else(|| "claude".to_string());
-    if cli == "codex" {
-        session::ensure_codex_home(&app);
-    } else {
-        session::ensure_claude_config_dir(&app);
+    match cli.as_str() {
+        "codex" => session::ensure_codex_home(&app),
+        "mlx" => {} // 로컬 LLM은 CLI 설정 디렉토리 불필요 (모델 존재 확인은 cmd_check_local_model)
+        _ => session::ensure_claude_config_dir(&app),
     }
     cli
 }
@@ -186,12 +206,106 @@ fn cmd_get_active_cli(app: tauri::AppHandle) -> String {
 #[tauri::command]
 fn cmd_set_active_cli(app: tauri::AppHandle, cli: String) -> Result<(), String> {
     session::write_active_cli(&cli)?;
-    if cli == "codex" {
-        session::ensure_codex_home(&app);
-    } else {
-        session::ensure_claude_config_dir(&app);
+    match cli.as_str() {
+        "codex" => session::ensure_codex_home(&app),
+        "mlx" => {} // 로컬 LLM은 CLI 설정 디렉토리 불필요
+        _ => session::ensure_claude_config_dir(&app),
     }
     Ok(())
+}
+
+/// 로컬 LLM(MLX) 모델이 설치되어 있는지 — mlx 선택 시 셋업/다운로드 게이팅용.
+/// "설치됨" 판정은 현재 선택된 변형(read_local_model) 기준.
+#[tauri::command]
+fn cmd_check_local_model() -> bool {
+    session::local_model_present()
+}
+
+/// 선택된 로컬 모델 변형 (gemma-4-12b-4bit=표준 / gemma-4-12b-qat=고품질).
+#[tauri::command]
+fn cmd_get_local_model() -> String {
+    session::read_local_model()
+}
+
+/// 로컬 모델 변형 선택 저장 — install.sh(다운로드)·local_meeting.py(실행)가 이 값을 읽는다.
+#[tauri::command]
+fn cmd_set_local_model(model: String) -> Result<(), String> {
+    session::write_local_model(&model)
+}
+
+/// 모델 다운로드 화면에서 시작 없이 "뒤로" 시 — 미설치 변형 선택을 설치된 변형으로 복원.
+#[tauri::command]
+fn cmd_revert_local_model_if_missing() {
+    session::revert_local_model_if_missing()
+}
+
+/// 설치된 로컬 모델 변형 목록 (완전 설치 판정 기준 — 부분 다운로드 제외).
+#[tauri::command]
+fn cmd_list_local_models() -> Vec<String> {
+    [session::LOCAL_MODEL_STANDARD, session::LOCAL_MODEL_HIGH]
+        .iter()
+        .filter(|m| session::local_model_present_named(m))
+        .map(|m| m.to_string())
+        .collect()
+}
+
+/// 미사용 로컬 모델 변형 삭제 — 디스크 확보(6.8~11GB). mlx가 활성 CLI일 때만 현재 선택
+/// 변형을 거부(회의록 작성이 깨짐) — claude/codex 사용 중엔 로컬 모델이 전혀 안 쓰이므로
+/// 어느 변형이든 삭제 가능. 삭제로 선택이 미설치를 가리키게 되면 설치된 다른 변형으로
+/// 복원해 유령 상태를 막는다. 부분 다운로드 잔재(중단된 변형 전환)도 같은 경로라 함께 정리.
+#[tauri::command]
+fn cmd_delete_local_model(model: String) -> Result<(), String> {
+    if model != session::LOCAL_MODEL_STANDARD && model != session::LOCAL_MODEL_HIGH {
+        return Err(format!("알 수 없는 로컬 모델: {model}"));
+    }
+    if model == session::read_local_model()
+        && session::read_active_cli().as_deref() == Some("mlx")
+    {
+        return Err("사용 중인 모델은 삭제할 수 없습니다".into());
+    }
+    let dir = session::local_model_dir().join(&model);
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).map_err(|e| format!("삭제 실패: {e}"))?;
+    }
+    session::revert_local_model_if_missing();
+    Ok(())
+}
+
+/// 로컬 LLM 실행 여력(RAM·디스크 여유) — mlx 선택 시 다운로드 전 사양 경고용.
+/// 값이 0이면 조회 실패(알 수 없음)이므로 UI는 경고만 하고 차단하지 않는다.
+#[derive(serde::Serialize)]
+struct LocalCapability {
+    ram_gb: u64,
+    disk_free_gb: u64,
+}
+
+#[tauri::command]
+fn cmd_check_local_capable() -> LocalCapability {
+    let ram_gb = std::process::Command::new("sysctl")
+        .args(["-n", "hw.memsize"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .map(|b| b / 1024 / 1024 / 1024)
+        .unwrap_or(0);
+    // df -k HOME → Available(4번째 컬럼, KB). 공백 없는 안정 경로($HOME)로 조회.
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/".to_string());
+    let disk_free_gb = std::process::Command::new("df")
+        .arg("-k")
+        .arg(&home)
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|s| s.lines().nth(1).map(str::to_string))
+        .and_then(|line| {
+            line.split_whitespace()
+                .nth(3)
+                .and_then(|kb| kb.parse::<u64>().ok())
+        })
+        .map(|kb| kb / 1024 / 1024)
+        .unwrap_or(0);
+    LocalCapability { ram_gb, disk_free_gb }
 }
 
 /// 사용자가 CLI를 명시 선택한 적이 있는지 — 온보딩 첫 진입에서 선택 화면 게이팅용.
@@ -718,6 +832,182 @@ async fn cmd_run_pipeline(
     }
 }
 
+/// 로컬 LLM 회의록 작성 중단
+#[tauri::command]
+fn cmd_cancel_local_meeting(state: State<LocalMeetingChild>) -> Result<(), String> {
+    let child_opt = state.0.lock().map_err(|e| format!("lock 실패: {e}"))?.take();
+    if let Some(mut child) = child_opt {
+        kill_process_group(child.id());
+        let _ = child.wait();
+    }
+    Ok(())
+}
+
+/// 로컬 LLM 회의록 작성 — venv python으로 local_meeting.py를 실행하고 stdout을 스트리밍.
+/// PTY가 아닌 일반 프로세스 (전사·화자분리와 같은 결) — 로컬 파이프라인은 결정론적 1회성이라
+/// 터미널 상호작용이 무의미하다. 진행 라인은 "local:output" 이벤트로, 완료/실패는 스크립트가
+/// 신호 파일(APP_SIGNAL_DIR → app:signal)로 직접 emit하므로 프론트 전환 로직은 기존 경로 그대로.
+#[tauri::command]
+async fn cmd_run_local_meeting(
+    app: tauri::AppHandle,
+    state: State<'_, LocalMeetingChild>,
+    session_dir: String,
+) -> Result<(), String> {
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    use std::os::unix::process::CommandExt;
+    use std::path::PathBuf;
+    use std::process::{Command, Stdio};
+
+    // 이중 실행 선제 거절 — 로그 헤더를 쓰기 전에 거른다(고아 헤더 방지).
+    // 최종 판정은 아래 spawn 직전의 lock 구간이 담당(여기서 통과해도 거기서 재검사).
+    if state.0.lock().map_err(|e| format!("lock 실패: {e}"))?.is_some() {
+        return Err("로컬 회의록 작성이 이미 진행 중입니다".into());
+    }
+
+    let app_dir = session::resource_dir(&app)?.to_string_lossy().into_owned();
+    let python = session::venv_dir().join("bin/python3");
+    let script = PathBuf::from(&app_dir).join("lib/local_meeting.py");
+    let signal_dir = session::app_data_dir()
+        .join("run")
+        .join(std::process::id().to_string());
+    let _ = std::fs::create_dir_all(&signal_dir);
+
+    // 세션 pipeline.log에 append — 전사·화자분리와 같은 진단 저장소를 공유.
+    let log_path = PathBuf::from(&session_dir).join("pipeline.log");
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .ok()
+        .map(|f| Arc::new(Mutex::new(f)));
+    if let Some(f) = &log_file {
+        let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+        let mut w = f.lock().unwrap();
+        let _ = writeln!(w, "\n=== local-meeting @ {ts} ===");
+        let _ = writeln!(w, "env: MODEL={}", session::read_local_model());
+    }
+
+    let mut cmd = Command::new(&python);
+    // env는 스크립트가 실제로 읽는 것만 — 세션 위치·신호 디렉토리. (스크립트는 서브프로세스를
+    // 띄우지 않고 경로는 __file__·app_data_dir 기준이라 APP_DIR·PATH 주입이 불필요)
+    cmd.arg(&script)
+        .env("APP_SESSION_DIR", &session_dir)
+        .env("APP_SIGNAL_DIR", &signal_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .process_group(0); // 취소 시 그룹째 종료
+    // 이중 실행 가드 + spawn + 등록을 한 lock 구간에서 — 두 호출이 동시에 spawn해
+    // 서로의 child를 덮어쓰는(프로세스 누수 + wait 오귀속) 경합을 원천 차단.
+    let (stdout, stderr) = {
+        let mut guard = state.0.lock().map_err(|e| format!("lock 실패: {e}"))?;
+        if guard.is_some() {
+            return Err("로컬 회의록 작성이 이미 진행 중입니다".into());
+        }
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("로컬 회의록 실행 실패: {e}"))?;
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+        *guard = Some(child);
+        (stdout, stderr)
+    };
+
+    // 줄 단위 스트리밍 — \r(진행 카운터)도 줄 경계로 처리해 마지막 상태가 이벤트로 나간다.
+    fn stream_local(
+        reader: impl std::io::Read,
+        app: &tauri::AppHandle,
+        stream_name: &str,
+        log_file: Option<Arc<Mutex<std::fs::File>>>,
+    ) {
+        use std::io::Write;
+        let mut reader = reader;
+        let mut buf = [0u8; 4096];
+        let mut line_buf: Vec<u8> = Vec::new();
+        let flush_line = |line_buf: &mut Vec<u8>| {
+            if line_buf.is_empty() {
+                return;
+            }
+            let s = String::from_utf8_lossy(line_buf).to_string();
+            let _ = app.emit(
+                "local:output",
+                serde_json::json!({ "stream": stream_name, "line": s.clone() }).to_string(),
+            );
+            if let Some(f) = &log_file {
+                if let Ok(mut f) = f.lock() {
+                    // 진행 카운터("작성 중… N자")는 로그 파일엔 남기지 않는다 (수백 줄 노이즈).
+                    if !s.trim_start().starts_with("작성 중…") {
+                        let prefix = if stream_name == "stderr" { "[stderr] " } else { "" };
+                        let _ = writeln!(f, "{prefix}{}", strip_ansi(&s));
+                    }
+                }
+            }
+            line_buf.clear();
+        };
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => {
+                    flush_line(&mut line_buf);
+                    break;
+                }
+                Ok(n) => {
+                    for &b in &buf[..n] {
+                        if b == b'\n' || b == b'\r' {
+                            flush_line(&mut line_buf);
+                        } else {
+                            line_buf.push(b);
+                        }
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    }
+
+    let app2 = app.clone();
+    let log_for_stdout = log_file.clone();
+    let stdout_thread = std::thread::spawn(move || {
+        if let Some(out) = stdout {
+            stream_local(out, &app2, "stdout", log_for_stdout);
+        }
+    });
+    let app3 = app.clone();
+    let log_for_stderr = log_file.clone();
+    let stderr_thread = std::thread::spawn(move || {
+        if let Some(err) = stderr {
+            stream_local(err, &app3, "stderr", log_for_stderr);
+        }
+    });
+    stdout_thread.join().ok();
+    stderr_thread.join().ok();
+
+    // child를 꺼내서 lock 밖에서 wait — lock을 잡은 채 blocking하면 취소가 영구 대기할 수 있다.
+    // None이면 취소(cmd_cancel_local_meeting)가 이미 take한 것 — 오류가 아닌 의도된 중단이므로
+    // 조용히 성공 반환한다 (UI 상태 정리는 취소를 부른 쪽 책임). 오류 배너 오발화 방지.
+    let Some(mut child) = state.0.lock().map_err(|e| format!("lock 실패: {e}"))?.take() else {
+        if let Some(f) = &log_file {
+            let _ = writeln!(f.lock().unwrap(), "=== local-meeting cancelled ===");
+        }
+        return Ok(());
+    };
+    let status = child
+        .wait()
+        .map_err(|e| format!("로컬 회의록 대기 실패: {e}"))?;
+
+    if let Some(f) = &log_file {
+        let _ = writeln!(
+            f.lock().unwrap(),
+            "=== local-meeting exit: {} ===",
+            status.code().map(|c| c.to_string()).unwrap_or_else(|| "signal".into())
+        );
+    }
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("로컬 회의록 작성 실패 (exit code: {:?})", status.code()))
+    }
+}
+
 /// install.sh 중단
 #[tauri::command]
 fn cmd_cancel_install(state: State<InstallChild>) -> Result<(), String> {
@@ -736,11 +1026,18 @@ fn cmd_cancel_install(state: State<InstallChild>) -> Result<(), String> {
 async fn cmd_run_install(
     app: tauri::AppHandle,
     state: State<'_, InstallChild>,
+    mode: Option<String>,
 ) -> Result<(), String> {
     use std::fs::OpenOptions;
     use std::io::{Read, Write};
     use std::os::unix::process::CommandExt;
     use std::process::{Command, Stdio};
+
+    // 이중 실행 거절 — 취소 직후 재시작 연타 등으로 두 install.sh가 동시에 돌면
+    // child 덮어쓰기로 한쪽이 kill 불가 고아가 된다 (venv --clear 동시 실행 위험 포함).
+    if state.0.lock().map_err(|e| format!("lock 실패: {e}"))?.is_some() {
+        return Err("설치가 이미 진행 중입니다".into());
+    }
 
     let resource = session::resource_dir(&app)?;
     let install_sh = resource.join("install.sh");
@@ -768,6 +1065,8 @@ async fn cmd_run_install(
         .env("APP_DATA_DIR", &app_data_dir)
         .env("MODELS_DIR", &models_dir)
         .env("VENV_DIR", &venv_dir)
+        // base(기본): 기초 설치, model: 로컬 LLM 모델만 (install.sh가 분기).
+        .env("INSTALL_MODE", mode.as_deref().unwrap_or("base"))
         .env("PATH", session::get_user_shell_path());
 
     // log header — pipeline.log 패턴과 일관
@@ -878,6 +1177,7 @@ fn main() {
     let pty_manager = Arc::new(PtyManager::new());
     let pipeline_child = PipelineChild(Arc::new(Mutex::new(None)));
     let install_child = InstallChild(Arc::new(Mutex::new(None)));
+    let local_meeting_child = LocalMeetingChild(Arc::new(Mutex::new(None)));
     let close_state = Arc::new(CloseState {
         is_recording: AtomicBool::new(false),
         close_attempts: AtomicUsize::new(0),
@@ -891,6 +1191,7 @@ fn main() {
         .manage(pty_manager)
         .manage(pipeline_child)
         .manage(install_child)
+        .manage(local_meeting_child)
         .manage(close_state.clone())
         .on_window_event(move |window, event| {
             // 닫기 정책 — 메인 윈도우 한정. 보조 윈도우(reminder 등)는 OS 기본 닫기.
@@ -950,8 +1251,9 @@ fn main() {
             }
             session::set_sleep_callback(on_native_sleep);
 
-            // 신호 파일 감시 스레드 (Claude Code Bash에서 보낸 신호를 수신).
-            // signal.sh가 append(`>>`)로 라인 단위 기록 → thread가 라인별로 emit.
+            // 신호 파일 감시 스레드 — 비-tty 실행(Claude Code Bash의 signal.sh,
+            // 로컬 LLM의 local_meeting.py)이 보낸 신호를 수신.
+            // 발신자가 append(`>>`)로 라인 단위 기록 → thread가 라인별로 emit.
             // atomic rename으로 처리 중 새 신호 도착 시 별도 파일로 분리 (인스턴스 내 race 회피).
             //
             // 인스턴스 간 분리 — `app_data_dir/run/{pid}/` 디렉토리 사용:
@@ -1000,6 +1302,13 @@ fn main() {
             cmd_get_active_cli,
             cmd_set_active_cli,
             cmd_is_cli_chosen,
+            cmd_check_local_model,
+            cmd_get_local_model,
+            cmd_set_local_model,
+            cmd_revert_local_model_if_missing,
+            cmd_list_local_models,
+            cmd_delete_local_model,
+            cmd_check_local_capable,
             cmd_detect_clis,
             cmd_cli_atlassian_authed,
             cmd_enable_atlassian_mcp,
@@ -1039,6 +1348,8 @@ fn main() {
             cmd_open_path,
             cmd_run_pipeline,
             cmd_cancel_pipeline,
+            cmd_run_local_meeting,
+            cmd_cancel_local_meeting,
             cmd_write_session_file,
             cmd_read_session_file,
             cmd_backup_meeting_notes,

@@ -3,6 +3,8 @@ import styles from "./EmptyState.module.css";
 interface EmptyStateProps {
   // 회의록 작성 완료 여부 — 자유 대화 진입 버튼 노출 분기.
   notesWritten: boolean;
+  // 대화형 추가 요청(/assist) 가능 여부 — mlx(로컬 LLM)는 에이전트가 없어 false.
+  assistAvailable?: boolean;
   onRequestAi: () => void;
 }
 
@@ -11,8 +13,28 @@ interface EmptyStateProps {
  * 진행 중인 작업도 없고 PTY도 죽어있을 때 노출. notes_written 여부에 따라:
  *   - 회의록 작성 전: 사이드바로 안내 (panel에서 시작할 일 없음)
  *   - 회의록 작성 후: "AI에게 추가 요청하기" 버튼 (사이드바와 동일 핸들러 호출)
+ *   - 로컬 LLM(assistAvailable=false): 추가 요청 불가 안내 (직접 편집 유도)
  */
-export default function EmptyState({ notesWritten, onRequestAi }: EmptyStateProps) {
+export default function EmptyState({
+  notesWritten,
+  assistAvailable = true,
+  onRequestAi,
+}: EmptyStateProps) {
+  if (!assistAvailable) {
+    return (
+      <div className={styles.emptyState}>
+        <div className={styles.icon} aria-hidden="true">
+          ✦
+        </div>
+        <h3 className={styles.title}>AI 도우미</h3>
+        <p className={styles.description}>
+          로컬 AI는 회의록 작성까지 지원해요.
+          <br />
+          내용 수정은 [회의록] 탭에서 직접 편집해주세요.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className={styles.emptyState}>
       <div className={styles.icon} aria-hidden="true">

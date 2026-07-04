@@ -6,7 +6,9 @@ import {
   MIC_PRIVACY_SETTINGS_URL,
   CALENDAR_PRIVACY_SETTINGS_URL,
   CALENDAR_APP_PATH,
+  cliHasAgent,
 } from "@/constants";
+import { useSession } from "@/contexts/SessionContext";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useDialog } from "@/contexts/DialogContext";
@@ -44,6 +46,7 @@ interface AttendeeItem {
 }
 
 export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
+  const { cli } = useSession();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [calendarError, setCalendarError] = useState<string | null>(null);
@@ -554,8 +557,9 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
           </>
         )}
 
-        {/* 정밀 교정 — 설정 토글(라벨 + 스위치 행) */}
-        {hasSelection && (
+        {/* 정밀 교정 — 설정 토글(라벨 + 스위치 행). 로컬 AI(mlx)는 교정 단계가 없어
+            효과 없는 설정이므로 숨긴다(값은 저장돼도 local_meeting.py가 안 읽음). */}
+        {hasSelection && cliHasAgent(cli) && (
           <>
             <div className={styles.msSectionLabel}>정밀 교정</div>
             <button

@@ -274,6 +274,7 @@ ls "$SESSION_DIR"/meeting-notes.bak.*.md 2>/dev/null
   bash -c 'source "$APP_DIR/lib/signal.sh" && app_phase_step_done correct'
   ```
 - **4단계 회의록 작성용 컨텍스트는 `transcript_corrected.txt` + `speaker_mapping.json`만 사용** — 새 type templates 골격에 맞춰 **처음부터 작성**. 백업 파일(`meeting-notes.bak.*.md`)은 **재작성 모드 감지 신호로만 사용하고 내용은 Read X** — 옛 type templates 구조로 정리된 본문이라 새 type 작성에 혼동·구조 복사 위험만 있음.
+- **`transcript_corrected.txt`가 없으면** (로컬 AI 백엔드로 처음 작성된 세션을 이 스킬로 재작성하는 케이스 — 로컬 경로는 교정본을 만들지 않음): 재작성 모드라도 **1단계(화자 라벨 교정)를 정상 수행**해 교정본을 만든 뒤 진행하세요. 단 `speaker_mapping.json`에 이미 이름이 지정된 화자는 **매핑을 덮어쓰지 말고 유지** (사용자가 지정한 이름). 교정본 생성이 불가하면 `transcript.txt`로 4단계를 진행합니다.
 - 화자 매칭/회의 요약 *출력*만 skip이지 LLM의 회의 내용 파악·분석은 그대로 수행 (재작성 모드의 효율 이점은 사용자에게 보이는 출력 중복 제거이지 LLM 작업 단축 X)
 - **3 → 4 → 5단계는 첫 작성과 동일하게 모두 실행**. 5단계의 알림·`app_phase_done` 신호 누락 X — 신호가 없으면 frontend가 review 화면 전환·알림 전송을 못 함.
 

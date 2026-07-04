@@ -1,4 +1,4 @@
-import type { SessionSteps } from "./types";
+import type { Cli, SessionSteps } from "./types";
 
 // 화면 모드 — UI 라우팅용. Activity와 직교: 어느 화면(Screen)에서든 무슨 작업(Activity)이 도는지 별도 표현.
 export const Screen = {
@@ -102,6 +102,31 @@ export const STEPS: ReadonlyArray<StepInfo> = [
     field: "published",
   },
 ];
+
+// 로컬 LLM(mlx)은 에이전트·MCP 없이 도는 결정론적 파이프라인 — 후보정(AI 다듬기)·대화형 추가
+// 요청(/assist)·Confluence 등록(/publish)을 지원하지 않는다. UI 게이팅의 단일 진실 원천.
+export const cliHasAgent = (cli: Cli) => cli !== "mlx";
+
+// Rust 등 경계에서 넘어온 문자열의 Cli 검증 — 유니온 목록의 단일 진실 원천.
+export const isCli = (v: string): v is Cli => v === "claude" || v === "codex" || v === "mlx";
+
+// 로컬 모델 변형 id — Rust(session.rs LOCAL_MODEL_*)·install.sh·local_meeting.py와 문자열이
+// 일치해야 하는 프로토콜 값(디렉토리명 겸용). 리터럴을 흩뿌리지 말고 반드시 이 상수를 쓸 것.
+export const LOCAL_MODEL_STANDARD = "gemma-4-12b-4bit" as const;
+export const LOCAL_MODEL_HIGH = "gemma-4-12b-qat" as const;
+export type LocalModelId = typeof LOCAL_MODEL_STANDARD | typeof LOCAL_MODEL_HIGH;
+export const isLocalModelId = (m: string): m is LocalModelId =>
+  m === LOCAL_MODEL_STANDARD || m === LOCAL_MODEL_HIGH;
+
+// 백엔드별 표시 단계 — mlx는 AI 다듬기(Correct)·Confluence 등록(Publish) 단계가 존재하지 않으므로
+// stepper·기록 카드에서 숨긴다 (영원히 pending인 단계를 보여주지 않기).
+const LOCAL_STEPS: ReadonlyArray<StepInfo> = STEPS.filter(
+  (s) => s.id !== Step.Correct && s.id !== Step.Publish
+);
+
+export function stepsForCli(cli: Cli): ReadonlyArray<StepInfo> {
+  return cliHasAgent(cli) ? STEPS : LOCAL_STEPS;
+}
 
 export function stepIndexById(id: StepId): number {
   return STEPS.findIndex((s) => s.id === id);

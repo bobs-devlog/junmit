@@ -20,7 +20,6 @@ import time
 os.environ["HF_HUB_OFFLINE"] = "1"
 
 import torch
-import soundfile as sf
 from pyannote.audio import Pipeline
 
 
@@ -78,10 +77,23 @@ if hasattr(pipeline, "_embedding") and hasattr(pipeline._embedding, "batch_size"
     pipeline._embedding.batch_size = 32
 
 print("pyannote.audio: 오디오 로딩 중...", file=sys.stderr)
-# torchaudio.load는 2.11부터 torchcodec에 위임 → FFmpeg 공유 라이브러리를 런타임 dlopen하는데
-# 앱 동봉 ffmpeg는 static이라 못 채운다. soundfile은 libsndfile 내장이라 표준 WAV를 의존성 없이 읽는다.
-data, sample_rate = sf.read(audio_path, dtype="float32", always_2d=True)  # (frames, channels)
-waveform = torch.from_numpy(data.T).contiguous()                          # (channels, frames)
+# 표준 라이브러리 wave로 직접 로드 — torchaudio 2.11+의 load()는 torchcodec에 위임하는데,
+# torchcodec은 시스템 ffmpeg 동적 라이브러리(libavutil 등)를 dlopen해 사전 설치 없는 사용자
+# 머신에서 실패한다(실측 2026-07-04). 입력은 convert 단계가 만든 16k mono PCM16 wav로
+# 형식이 고정이라 stdlib로 충분하고, 디코더 계열 의존이 통째로 사라진다.
+import wave
+
+with wave.open(audio_path, "rb") as wf:
+    if wf.getsampwidth() != 2:
+        print(f"[오류] PCM16 wav가 아닙니다 (sampwidth={wf.getsampwidth()})", file=sys.stderr)
+        sys.exit(1)
+    sample_rate = wf.getframerate()
+    nch = wf.getnchannels()
+    frames = wf.readframes(wf.getnframes())
+import numpy as np
+
+pcm = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+waveform = torch.from_numpy(pcm.reshape(-1, nch).T.copy())  # (channels, samples)
 audio_input = {"waveform": waveform, "sample_rate": sample_rate}
 
 # 화자 수 힌트: max_speakers를 상한으로 전달.
@@ -151,9 +163,14 @@ try:
             # 스킵한다 ("짧은 유령" 후보를 자연히 후순위로 배제).
             continue
         vecs = []
+        # 파일 끝 클램프 — Audio.crop은 end가 duration과 같거나 넘으면 raise한다(실측: 등호 포함).
+        # 발화 중 녹음을 끊으면 마지막 세그먼트 end가 정확히 파일 끝이라 상습 재현 —
+        # 예외 하나가 try 전체를 중단시켜 그 세션의 합치기 제안이 통째로 사라진다.
+        duration = waveform.shape[1] / sample_rate
         for _dur, st, e in long_segs:
-            # 경로가 아니라 로드된 waveform dict를 넘긴다 — 경로면 pyannote가 재디코딩하며 torchcodec를 탄다.
-            emb = emb_inference.crop(audio_input, Segment(st, e))
+            # 파일 경로 대신 메모리의 파형을 넘긴다 — 경로를 주면 pyannote가 torchcodec으로
+            # 다시 디코딩하려다 실패한다 (위 오디오 로딩 주 참조).
+            emb = emb_inference.crop(audio_input, Segment(st, min(e, duration - 1e-3)))
             vecs.append(np.asarray(emb).reshape(-1))
         mean = np.mean(vecs, axis=0)
         speaker_vecs[spk] = mean / (np.linalg.norm(mean) + 1e-9)

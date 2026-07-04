@@ -111,6 +111,8 @@ interface SessionContextValue {
   // Activity.Publishing 진입 — 발행 트리거 시 호출 (PTY 분기는 호출자 책임).
   enterPublishing: () => void;
   notifyPtyExit: () => void;
+  // CLI 전환 등에서 PTY+로컬(mlx) 작업을 함께 중단하고 진행 상태를 정리 (회의 컨텍스트는 유지).
+  abortLlmWork: () => Promise<void>;
 
   // ─── PTY 직접 조작 (Tier 1 stdin write 패턴 위해 노출) ──────
   // 살아있는 PTY가 있으면 stdin에 텍스트 그대로 write. 없으면 throw.
@@ -199,9 +201,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     let unlisten: (() => void) | undefined;
     listen<string>("app:signal", (event) => {
       try {
-        const signal = JSON.parse(event.payload) as { type: string; step?: string };
+        const signal = JSON.parse(event.payload) as { type: string; step?: string; msg?: string };
         if (signal.type === "refresh") {
           setRefreshKey((k) => k + 1);
+        } else if (signal.type === "phase_error") {
+          // 로컬 LLM(mlx) 등이 작업 중 실패 신호. 진행 상태를 해제해 UI가 멈추지 않게 하고 알림.
+          // 배너도 가드 안 — 이미 Idle(사용자 중단·다른 경로가 선처리)이면 늦게 온 신호에
+          // 배너만 또 띄우지 않는다 (상태 전환과 알림을 항상 함께).
+          const prev = activityRef.current;
+          if (
+            prev === Activity.Correcting ||
+            prev === Activity.Composing ||
+            prev === Activity.Publishing
+          ) {
+            setActivity(Activity.Idle);
+            setCompletedActivity(null);
+            showTabBanner(`작업을 완료하지 못했어요${signal.msg ? `\n${signal.msg}` : ""}`);
+          }
         } else if (signal.type === "phase_step_done") {
           // Phase 내 sub-step 종료. 현재는 phase1의 "correct"만 처리 (후보정 → 회의록 작성 전이).
           // SessionViewer가 새 파일(transcript_corrected.txt) 가용성 재체크하도록 refreshKey++ +
@@ -266,6 +282,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const startNewMeeting = useCallback((m: Meeting) => {
     cancelledRef.current = false;
     void killPty();
+    // PTY kill과 대칭 — 로컬(mlx) 회의록 프로세스도 옛 회의 잔존 시 새 컨텍스트의 신호를
+    // 오염시키므로(phase_done/notify에 세션 식별 없음) 함께 중단한다. 없으면 no-op.
+    void invoke("cmd_cancel_local_meeting").catch(() => {});
     setMeeting(m);
     setSessionDir(null);
     setSteps(EMPTY_STEPS);
@@ -280,6 +299,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const openExistingMeeting = useCallback(
     (s: { title: string; path: string; steps: SessionSteps }) => {
       void killPty();
+      void invoke("cmd_cancel_local_meeting").catch(() => {});
       setMeeting({ title: s.title, attendees: [] });
       setSessionDir(s.path);
       setSteps(s.steps);
@@ -295,6 +315,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const resetSession = useCallback(() => {
     void killPty();
+    void invoke("cmd_cancel_local_meeting").catch(() => {});
     setMeeting(null);
     setSessionDir(null);
     setSteps(EMPTY_STEPS);
@@ -344,15 +365,47 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setFocusSubtab(null);
   }, [sessionDir]);
 
+  // 로컬 AI 회의록 실행 — PTY가 아닌 Rust 서브프로세스(전사·화자분리와 같은 결). 진행 라인은
+  // "local:output" 이벤트(LocalProgressPanel), 완료/실패 전환은 스크립트의 신호(phase_done/
+  // phase_error → app:signal)가 담당. 이 catch는 신호 없이 죽는 경우(크래시)의 안전망 —
+  // 사용자 중단(cmd_cancel_local_meeting)은 Rust가 Ok로 삼키므로 여기 안 온다.
+  // 스크립트 fail()은 신호와 비0 종료를 둘 다 내는데 invoke reject(즉시)가 신호(감시 스레드
+  // 500ms 폴링)보다 먼저 도착한다 — 폴링 주기보다 길게 기다렸다가 그때도 Composing이면
+  // (=신호가 끝내 안 온 크래시) 안전망 발동. 신호가 왔으면 phase_error가 이미 처리했으므로 침묵.
+  const runLocalMeeting = useCallback(async () => {
+    if (!sessionDir) return;
+    try {
+      await invoke("cmd_run_local_meeting", { sessionDir });
+    } catch (e) {
+      // 이중 호출 가드 거절 — 오류가 아니라 "1차 실행이 이미 돌고 있음". 여기서 리셋하면
+      // 정당한 1차 실행의 Composing을 죽여 완료 신호(phase_done)까지 무시되게 만든다.
+      if (String(e).includes("이미 진행 중")) return;
+      await new Promise((r) => setTimeout(r, 800));
+      if (activityRef.current === Activity.Composing) {
+        setActivity(Activity.Idle);
+        setCompletedActivity(null);
+        showTabBanner(`회의록 작성을 완료하지 못했어요\n${e}`);
+      }
+    }
+  }, [sessionDir, showTabBanner]);
+
   // 전사·화자분리 모두 끝남 → Phase 1(후보정)로 진입. setSteps는 markStepDone이 단계별로 처리.
   // drawer 자동 expand — 사용자가 panel을 직접 열지 않아도 LLM 작업 시작 시 자연스럽게 노출 (Section 10).
   // 새 작업 시작이므로 옛 완료 띠 정리.
   const completeProcessing = useCallback(() => {
+    // 로컬 LLM은 교정 단계가 없고 PTY도 안 쓴다 — 바로 Composing + 서브프로세스 실행.
+    if (cli === "mlx") {
+      setActivity(Activity.Composing);
+      setDrawerOpen(true);
+      setCompletedActivity(null);
+      void runLocalMeeting();
+      return;
+    }
     setActivity(Activity.Correcting);
     setSpawnRequest(buildSpawnRequest(appDir, `/meeting`, sessionDir, signalDir ?? "", cli));
     setDrawerOpen(true);
     setCompletedActivity(null);
-  }, [appDir, sessionDir, signalDir, cli]);
+  }, [appDir, sessionDir, signalDir, cli, runLocalMeeting]);
 
   // 무음("발화 없음") 감지 — transcribe 단계가 transcribe_result.json에 기록한 판정을
   // ProcessingPanel이 읽어 호출. diarize·/meeting을 건너뛰고 Idle로 귀결(가짜 회의록·토큰 낭비
@@ -401,11 +454,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // 사용자가 명시 시작(사이드바 Primary). corrected 여부 보고 Correcting/Composing 분기.
   // Phase 1 가이드는 transcript_corrected.txt 있으면 1단계 skip하고 회의록 단계로 직진.
   const startComposing = useCallback(async () => {
+    // 로컬 LLM은 교정 단계가 없고 PTY도 안 쓴다 — 서브프로세스 실행.
+    if (cli === "mlx") {
+      setActivity(Activity.Composing);
+      setDrawerOpen(true);
+      setCompletedActivity(null);
+      void runLocalMeeting();
+      return;
+    }
     setActivity(stepsRef.current.corrected ? Activity.Composing : Activity.Correcting);
     setDrawerOpen(true);
     setCompletedActivity(null);
     await runSkillTier("/meeting");
-  }, [runSkillTier]);
+  }, [runSkillTier, cli, runLocalMeeting]);
 
   // Activity.Publishing 진입 — 발행 트리거 시 호출. PTY 분기(stdin write vs spawn)는 호출자(SessionScreen) 책임.
   const enterPublishing = useCallback(() => {
@@ -433,9 +494,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setActivity(Activity.Composing);
       setDrawerOpen(true);
       setCompletedActivity(null);
+      if (cli === "mlx") {
+        void runLocalMeeting();
+        return;
+      }
       await runSkillTier("/meeting");
     },
-    [sessionDir, runSkillTier]
+    [sessionDir, runSkillTier, cli, runLocalMeeting]
   );
 
   const updateTitle = useCallback(
@@ -481,6 +546,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   // PTY 명시 종료 (사용자 exit) — 정상 phase 완료는 phase_done 신호가 처리. 미완료 종료는 idle 복귀.
   const notifyPtyExit = useCallback(() => {
+    setActivity((prev) =>
+      prev === Activity.Correcting || prev === Activity.Composing || prev === Activity.Publishing
+        ? Activity.Idle
+        : prev
+    );
+  }, []);
+
+  // LLM 작업 전면 중단 — PTY(claude/codex)와 로컬(mlx) 프로세스를 함께 죽이고 진행 상태·
+  // 잔존 spawn 요청을 정리한다. CLI 전환처럼 "돌던 작업이 더는 유효하지 않은" 지점 공용.
+  // 회의 컨텍스트(meeting/sessionDir/steps)는 건드리지 않는다 — 세션 자체는 그대로 유효.
+  const abortLlmWork = useCallback(async () => {
+    await Promise.allSettled([killPty(), invoke("cmd_cancel_local_meeting")]);
+    setSpawnRequest(null);
+    setCurrentStepId(null);
+    setCompletedActivity(null);
     setActivity((prev) =>
       prev === Activity.Correcting || prev === Activity.Composing || prev === Activity.Publishing
         ? Activity.Idle
@@ -587,6 +667,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       markPublished,
       enterPublishing,
       notifyPtyExit,
+      abortLlmWork,
       isPtyAlive,
       sendPtyInput,
       spawnPty,
@@ -638,6 +719,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       markPublished,
       enterPublishing,
       notifyPtyExit,
+      abortLlmWork,
       isPtyAlive,
       sendPtyInput,
       spawnPty,

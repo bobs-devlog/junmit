@@ -52,6 +52,8 @@ interface TerminalWorkspaceProps {
   emptyState?: ReactNode;
   /** AI 토글 버튼 노출 여부 (기본 true). 유형 화면처럼 작업 중에만 노출하고 싶을 때 false. */
   showToggle?: boolean;
+  /** drawer 본문을 터미널 대신 이 콘텐츠로 대체 — 로컬 AI(비-터미널 파이프라인)의 진행 패널용. */
+  panelContent?: ReactNode;
 }
 
 export default function TerminalWorkspace({
@@ -65,6 +67,7 @@ export default function TerminalWorkspace({
   panelDone = false,
   emptyState,
   showToggle = true,
+  panelContent,
 }: TerminalWorkspaceProps) {
   const [panelWidth, setPanelWidth] = useState<number>(loadInitialPanelWidth);
   const [isDragging, setIsDragging] = useState(false);
@@ -175,15 +178,19 @@ export default function TerminalWorkspace({
           </span>
         </div>
         <div className={styles.panelBody}>
-          <div className={clsx(styles.terminalWrap, !spawnRequest && styles.hidden)}>
-            <TerminalPanel
-              ref={terminalRef}
-              spawnRequest={spawnRequest}
-              onExit={onExit}
-              onEscape={onEscape}
-            />
-          </div>
-          {!spawnRequest && emptyState}
+          {panelContent ?? (
+            <>
+              <div className={clsx(styles.terminalWrap, !spawnRequest && styles.hidden)}>
+                <TerminalPanel
+                  ref={terminalRef}
+                  spawnRequest={spawnRequest}
+                  onExit={onExit}
+                  onEscape={onEscape}
+                />
+              </div>
+              {!spawnRequest && emptyState}
+            </>
+          )}
         </div>
       </aside>
     </div>

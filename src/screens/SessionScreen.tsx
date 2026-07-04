@@ -12,7 +12,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { useDialog } from "@/contexts/DialogContext";
 import useNavigationBlocker from "@/hooks/useNavigationBlocker";
 import useAtlassianLogin from "@/hooks/useAtlassianLogin";
-import { Activity, Step } from "@/constants";
+import { Activity, Step, cliHasAgent } from "@/constants";
 import type { ConfluencePublishMode } from "@/types";
 import { loadPublishConfig, updatePublishConfig, defaultPublishConfig } from "@/utils/publishMeta";
 import { killPty, sendSlashCommand } from "@/utils/pty";
@@ -117,6 +117,8 @@ export default function SessionScreen() {
         currentActivity === Activity.Publishing
       ) {
         await killPty();
+        // 로컬 AI 회의록 서브프로세스 — 없으면 no-op.
+        await invoke<void>("cmd_cancel_local_meeting").catch(() => {});
         // 의도적 kill은 pty:exit를 emit하지 않으므로(Rust 억제) activity를 직접 Idle 복귀 —
         // 화면 이탈 후 비-Idle이 잔존하면 다음 진입 transition 전까지 상태가 어긋난다.
         notifyPtyExit();
@@ -210,6 +212,7 @@ export default function SessionScreen() {
   // 사용자가 PTY에서 단독 Esc 키 누름 — Claude 응답 interrupt 의도 신호 (TerminalPanel onData에서 감지).
   // 즉시 activity Idle 복귀, confirm 없음. PTY는 그대로 살림 (사용자가 이어서 입력 가능).
   // notifyPtyExit이 Correcting/Composing/Publishing에서만 Idle 전환하므로 다른 상태에선 자연스럽게 noop.
+  // (mlx는 터미널 자체를 안 띄우므로 — 진행 패널로 대체 — 이 경로에 도달하지 않는다.)
   const handleEscape = useCallback(() => {
     notifyPtyExit();
   }, [notifyPtyExit]);
@@ -293,6 +296,10 @@ export default function SessionScreen() {
     try {
       await invoke<void>("cmd_cancel_pipeline");
     } catch {}
+    // 로컬 AI 회의록 서브프로세스 — 없으면 no-op.
+    try {
+      await invoke<void>("cmd_cancel_local_meeting");
+    } catch {}
     resetSession();
     navigate("/", { replace: true });
   }, [confirm, resetSession, navigate]);
@@ -307,6 +314,10 @@ export default function SessionScreen() {
       const url = cfg.confluence.pageUrl.trim();
       if (url) {
         await invoke("cmd_open_path", { path: url });
+      } else if (!cliHasAgent(cli)) {
+        // 발행 재시도는 에이전트 전용(/publish 스킬) — 로컬 AI에선 모달로 유도하면
+        // 미설치 CLI를 spawn하는 막다른 길이 된다 (published인데 pageUrl이 빈 실패 잔재 케이스).
+        toast.info("발행 기록이 불완전해요. 발행 재시도는 Claude/Codex에서만 가능합니다.");
       } else {
         // handlePublish 경유 — 모달 open과 인증 prefetch 갱신이 항상 함께 가도록 (직접 open 금지).
         handlePublish();
@@ -314,7 +325,7 @@ export default function SessionScreen() {
     } catch (e) {
       toast.error(`Confluence URL 열기 실패: ${e}`);
     }
-  }, [sessionDir, toast, handlePublish]);
+  }, [sessionDir, toast, handlePublish, cli]);
 
   // PublishModal "확인" 클릭 — mode별 본격 분기.
   // - create: Tier 1 (살아있는 PTY stdin write) 또는 Tier 2 (새 PTY spawn) → publish 스킬이 publish.json·phase_done 처리
@@ -435,6 +446,7 @@ export default function SessionScreen() {
             activity={activity}
             steps={steps}
             currentStepId={currentStepId}
+            cli={cli}
             publishMode={publishMode}
             onAbort={handleAbort}
             onStartProcessing={handleStartProcessing}
@@ -482,6 +494,8 @@ export default function SessionScreen() {
             onUserTabChange={clearFocusSubtab}
             onToggleDrawer={toggleDrawer}
             notesWritten={steps.notes_written}
+            assistAvailable={cliHasAgent(cli)}
+            localBackend={!cliHasAgent(cli)}
             noSpeech={steps.no_speech}
             onForceCompose={handleForceCompose}
             onRequestAi={handleRequestAi}

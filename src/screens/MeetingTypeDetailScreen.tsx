@@ -8,6 +8,8 @@ import TerminalWorkspace from "@/components/TerminalWorkspace";
 import TypeViewer from "@/components/TypeViewer";
 import { useToast } from "@/contexts/ToastContext";
 import { useDialog } from "@/contexts/DialogContext";
+import { useSession } from "@/contexts/SessionContext";
+import { cliHasAgent } from "@/constants";
 import { useTemplateSession } from "@/hooks/useTemplateSession";
 import { killPty } from "@/utils/pty";
 import type { MeetingTypeOption } from "@/types";
@@ -22,6 +24,8 @@ export default function MeetingTypeDetailScreen() {
   const toast = useToast();
   const { confirm } = useDialog();
   const session = useTemplateSession();
+  // AI 조정(/template)은 에이전트 전용 — 로컬 AI(mlx)에선 진입 자체를 숨긴다.
+  const agent = cliHasAgent(useSession().cli);
 
   const [types, setTypes] = useState<MeetingTypeOption[]>([]);
   const [content, setContent] = useState<string | null>(null);
@@ -227,12 +231,15 @@ export default function MeetingTypeDetailScreen() {
                 <p className={styles.mtDesc}>{option.description}</p>
               </header>
               <div className={styles.mtActions}>
-                <button type="button" className={styles.mtPrimary} onClick={onAdjust}>
-                  AI로 조정
-                </button>
+                {/* AI 조정(/template)은 에이전트 전용 — 로컬 AI에선 숨김(미설치 CLI spawn 방지). */}
+                {agent && (
+                  <button type="button" className={styles.mtPrimary} onClick={onAdjust}>
+                    AI로 조정
+                  </button>
+                )}
                 <button
                   type="button"
-                  className={styles.mtGhost}
+                  className={agent ? styles.mtGhost : styles.mtPrimary}
                   onClick={() => {
                     setEditText(content);
                     setEditing(true);

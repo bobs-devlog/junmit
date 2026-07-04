@@ -1,7 +1,7 @@
 import clsx from "clsx";
-import { Activity, Step, STEPS, activityMeta } from "@/constants";
+import { Activity, Step, activityMeta, cliHasAgent, stepsForCli } from "@/constants";
 import type { StepId } from "@/constants";
-import type { ConfluencePublishMode, SessionSteps } from "@/types";
+import type { Cli, ConfluencePublishMode, SessionSteps } from "@/types";
 import Spinner from "@/components/Spinner";
 import styles from "./Sidebar.module.css";
 
@@ -22,6 +22,8 @@ interface Props {
   activity: Activity; // Idle / Saving / Processing / Correcting / Composing / Publishing (Recording은 RecordingSidebarControls)
   steps: SessionSteps;
   currentStepId: StepId | null;
+  // 활성 백엔드 — mlx(로컬 LLM)는 에이전트·MCP가 없어 stepper 단계와 발행·추가 요청 버튼을 게이팅.
+  cli: Cli;
   // publish.json.confluence.mode — published 상태에서 "Confluence 열기" 노출 분기에 사용.
   // create만 외부 페이지 URL 보유. append/skip은 시스템이 외부 URL 모르므로 버튼 미노출.
   publishMode: ConfluencePublishMode;
@@ -43,6 +45,7 @@ export default function SessionSidebarControls({
   activity,
   steps,
   currentStepId,
+  cli,
   publishMode,
   onAbort,
   onStartProcessing,
@@ -77,7 +80,7 @@ export default function SessionSidebarControls({
 
         {/* Stepper — 모든 활동성에서 노출 (Recording 제외, 이건 별도 화면) */}
         <div className={styles.processSteps}>
-          {STEPS.map((step) => {
+          {stepsForCli(cli).map((step) => {
             const isDone = steps[step.field];
             const isCurrent = step.id === activeStep;
             return (
@@ -110,6 +113,7 @@ export default function SessionSidebarControls({
           <>
             <IdleActions
               steps={steps}
+              cli={cli}
               publishMode={publishMode}
               onStartProcessing={onStartProcessing}
               onResumeProcessing={onResumeProcessing}
@@ -141,6 +145,7 @@ export default function SessionSidebarControls({
 
 interface IdleProps {
   steps: SessionSteps;
+  cli: Cli;
   publishMode: ConfluencePublishMode;
   onStartProcessing: () => void;
   onResumeProcessing: () => void;
@@ -156,6 +161,7 @@ interface IdleProps {
 // 그 전엔 자유 대화할 컨텍스트가 부족해 사이드바 정형 흐름이 우선.
 function IdleActions({
   steps,
+  cli,
   publishMode,
   onStartProcessing,
   onResumeProcessing,
@@ -165,6 +171,9 @@ function IdleActions({
   onRequestAi,
   onForceCompose,
 }: IdleProps) {
+  // mlx(로컬 LLM)는 에이전트·MCP가 없어 발행(/publish)·추가 요청(/assist) 불가 → 버튼 미노출.
+  // "Confluence 열기"는 저장된 URL을 열 뿐이라 유지 (클라우드 백엔드로 발행했던 세션 대비).
+  const agent = cliHasAgent(cli);
   if (steps.published) {
     // create 모드만 외부 페이지 URL 보유 → "Confluence 열기" 노출.
     // append/skip은 시스템이 외부 URL 모르므로 "다시 등록"을 Primary로 승격.
@@ -174,15 +183,20 @@ function IdleActions({
           <button className="btn btn-primary btn-large" onClick={onOpenConfluence}>
             Confluence 열기
           </button>
-          <button className="btn btn-secondary" onClick={onPublish}>
-            다시 등록
-          </button>
-          <button className="btn btn-secondary" onClick={onRequestAi}>
-            AI에게 추가 요청
-          </button>
+          {agent && (
+            <>
+              <button className="btn btn-secondary" onClick={onPublish}>
+                다시 등록
+              </button>
+              <button className="btn btn-secondary" onClick={onRequestAi}>
+                AI에게 추가 요청
+              </button>
+            </>
+          )}
         </>
       );
     }
+    if (!agent) return null;
     return (
       <>
         <button className="btn btn-primary btn-large" onClick={onPublish}>
@@ -195,6 +209,8 @@ function IdleActions({
     );
   }
   if (steps.notes_written) {
+    // mlx: 발행·추가 요청이 없으므로 회의록 작성이 곧 마지막 단계 — 액션 없음.
+    if (!agent) return null;
     return (
       <>
         <button className="btn btn-primary btn-large" onClick={onPublish}>

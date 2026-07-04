@@ -226,8 +226,11 @@ export interface SpawnRequest {
   ts: number;
 }
 
-// LLM 작업을 수행하는 CLI. 기본 claude. 사용자가 선택한 값을 Rust가 영속 저장(cmd_get/set_active_cli).
-export type Cli = "claude" | "codex";
+// 회의록 AI 백엔드. 기본 claude. 사용자가 선택한 값을 Rust가 영속 저장(cmd_get/set_active_cli).
+// "mlx" = 로컬 LLM(에이전트 아님, 결정론적 파이프라인). /meeting(회의록 작성)만 지원.
+// 이름 주의: "Cli"는 claude/codex만 있던 시절의 역사적 이름 — mlx는 CLI가 아니며 실제 의미는
+// "AI 백엔드"다. 리네임은 전층 계약(Rust 커맨드명·디스크 파일 active_cli·라우트)이라 별도 작업으로.
+export type Cli = "claude" | "codex" | "mlx";
 
 // cmd_detect_clis 결과 — 온보딩 "AI 도구 선택" 화면 카드 상태.
 // 양쪽 모두 junmit 전용 환경 기준 인증까지 감지(claude: `auth status`, codex: `login status`).
@@ -241,5 +244,6 @@ export interface CliAvailability {
 // ── 의존성 체크 결과 ──────────────────────────────
 export interface DepsCheck {
   installed: boolean;
+  missing?: string[];
   [key: string]: unknown;
 }

@@ -30,7 +30,11 @@ export const router = createMemoryRouter(
         { path: "/loading", element: <LoadingScreen /> },
         { path: "/error", element: <ErrorScreen /> },
         { path: "/select-cli", element: <SelectCliScreen /> },
-        { path: "/setup", element: <SetupScreen /> },
+        // key 필수 — 같은 컴포넌트를 두 라우트가 공유하므로, key가 없으면 /setup(완료 상태)에서
+        // /local-model로 넘어갈 때 React가 상태를 유지한 채 재사용해 설치도 안 한 모델이
+        // "준비되었습니다"로 뜬다 (step state 잔존). key로 라우트별 강제 리마운트.
+        { path: "/setup", element: <SetupScreen key="base" /> },
+        { path: "/local-model", element: <SetupScreen key="model" mode="model" /> },
         {
           // Sidebar + 메인 영역 셸. Home/History/Recording/Session 공통.
           element: <MainLayout />,

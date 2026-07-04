@@ -37,7 +37,7 @@ macOS 14.4+, Apple Silicon 전용. 처음 실행할 땐 보안 우회가 한 번
 
 - **macOS 14.4 (Sonoma) 이상, Apple Silicon.** Metal/MPS GPU 가속을 쓰고, 원격회의 시스템 오디오 캡처(CoreAudio Process Tap)가 macOS 14.4+를 요구합니다.
 - **AI 도구 구독.** 회의록 작성에 [Claude Code](https://claude.com/claude-code)(Claude Pro/Max)나 [Codex](https://developers.openai.com/codex/cli)(ChatGPT Plus/Pro 등) 중 하나의 구독이 필요합니다. CLI 설치와 로그인은 앱이 첫 실행 때 안내하므로 미리 준비할 것은 없습니다.
-- **디스크 여유 약 3GB.** Whisper 모델(약 1.5GB)과 Python 환경(약 0.9GB), 앱을 합한 용량입니다. 한국어 전사 정확도를 위해 large급 모델(large-v3-turbo)을 써서 모델이 큽니다. 이후 회의 녹음과 결과물이 회의마다 더 쌓입니다(녹음 길이에 따라 수십에서 수백 MB).
+- **디스크 여유 약 2GB.** Whisper 모델(약 870MB, q8_0 양자화 — 전사 품질은 FP16과 동급)과 Python 환경(약 0.9GB), 앱을 합한 용량입니다. 한국어 전사 정확도를 위해 large급 모델(large-v3-turbo)을 씁니다. 이후 회의 녹음과 결과물이 회의마다 더 쌓입니다(녹음 길이에 따라 수십에서 수백 MB). 로컬 AI 회의록 옵션을 선택하면 모델(6.8~11GB)이 추가로 필요합니다.
 
 > Python 3.12는 앱이 portable 인터프리터를 자동으로 내려받습니다(uv). Python이나 Node.js를 따로 설치할 필요가 없습니다.
 
@@ -65,7 +65,7 @@ macOS 14.4+, Apple Silicon 전용. 처음 실행할 땐 보안 우회가 한 번
 
 Setup 화면에서 "설치 시작"을 누르면 회의 처리에 필요한 자원을 내려받습니다.
 
-- Whisper 모델(약 1.5GB)과 PyTorch·pyannote.audio 등 Python 환경(합쳐 수 GB)을 받습니다. 인터넷 속도에 따라 10–20분 정도 걸릴 수 있습니다.
+- Whisper 모델(약 870MB)과 PyTorch·pyannote.audio 등 Python 환경(합쳐 수 GB)을 받습니다. 인터넷 속도에 따라 10–20분 정도 걸릴 수 있습니다.
 - 화자분리 모델은 앱에 동봉되어 있어 별도 계정이나 토큰이 필요 없습니다.
 
 ### 4. macOS 권한 (마이크, 시스템 오디오, 캘린더)
