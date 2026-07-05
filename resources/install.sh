@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 사용자 머신용 setup. 사용자 데이터(.venv, models, python-runtime)와 캘린더 권한 안내만 책임.
-# AI CLI(claude/codex)는 온보딩 "AI 도구 선택" 화면이 설치·로그인을 보장하고, Atlassian MCP는
-# 앱이 각 CLI의 junmit 전용 환경에 자동 등록하므로 여기서 할 일이 없다.
+# AI CLI(claude/codex/antigravity)는 온보딩 "AI 도구 선택" 화면이 설치·로그인을 보장하고,
+# Atlassian MCP는 앱이 CLI별 config에 자동 등록하므로 여기서 할 일이 없다.
 # 단 로컬 AI(mlx)는 CLI가 아니라서 이 스크립트가 런타임(mlx-vlm)·모델 다운로드까지 책임진다
 # (INSTALL_MODE=model, 아래 참조).
 # sidecar 바이너리(whisper-cli, diarize, uv 등)는 앱 번들에 포함되어 있으므로 여기서 빌드하지 않는다.
@@ -47,17 +47,18 @@ VENV_DIR="${VENV_DIR:-$APP_DATA_DIR/.venv}"
 export UV_PYTHON_INSTALL_DIR="$APP_DATA_DIR/python-runtime"
 mkdir -p "$APP_DATA_DIR" "$MODELS_DIR" "$UV_PYTHON_INSTALL_DIR"
 
-# 선택된 AI 백엔드 — 앱 "AI 도구 선택"이 기록한 값(claude/codex/mlx). 파일이 없거나 값이 다르면
-# claude(앱 기본값과 동일)로 본다. claude/codex의 설치·로그인은 온보딩 선택 화면이 보장하므로
+# 선택된 AI 백엔드 — 앱 "AI 도구 선택"이 기록한 값(claude/codex/antigravity/mlx). 파일이 없거나
+# 값이 다르면 claude(앱 기본값과 동일)로 본다. CLI들의 설치·로그인은 온보딩 선택 화면이 보장하므로
 # setup에서 검증하지 않는다. mlx(로컬 LLM)만 이 스크립트가 런타임·모델 설치를 책임진다.
 ACTIVE_CLI="claude"
 if [[ -f "$APP_DATA_DIR/active_cli" ]]; then
   ACTIVE_CLI="$(tr -d '[:space:]' < "$APP_DATA_DIR/active_cli")"
-  case "$ACTIVE_CLI" in claude|codex|mlx) ;; *) ACTIVE_CLI="claude" ;; esac
+  case "$ACTIVE_CLI" in claude|codex|antigravity|mlx) ;; *) ACTIVE_CLI="claude" ;; esac
 fi
 LLM_LABEL="Claude Code"; LLM_MODE="(대화형)"
 case "$ACTIVE_CLI" in
   codex) LLM_LABEL="Codex" ;;
+  antigravity) LLM_LABEL="Antigravity CLI" ;;
   mlx) LLM_LABEL="로컬 AI (Gemma 4 12B)"; LLM_MODE="(로컬·오프라인)" ;;
 esac
 
@@ -181,8 +182,8 @@ fi
 # brew·사전 설치가 더 이상 필요 없다.
 
 # Python 검증/설치는 uv가 자동 처리 (시스템 python3 의존 X).
-# AI CLI(claude/codex) 검증은 하지 않는다 — 온보딩 "AI 도구 선택" 화면이 공식 curl 인스톨러로
-# 설치하고 junmit 전용 환경 로그인까지 확인한 뒤에만 setup으로 진입한다(Node.js도 불필요).
+# AI CLI(claude/codex/antigravity) 검증은 하지 않는다 — 온보딩 "AI 도구 선택" 화면이 공식 curl
+# 인스톨러로 설치하고 로그인까지 확인한 뒤에만 setup으로 진입한다(Node.js도 불필요).
 
 # === Python venv + pyannote.audio (화자 분리 엔진) ===
 # 무거운 Whisper 모델 다운로드 전에 먼저 검증 — SSL/네트워크 문제를 fail-fast로 노출.
@@ -260,8 +261,8 @@ fi
 # pyannote 화자분리 모델은 앱 번들에 동봉되어 있다 (resources/models/pyannote,
 # CC-BY-4.0 — build-binaries.sh가 배치). HF 계정·토큰·prefetch 단계 없음.
 
-# Atlassian MCP는 앱이 각 CLI의 junmit 전용 환경에 자동 등록(claude: .claude.json 베이크,
-# codex: config.toml 베이크)하므로 setup에서 등록하지 않는다.
+# Atlassian MCP는 앱이 각 CLI config에 자동 등록(claude: .claude.json 베이크, codex:
+# config.toml 베이크, antigravity: 전역 mcp_config.json merge)하므로 setup에서 등록하지 않는다.
 
 echo ""
 info "캘린더 연동 (최초 1회):"

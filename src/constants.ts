@@ -1,4 +1,4 @@
-import type { Cli, SessionSteps } from "./types";
+import type { Cli, CliAvailability, SessionSteps } from "./types";
 
 // 화면 모드 — UI 라우팅용. Activity와 직교: 어느 화면(Screen)에서든 무슨 작업(Activity)이 도는지 별도 표현.
 export const Screen = {
@@ -108,7 +108,21 @@ export const STEPS: ReadonlyArray<StepInfo> = [
 export const cliHasAgent = (cli: Cli) => cli !== "mlx";
 
 // Rust 등 경계에서 넘어온 문자열의 Cli 검증 — 유니온 목록의 단일 진실 원천.
-export const isCli = (v: string): v is Cli => v === "claude" || v === "codex" || v === "mlx";
+export const isCli = (v: string): v is Cli =>
+  v === "claude" || v === "codex" || v === "mlx" || v === "antigravity";
+
+// CliAvailability의 CLI별 설치/인증 필드 접근 — 평면 struct(와이어 계약)를 유지하면서
+// 호출부의 "claude ? : codex" 삼항 중첩을 막는다. mlx는 감지 대상이 아니므로 false.
+export const cliInstalledOf = (availability: CliAvailability, cli: Cli): boolean =>
+  cli === "claude" ? availability.claude
+  : cli === "codex" ? availability.codex
+  : cli === "antigravity" ? availability.antigravity
+  : false;
+export const cliAuthedOf = (availability: CliAvailability, cli: Cli): boolean =>
+  cli === "claude" ? availability.claude_authed
+  : cli === "codex" ? availability.codex_authed
+  : cli === "antigravity" ? availability.antigravity_authed
+  : false;
 
 // 로컬 모델 변형 id — Rust(session.rs LOCAL_MODEL_*)·install.sh·local_meeting.py와 문자열이
 // 일치해야 하는 프로토콜 값(디렉토리명 겸용). 리터럴을 흩뿌리지 말고 반드시 이 상수를 쓸 것.

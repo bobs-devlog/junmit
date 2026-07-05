@@ -228,17 +228,23 @@ export interface SpawnRequest {
 
 // 회의록 AI 백엔드. 기본 claude. 사용자가 선택한 값을 Rust가 영속 저장(cmd_get/set_active_cli).
 // "mlx" = 로컬 LLM(에이전트 아님, 결정론적 파이프라인). /meeting(회의록 작성)만 지원.
+// "antigravity" = Google Antigravity CLI(agy). codex와 같은 에이전트 티어이며 스킬 규약도
+// codex 산출물(.agents/skills + AGENTS.md)을 공유한다.
 // 이름 주의: "Cli"는 claude/codex만 있던 시절의 역사적 이름 — mlx는 CLI가 아니며 실제 의미는
 // "AI 백엔드"다. 리네임은 전층 계약(Rust 커맨드명·디스크 파일 active_cli·라우트)이라 별도 작업으로.
-export type Cli = "claude" | "codex" | "mlx";
+export type Cli = "claude" | "codex" | "mlx" | "antigravity";
 
 // cmd_detect_clis 결과 — 온보딩 "AI 도구 선택" 화면 카드 상태.
-// 양쪽 모두 junmit 전용 환경 기준 인증까지 감지(claude: `auth status`, codex: `login status`).
+// claude/codex는 junmit 전용 환경 기준 인증까지 감지(claude: `auth status`, codex: `login status`).
+// antigravity는 격리 환경이 없어 사용자 전역 로그인 기준(`agy models` 출력 판별 — session.rs 참고).
+// 에이전트 CLI가 하나 더 늘면 평면 필드 대신 맵 구조로 리팩터할 것(와이어 계약 변경이라 별도 작업).
 export interface CliAvailability {
   claude: boolean;
   claude_authed: boolean;
   codex: boolean;
   codex_authed: boolean;
+  antigravity: boolean;
+  antigravity_authed: boolean;
 }
 
 // ── 의존성 체크 결과 ──────────────────────────────

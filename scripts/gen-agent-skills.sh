@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# 정본(.claude) → Codex용 산출물(.agents/skills + AGENTS.md) 생성.
+# 정본(.claude) → 에이전트 CLI 공용 산출물(.agents/skills + AGENTS.md) 생성.
+# 산출물은 Codex와 Antigravity(agy)가 함께 읽는다 — 둘 다 워크스페이스 스킬을
+# `.agents/skills/<name>/SKILL.md`(name+description frontmatter)에서, 지시 파일을
+# AGENTS.md에서 스캔하는 동일 규약(agy는 동봉 문서 실측, cwd→저장소 루트 walk-up 로드).
 #
 # 단일 소스 원칙: 사람이 편집하는 곳은 항상 resources/.claude/ 한 곳.
-# 이 스크립트가 Codex가 스캔하는 경로(.agents/skills)와 지시 파일(AGENTS.md)을 파생 생성한다.
+# 이 스크립트가 스캔 경로(.agents/skills)와 지시 파일(AGENTS.md)을 파생 생성한다.
 # 산출물은 gitignored — 빌드(build-binaries.sh)와 dev 기동 시 재생성한다.
 #
 # CLI별 차이는 두 층으로 나눠 다룬다:
@@ -10,10 +13,11 @@
 #      Codex 실측: update_plan은 TodoWrite와 동일한 pending/in_progress/completed 의미론,
 #      request_user_input은 AskUserQuestion 대응. frontmatter는 Claude 전용 키만 제거
 #      (Codex는 name+description만 쓰고, 권한은 샌드박스/승인 플래그·config.toml로 다룬다).
+#      치환 결과 도구명은 Codex 표기 — Antigravity는 AGENTS.md의 자기 절에서 재해석한다.
 #   2) 구조 차이(Agent tool 문법 등) — sed로 본문을 뜯지 않고 AGENTS.md 끝의
-#      "Codex 해석 규칙"이 전역 해석을 지시한다 (본문 절차 원형 유지 = 정본과 diff 최소).
+#      "에이전트 CLI 해석 규칙"이 CLI별 전역 해석을 지시한다 (본문 절차 원형 유지 = 정본과 diff 최소).
 # 본문 절차·신호 호출(signal.sh)·`.claude/...` 경로 참조는 그대로 둔다 — cwd가 resources/라
-# 양쪽 CLI에서 동일하게 읽힌다 (.claude/agents/의 named agent 정의 포함).
+# 어느 CLI에서든 동일하게 읽힌다 (.claude/agents/의 named agent 정의 포함).
 set -euo pipefail
 
 RES_DIR="$(cd "$(dirname "$0")/../resources" && pwd)"
@@ -58,15 +62,23 @@ for dir in "$SRC"/*/; do
   done
 done
 
-# AGENTS.md = 출력 규칙(CLAUDE.md 중립화) + Codex 해석 규칙(구조 차이 전역 지시).
+# AGENTS.md = 출력 규칙(CLAUDE.md 중립화) + CLI별 해석 규칙(구조 차이 전역 지시).
 {
   sed "${NEUTRALIZE[@]}" -e 's#`\.claude/skills/`#`.agents/skills/`#g' "$RES_DIR/.claude/CLAUDE.md"
   cat <<'EOF'
 
-## Codex 해석 규칙 (claude 전용 지시 대응)
+## 에이전트 CLI 해석 규칙 (Codex · Antigravity)
 
-스킬 본문(.agents/skills)은 Claude Code와 공유하는 단일 정본에서 생성됩니다. 도구명은
-대응 도구로 치환돼 있지만, 구조적 차이는 다음처럼 해석하세요:
+스킬 본문(.agents/skills)은 Claude Code와 공유하는 단일 정본에서 생성되며, 이 산출물은
+Codex와 Antigravity(agy)가 함께 읽습니다. 본문의 `update_plan`·`request_user_input`은
+Codex 도구명 표기입니다 — 자신이 어느 CLI인지에 따라 아래 해당 절의 해석을 따르세요.
+
+공통 (양쪽 모두):
+
+- **`mcp__atlassian__*` 형태의 도구명**: atlassian MCP 서버의 같은 이름 도구를 사용하세요
+  (예: createConfluencePage, lookupJiraAccountId).
+
+### Codex로 실행 시
 
 - **sub-agent / Agent tool 위임 지시**: Codex에서는 `multi_agent` 하위 에이전트로
   위임하세요. 현재 junmit 검증 기준에서 앱에 노출된 `spawn_agent` 도구는 `agent_type`
@@ -94,10 +106,33 @@ done
   기능을 사용할 수 없어 병렬 1단계를 진행할 수 없다고 사용자에게 알리고 중단하세요.
   순차 대체는 성능 회귀를 숨기므로 금지합니다. "sub-agent 묶음" 마킹 규칙은 해당 단계를
   plan 항목 하나로 유지하는 것으로 동일 적용합니다.
-- **`mcp__atlassian__*` 형태의 도구명**: atlassian MCP 서버의 같은 이름 도구를 사용하세요
-  (예: createConfluencePage, lookupJiraAccountId).
 - **request_user_input 도구가 비활성인 경우**: 같은 선택지를 평문 번호 목록으로 출력하고
   사용자 입력을 기다리세요.
+
+### Antigravity(agy)로 실행 시
+
+- **`update_plan` 지시**: 네이티브 계획/작업 목록 기능이 있으면 **작업 시작 즉시** 각 단계를
+  한국어 이름으로 등록하고 전환마다 갱신하세요(pending/in_progress/completed 의미론 동일).
+  그 기능이 없으면 **단계가 바뀔 때마다 한 줄짜리 한국어 진행 알림**을 출력하세요
+  (예: `🎤 화자를 분석하고 있어요…`). 이 한 줄 알림은 진행 표시 수단이 따로 없는 환경의
+  대체물이므로 메타 발화 금지 규칙의 **예외**입니다 — 단, 한 단계에 한 줄을 넘기지 말고
+  도구 호출을 일일이 중계하지 마세요.
+- **영어 문장 금지 (중요)**: 도구 호출 사이의 짧은 상태 문장("timer is set", "waiting for
+  subagents" 류)을 포함해 **사용자에게 보이는 모든 평문은 예외 없이 한국어**로 출력하세요.
+  사고 요약·도구 라벨이 영어인 것은 어쩔 수 없지만, 당신이 직접 쓰는 문장까지 영어면
+  사용자는 무슨 일이 일어나는지 알 수 없습니다.
+- **`request_user_input` 지시**: 네이티브 사용자 질문 도구가 있으면 사용하고, 없으면 같은
+  선택지를 평문 번호 목록으로 출력하고 사용자 입력을 기다리세요.
+- **sub-agent / Agent tool / 병렬 spawn 지시**: 네이티브 하위 에이전트(subagent) 기능으로
+  위임하세요. 하위 에이전트 수와 병렬 시작 조건은 위 Codex 절 "병렬 spawn 지시" 규칙을
+  그대로 따릅니다(detailed_correction·type 분기, 빠르면 2개·정밀 3개·auto면 +1 포함).
+  각 하위 에이전트에는 세션 디렉토리 절대 경로와 담당 출력 파일을 명시하고, 작업 정의
+  `.claude/agents/<이름>.md`를 먼저 읽어 그대로 따르라고 지시하며, transcript 원본과 다른
+  하위 에이전트의 출력은 수정하지 말 것·sidecar는 호출하지 말 것·지정된 파일 하나만 작성할
+  것을 함께 지시합니다.
+- **하위 에이전트 기능이 없는 경우**: 조용히 순차 대체하지 말고, 병렬 1단계를 진행할 수
+  없다고 사용자에게 알리고 중단하세요(Codex 절과 동일 정책 — 순차 대체는 성능 회귀를
+  숨기므로 금지).
 EOF
 } > "$RES_DIR/AGENTS.md"
 
@@ -108,6 +143,7 @@ if leftover=$(grep -rn \
     -e 'claude 입력 bar' -e 'claude code TUI' -e 'claude code 슬래시' \
     -e 'Codex에는 해당 도구가 없습니다' -e '순차 수행으로 대체' \
     -e 'agent_type: "worker"' \
+    -e '## Codex 해석 규칙' \
     -e '^allowed-tools:' -e '^disable-model-invocation:' -e '^user-invocable:' \
     "$DST" "$RES_DIR/AGENTS.md"); then
   echo "오류: 산출물에 claude 전용 표현이 남았습니다. NEUTRALIZE에 치환 규칙을 추가하세요:" >&2

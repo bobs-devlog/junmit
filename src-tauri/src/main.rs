@@ -197,6 +197,12 @@ fn cmd_get_active_cli(app: tauri::AppHandle) -> String {
     match cli.as_str() {
         "codex" => session::ensure_codex_home(&app),
         "mlx" => {} // 로컬 LLM은 CLI 설정 디렉토리 불필요 (모델 존재 확인은 cmd_check_local_model)
+        // 격리 환경이 없어 준비할 홈은 없고, 워크스페이스 신뢰 베이크(spawn 다이얼로그 제거) +
+        // MCP merge(atlassian 활성 사용자의 재기동 대비)만 보장.
+        "antigravity" => {
+            session::ensure_antigravity_trust(&app);
+            session::ensure_antigravity_mcp();
+        }
         _ => session::ensure_claude_config_dir(&app),
     }
     cli
@@ -209,6 +215,10 @@ fn cmd_set_active_cli(app: tauri::AppHandle, cli: String) -> Result<(), String> 
     match cli.as_str() {
         "codex" => session::ensure_codex_home(&app),
         "mlx" => {} // 로컬 LLM은 CLI 설정 디렉토리 불필요
+        "antigravity" => {
+            session::ensure_antigravity_trust(&app);
+            session::ensure_antigravity_mcp();
+        }
         _ => session::ensure_claude_config_dir(&app),
     }
     Ok(())
@@ -315,9 +325,10 @@ fn cmd_is_cli_chosen() -> bool {
     session::read_active_cli().is_some()
 }
 
-/// claude/codex 설치·인증 감지 — 온보딩 "AI 도구 선택" 화면용.
-/// 외부 프로세스 4개(which×2 + 인증 status×2, 합계 수 초)라 async + blocking pool —
-/// 동기 커맨드는 메인 스레드(창 이벤트 루프)를 막는다(cmd_cli_atlassian_authed와 동일 근거).
+/// claude/codex/antigravity 설치·인증 감지 — 온보딩 "AI 도구 선택" 화면용.
+/// 외부 프로세스 최대 5개(which×2 + 인증 판정 3건 — 판정은 detect_clis 내부에서 병렬,
+/// agy는 네트워크 왕복 최대 10초)라 async + blocking pool — 동기 커맨드는 메인 스레드
+/// (창 이벤트 루프)를 막는다(cmd_cli_atlassian_authed와 동일 근거).
 #[tauri::command]
 async fn cmd_detect_clis(app: tauri::AppHandle) -> Result<session::CliAvailability, String> {
     tauri::async_runtime::spawn_blocking(move || session::detect_clis(&app))
@@ -337,8 +348,9 @@ async fn cmd_cli_atlassian_authed(app: tauri::AppHandle, cli: String) -> Result<
 /// Atlassian MCP를 선택 CLI config에 등록(lazy) — 발행(create) 게이트가 로그인·인증 확인 직전 호출.
 /// 이 시점 전까지는 MCP가 선언돼 있지 않아 비-Confluence 사용자가 기동 워닝을 보지 않는다.
 /// 파일 I/O(config rewrite)라 async + blocking pool.
+/// 반환 true = antigravity 사용자 전역 설정에 이번에 새로 등록됨 (프론트가 1회 고지 토스트).
 #[tauri::command]
-async fn cmd_enable_atlassian_mcp(app: tauri::AppHandle, cli: String) -> Result<(), String> {
+async fn cmd_enable_atlassian_mcp(app: tauri::AppHandle, cli: String) -> Result<bool, String> {
     tauri::async_runtime::spawn_blocking(move || session::enable_atlassian_mcp(&app, &cli))
         .await
         .map_err(|e| format!("Atlassian MCP 등록 작업 실패: {e}"))?

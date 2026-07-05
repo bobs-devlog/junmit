@@ -13,6 +13,7 @@ const CLI_LABELS: Record<Cli, string> = {
   claude: "Claude Code",
   codex: "Codex",
   mlx: "로컬 AI (Gemma)",
+  antigravity: "Antigravity CLI",
 };
 
 // 앱 설정 화면 — 빈도 낮은 설정의 모음 자리. 자주 쓰는 콘텐츠 관리(용어 사전·회의 유형)는

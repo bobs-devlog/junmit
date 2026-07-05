@@ -207,20 +207,26 @@ pub fn write_attendee_names(
 }
 
 /// LLM 작업을 수행하는 CLI 선택 — 사용자가 명시 선택한 값을 영구 보관(`active_cli` 텍스트 파일).
-/// 값은 "claude"·"codex"·"mlx"(로컬 LLM). 없으면 미선택(앱이 감지 결과로 선택 UI를 띄움).
+/// 값은 "claude"·"codex"·"antigravity"·"mlx"(로컬 LLM). 없으면 미선택(앱이 감지 결과로 선택
+/// UI를 띄움). 목록은 프론트 `Cli` 유니온(types/index.ts)·isCli(constants.ts)·install.sh case와
+/// 문자열 일치가 필요한 프로토콜 값.
 fn active_cli_path() -> PathBuf {
     app_data_dir().join("active_cli")
+}
+
+fn is_known_cli(s: &str) -> bool {
+    s == "claude" || s == "codex" || s == "mlx" || s == "antigravity"
 }
 
 pub fn read_active_cli() -> Option<String> {
     fs::read_to_string(active_cli_path())
         .ok()
         .map(|s| s.trim().to_string())
-        .filter(|s| s == "claude" || s == "codex" || s == "mlx")
+        .filter(|s| is_known_cli(s))
 }
 
 pub fn write_active_cli(cli: &str) -> Result<(), String> {
-    if cli != "claude" && cli != "codex" && cli != "mlx" {
+    if !is_known_cli(cli) {
         return Err(format!("알 수 없는 CLI: {cli}"));
     }
     let path = active_cli_path();
@@ -257,6 +263,11 @@ pub fn write_detailed_default(on: bool) -> Result<(), String> {
 /// 양쪽 전용 환경에 베이크되는 단일 값.
 const ATLASSIAN_MCP_URL: &str = "https://mcp.atlassian.com/v1/mcp";
 
+/// antigravity(agy)용 Atlassian MCP 엔드포인트 — agy 동봉 문서가 원격 MCP를 SSE transport
+/// (`serverUrl`)로 명시해 SSE 엔드포인트를 쓴다. streamable HTTP(/v1/mcp)도 통하는 것으로
+/// 확인되면 ATLASSIAN_MCP_URL로 통합할 것(E2E 검증 항목).
+const ATLASSIAN_MCP_SSE_URL: &str = "https://mcp.atlassian.com/v1/sse";
+
 /// codex 스킬 실행 전용 CODEX_HOME — 사용자 개인 `~/.codex`(플러그인·hooks·trust 가득)와
 /// 격리된 junmit 소유 home. 격리 이유: skill 런타임이 사용자 설정에 안 흔들려 결정론적이고,
 /// junmit 소유 config.toml에 Atlassian MCP를 박아 사용자 config를 0 터치(키체인 토큰은 user-global이라
@@ -280,8 +291,12 @@ pub fn atlassian_enabled() -> bool {
 }
 
 /// 첫 Confluence 발행 게이트에서 호출 — 플래그 set + 해당 CLI config에 MCP 즉시 반영.
-/// 이후 그 CLI(및 다음 기동의 양 CLI)는 atlassian MCP를 선언한 채 뜬다.
-pub fn enable_atlassian_mcp(app: &tauri::AppHandle, cli: &str) -> Result<(), String> {
+/// 이후 그 CLI(및 다음 기동의 각 CLI)는 atlassian MCP를 선언한 채 뜬다.
+/// 명시 match — `_` 폴백이면 새 CLI가 조용히 codex home에 베이크되는 무언 폴백 사고가 된다.
+/// 반환값: **antigravity 전역 설정에 Atlassian을 이번 호출에서 새로 등록했는지** — 사용자
+/// 소유 파일 수정이라 프론트가 1회 고지 토스트를 띄운다. claude/codex는 junmit 소유 격리
+/// config라 고지 대상이 아니며 항상 false.
+pub fn enable_atlassian_mcp(app: &tauri::AppHandle, cli: &str) -> Result<bool, String> {
     let p = atlassian_flag_path();
     if let Some(parent) = p.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("atlassian 플래그 디렉토리 생성 실패: {e}"))?;
@@ -289,12 +304,166 @@ pub fn enable_atlassian_mcp(app: &tauri::AppHandle, cli: &str) -> Result<(), Str
     if !p.exists() {
         fs::write(&p, b"1").map_err(|e| format!("atlassian 플래그 쓰기 실패: {e}"))?;
     }
-    if cli == "claude" {
-        ensure_claude_config_dir(app);
-    } else {
-        ensure_codex_home(app);
+    match cli {
+        "claude" => {
+            ensure_claude_config_dir(app);
+            Ok(false)
+        }
+        "antigravity" => Ok(ensure_antigravity_mcp()),
+        _ => {
+            ensure_codex_home(app);
+            Ok(false)
+        }
     }
-    Ok(())
+}
+
+/// agy 워크스페이스 신뢰 베이크 — 스킬 spawn cwd(appDir)를 사용자 전역
+/// `~/.gemini/antigravity-cli/settings.json`의 `trustedWorkspaces`에 merge해 인터랙티브
+/// 실행의 영문 신뢰 다이얼로그를 없앤다(claude `.claude.json`·codex config.toml 신뢰
+/// 베이크와 패리티). 실측(A5): 다이얼로그는 존재하며 `--dangerously-skip-permissions`로
+/// 우회되지 않고, 신뢰는 하위 디렉토리로 상속되지 않아 정확히 그 경로가 등록돼야 한다.
+/// ⚠️ 사용자 소유 파일 — ensure_antigravity_mcp와 동일 정책: read-merge-write(기존 키·항목
+/// 전부 보존), 파싱 실패 시 불간섭(다이얼로그가 한 번 뜨는 게 설정 파손보다 낫다), 원자 교체.
+pub fn ensure_antigravity_trust(app: &tauri::AppHandle) {
+    // 신뢰 대상 2곳: 스킬 spawn cwd(appDir) + 앱 데이터 디렉토리(app.junmit — spawn이
+    // --add-dir로 워크스페이스에 포함하는 세션·신호·staging 위치. 추가 워크스페이스에도
+    // 신뢰 프롬프트가 뜨지 않도록 함께 베이크).
+    let mut wanted: Vec<String> = Vec::new();
+    if let Ok(dir) = get_app_dir(app) {
+        wanted.push(dir);
+    }
+    wanted.push(app_data_dir().to_string_lossy().into_owned());
+    let home = std::env::var("HOME").unwrap_or_default();
+    if home.is_empty() {
+        return;
+    }
+    let path = PathBuf::from(home).join(".gemini/antigravity-cli/settings.json");
+    let mut root: serde_json::Value = match fs::read_to_string(&path) {
+        Ok(s) => match serde_json::from_str(&s) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("antigravity settings.json 파싱 실패 — 불간섭: {e}");
+                return;
+            }
+        },
+        Err(_) => serde_json::json!({}),
+    };
+    let Some(obj) = root.as_object_mut() else {
+        eprintln!("antigravity settings.json 루트가 객체가 아님 — 불간섭");
+        return;
+    };
+    let list = obj
+        .entry("trustedWorkspaces")
+        .or_insert_with(|| serde_json::json!([]));
+    let Some(arr) = list.as_array_mut() else {
+        eprintln!("antigravity trustedWorkspaces가 배열이 아님 — 불간섭");
+        return;
+    };
+    let mut changed = false;
+    for dir in wanted {
+        if !arr.iter().any(|v| v.as_str() == Some(dir.as_str())) {
+            arr.push(serde_json::Value::String(dir));
+            changed = true;
+        }
+    }
+    if !changed {
+        return;
+    }
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    match serde_json::to_string_pretty(&root) {
+        Ok(s) => {
+            let tmp = path.with_extension("json.junmit-tmp");
+            if let Err(e) = fs::write(&tmp, s) {
+                eprintln!("antigravity settings.json 임시 쓰기 실패: {e}");
+                return;
+            }
+            if let Err(e) = fs::rename(&tmp, &path) {
+                eprintln!("antigravity settings.json 교체 실패: {e}");
+                let _ = fs::remove_file(&tmp);
+            }
+        }
+        Err(e) => eprintln!("antigravity settings.json 직렬화 실패: {e}"),
+    }
+}
+
+/// antigravity(agy) 전역 MCP 설정에 Atlassian 서버를 merge — lazy(atlassian_enabled 후에만,
+/// claude/codex ensure와 동일 의미론: 비-Confluence 사용자에게 MCP 워닝을 만들지 않는다).
+///
+/// agy는 격리 홈 env가 없어(실측 1.0.16, CLAUDE_CONFIG_DIR/CODEX_HOME 대응물 부재) 사용자
+/// 전역 `~/.gemini/config/mcp_config.json`을 공유한다(경로·스키마는 agy 동봉 문서 확정 —
+/// builtin/skills/agy-customizations/docs/mcp_servers.md).
+/// ⚠️ 사용자 소유 파일 — codex config.toml식 통파일 rewrite 절대 금지. read-merge-write:
+/// - 파싱 실패 = 불간섭 return. 잘못 덮으면 사용자의 다른 MCP 서버 설정을 파괴한다.
+///   MCP 부재의 실제 결과는 publish 스킬이 실행 중 안내하므로 보수적 실패가 안전하다.
+/// - `mcpServers.atlassian`이 이미 있으면(사용자 직접 등록 포함) 덮지 않음 — 멱등.
+///
+/// 반환값: 이번 호출에서 항목을 **새로 등록해 저장까지 성공**했는지 — 사용자 소유 파일
+/// 수정이라 프론트가 1회 고지 토스트에 쓴다(이미 있음·실패·비활성은 전부 false).
+pub fn ensure_antigravity_mcp() -> bool {
+    if !atlassian_enabled() {
+        return false;
+    }
+    let home = std::env::var("HOME").unwrap_or_default();
+    if home.is_empty() {
+        return false;
+    }
+    let path = PathBuf::from(home).join(".gemini/config/mcp_config.json");
+    let mut root: serde_json::Value = match fs::read_to_string(&path) {
+        Ok(s) => match serde_json::from_str(&s) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("antigravity mcp_config.json 파싱 실패 — 불간섭: {e}");
+                return false;
+            }
+        },
+        // 파일 부재는 신규 생성 대상 (agy 미기동 상태 포함).
+        Err(_) => serde_json::json!({}),
+    };
+    let Some(obj) = root.as_object_mut() else {
+        eprintln!("antigravity mcp_config.json 루트가 객체가 아님 — 불간섭");
+        return false;
+    };
+    let servers = obj
+        .entry("mcpServers")
+        .or_insert_with(|| serde_json::json!({}));
+    let Some(servers) = servers.as_object_mut() else {
+        eprintln!("antigravity mcpServers가 객체가 아님 — 불간섭");
+        return false;
+    };
+    if servers.contains_key("atlassian") {
+        return false;
+    }
+    servers.insert(
+        "atlassian".to_string(),
+        serde_json::json!({ "serverUrl": ATLASSIAN_MCP_SSE_URL }),
+    );
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    // 원자 교체 — 사용자 소유 파일이라 쓰기 도중 크래시로 반쪽 JSON을 남기면 사용자의 다른
+    // MCP 서버 설정까지 파손된다(파손 반경이 앱 밖). 같은 디렉토리 임시 파일 + rename(동일
+    // 볼륨이라 원자적)으로 어느 시점에 죽어도 원본은 온전하게 유지.
+    match serde_json::to_string_pretty(&root) {
+        Ok(s) => {
+            let tmp = path.with_extension("json.junmit-tmp");
+            if let Err(e) = fs::write(&tmp, s) {
+                eprintln!("antigravity mcp_config.json 임시 쓰기 실패: {e}");
+                return false;
+            }
+            if let Err(e) = fs::rename(&tmp, &path) {
+                eprintln!("antigravity mcp_config.json 교체 실패: {e}");
+                let _ = fs::remove_file(&tmp);
+                return false;
+            }
+            true
+        }
+        Err(e) => {
+            eprintln!("antigravity mcp_config.json 직렬화 실패: {e}");
+            false
+        }
+    }
 }
 
 /// junmit 전용 CODEX_HOME을 idempotent하게 준비한다(디렉토리 + config.toml).
@@ -696,12 +865,17 @@ pub fn ensure_claude_config_dir(app: &tauri::AppHandle) {
 /// claude는 `claude auth status`(exit 0=로그인, 2.1.x), codex는 `codex login status`(exit 0=로그인)로
 /// 각자의 junmit 전용 환경 기준 인증까지 결정론적 확인. `auth` 서브커맨드가 없는 구버전 claude는
 /// exit≠0 → 미인증으로 보여 로그인 단계로 안내되는데, 그 로그인 도우미가 최신 설치를 유도한다.
+/// antigravity는 격리 환경이 없어 사용자 전역 로그인 기준(`agy models` 출력 판별).
+/// 평면 필드는 프론트 CliAvailability(types/index.ts)와 serde 계약 — 에이전트 CLI가 하나 더
+/// 늘면 맵 구조 리팩터를 별도 작업으로.
 #[derive(Serialize)]
 pub struct CliAvailability {
     pub claude: bool,
     pub claude_authed: bool,
     pub codex: bool,
     pub codex_authed: bool,
+    pub antigravity: bool,
+    pub antigravity_authed: bool,
 }
 
 fn cli_installed(bin: &str) -> bool {
@@ -711,6 +885,73 @@ fn cli_installed(bin: &str) -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+/// antigravity CLI 실행 경로 — `which agy`를 쓰지 않고 절대경로 고정.
+/// Antigravity IDE도 동명 `agy` 런처를 설치하는데(~/.antigravity/antigravity/bin/agy, VS Code
+/// `code` 대응물) 그쪽은 어떤 인자든 help를 찍고 exit 0이라 which·종료코드 기반 판별이 전부
+/// 오탐된다. CLI 공식 인스톨러는 ~/.local/bin/agy에 고정 설치하고 자가 업데이트도 in-place라
+/// 이 경로가 안정적(spawn의 PATH 앞줄 $HOME/.local/bin과 같은 해석).
+fn antigravity_cli_path() -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    let p = PathBuf::from(home).join(".local/bin/agy");
+    p.is_file().then_some(p)
+}
+
+/// agy엔 로그인 상태 서브커맨드가 없다(실측 1.0.16 — auth/mcp 서브커맨드 부재).
+/// `agy models`로 판별한다: 미인증이면 "Error: Please sign in …"(exit 0! — 종료 코드 무의미,
+/// 실측), 인증이면 모델 목록. 그래서 출력 텍스트로 가른다 — "sign in" 마커 **또는 "error"
+/// 계열 출력**이 보이면 미인증. 문구가 개편돼도 오류 출력엔 "error"가 남을 가능성이 높아,
+/// 미인증을 로그인됨으로 오판하는 방향(온보딩 통과 후 스킬 실행이 로그인 화면에 걸리는
+/// 최악)을 좁힌다. 반대 방향 오판(인증인데 미인증 표시)은 로그인 화면 안내 + "다시 확인"으로
+/// 복구 가능해 덜 위험하다. 잔여 위험: 오류 표기가 완전히 사라지는 개편 — E2E 체크리스트에서
+/// 릴리즈마다 확인.
+/// 인증 시엔 서버 왕복이라(오프라인·서버 지연에 노출) 10초 타임아웃을 두고, 초과·실행 실패는
+/// 미인증 취급. std Command엔 output 타임아웃이 없어 try_wait 폴링으로 구현 — 모델 목록은
+/// 파이프 버퍼(64KB)보다 훨씬 작아 파이프 막힘 걱정은 없다.
+fn antigravity_logged_in() -> bool {
+    use std::time::{Duration, Instant};
+    let Some(agy) = antigravity_cli_path() else {
+        return false;
+    };
+    let mut child = match Command::new(agy)
+        .arg("models")
+        .env("PATH", get_user_shell_path())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return false;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(_) => {
+                let _ = child.kill();
+                return false;
+            }
+        }
+    }
+    let Ok(output) = child.wait_with_output() else {
+        return false;
+    };
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+    .to_lowercase();
+    output.status.success() && !text.contains("sign in") && !text.contains("error")
 }
 
 fn codex_logged_in() -> bool {
@@ -742,6 +983,13 @@ fn claude_logged_in() -> bool {
 pub fn cli_atlassian_authed(app: &tauri::AppHandle, cli: &str) -> Result<bool, String> {
     if cli == "claude" {
         return claude_atlassian_authed(app);
+    }
+    if cli == "antigravity" {
+        // agy는 mcp 서브커맨드가 없어(실측 1.0.16) 인증 상태를 조회할 수단이 없다 —
+        // config 반영만 보장하고 통과(best-effort 게이트의 극단). 미인증의 실제 결과는
+        // publish 스킬이 실행 중 안내한다. agy가 조회 수단을 제공하면 codex처럼 판별로 상향.
+        ensure_antigravity_mcp();
+        return Ok(true);
     }
     // config.toml에 atlassian 서버가 베이크돼 있어야 목록에 잡힌다.
     ensure_codex_home(app);
@@ -798,18 +1046,39 @@ fn claude_atlassian_authed(app: &tauri::AppHandle) -> Result<bool, String> {
 pub fn detect_clis(app: &tauri::AppHandle) -> CliAvailability {
     let claude = cli_installed("claude");
     let codex = cli_installed("codex");
+    // antigravity는 which가 아닌 절대경로 존재 확인 — IDE 런처 동명 오탐 방지(함수 doc 참고).
+    let antigravity = antigravity_cli_path().is_some();
     // 전용 환경을 먼저 준비(설치돼 있을 때만) — 인증 판정이 junmit 환경 기준으로 결정.
+    // antigravity는 여기서 ensure를 **하지 않는다**: claude/codex ensure는 junmit 소유
+    // 격리 디렉토리라 무해하지만, antigravity 신뢰 베이크는 사용자 전역 settings.json
+    // 수정이다 — 감지는 카드를 그리기만 해도 돌므로, antigravity를 선택하지 않은(고지도
+    // 못 본) 사용자의 파일을 만지게 된다. 베이크는 선택/기동 시점(cmd_get/set_active_cli —
+    // 선택 화면의 고지 문구와 같은 동의 맥락)만으로 충분하다. spawn은 항상 그 뒤다.
     if claude {
         ensure_claude_config_dir(app);
     }
     if codex {
         ensure_codex_home(app);
     }
+    // 인증 판정 3건은 독립 프로세스라 병렬 — agy는 네트워크 왕복(최대 10초 타임아웃)이라
+    // 직렬이면 그 지연이 감지 총 시간에 그대로 합산된다(온보딩 카드·도우미 종료 후 재감지).
+    let (claude_authed, codex_authed, antigravity_authed) = std::thread::scope(|s| {
+        let c = s.spawn(|| claude && claude_logged_in());
+        let x = s.spawn(|| codex && codex_logged_in());
+        let a = s.spawn(|| antigravity && antigravity_logged_in());
+        (
+            c.join().unwrap_or(false),
+            x.join().unwrap_or(false),
+            a.join().unwrap_or(false),
+        )
+    });
     CliAvailability {
         claude,
-        claude_authed: claude && claude_logged_in(),
+        claude_authed,
         codex,
-        codex_authed: codex && codex_logged_in(),
+        codex_authed,
+        antigravity,
+        antigravity_authed,
     }
 }
 

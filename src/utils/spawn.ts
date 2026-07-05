@@ -1,5 +1,5 @@
 import type { Cli, SpawnRequest } from "@/types";
-import { APP_DATA_DIR_SH, CLAUDE_CONFIG_DIR_SH, CODEX_HOME_SH } from "@/utils/paths";
+import { AGY_BIN_SH, APP_DATA_DIR_SH, CLAUDE_CONFIG_DIR_SH, CODEX_HOME_SH } from "@/utils/paths";
 
 // PTY 명령 빌더 — SessionContext(회의 흐름)와 회의 유형 화면(useTemplateSession)이 공유.
 // slashCommand는 호출자가 완전한 형태로 전달 (예: "/meeting", "/template").
@@ -9,6 +9,8 @@ import { APP_DATA_DIR_SH, CLAUDE_CONFIG_DIR_SH, CODEX_HOME_SH } from "@/utils/pa
 //   - claude: cwd의 .claude/skills + CLAUDE.md 자동 로드, 슬래시 커맨드로 스킬 트리거.
 //   - codex : cwd의 .agents/skills + AGENTS.md 자동 로드(gen-agent-skills.sh가 생성), 자연어로 스킬 트리거.
 //             샌드박스가 cwd 밖(app.junmit의 신호·staging)을 쓰도록 --add-dir, 자동승인 -a never.
+//   - antigravity(agy): codex와 같은 .agents/skills + AGENTS.md 규약(산출물 공유), 자연어 트리거.
+//             격리 홈 env가 없어 CLI 전용 env 주입 없음. -i로 초기 프롬프트 + TUI 유지.
 //
 // APP_SESSION_DIR env로 sessionDir 전달 — 슬래시 커맨드 파서가 공백 경로(예: "Application Support")를
 // quote 처리 안 해서다. 유형 관리처럼 세션 없는 경우 빈 문자열(스킬이 무시).
@@ -41,10 +43,12 @@ export function buildClaudeCommand(
   );
 }
 
-// 슬래시 커맨드 → codex 자연어 스킬 트리거 (예: "/template" → "Run the template skill.").
-// codex는 슬래시 커맨드가 없고 cwd의 .agents/skills를 자연어로 트리거한다.
-// 신규 spawn(buildCodexCommand)과 살아있는 TUI 입력(pty.ts sendSlashCommand)이 같은 문구를 공유.
-export function codexSkillTrigger(slashCommand: string): string {
+// 슬래시 커맨드 → 자연어 스킬 트리거 (예: "/template" → "Run the template skill.").
+// codex·antigravity 공용 — 둘 다 커스텀 슬래시 커맨드가 없고 cwd의 .agents/skills를
+// description 매칭(자연어)으로 트리거한다.
+// 신규 spawn(buildCodexCommand/buildAntigravityCommand)과 살아있는 TUI 입력(pty.ts
+// sendSlashCommand)이 같은 문구를 공유.
+export function agentSkillTrigger(slashCommand: string): string {
   const skill = slashCommand.replace(/^\//, "");
   return `Run the ${skill} skill.`;
 }
@@ -61,7 +65,35 @@ export function buildCodexCommand(
   //   Rust ensure_codex_home가 생성하며 config.toml에 Atlassian MCP가 박혀 있음. 인증도 이 home 기준.
   return (
     `${envPrefix(appDir, sessionDir, signalDir)} && ` +
-    `exec env CODEX_HOME="${CODEX_HOME_SH}" codex --sandbox workspace-write --add-dir "${APP_DATA_DIR_SH}" -a never "${codexSkillTrigger(slashCommand)}"`
+    `exec env CODEX_HOME="${CODEX_HOME_SH}" codex --sandbox workspace-write --add-dir "${APP_DATA_DIR_SH}" -a never "${agentSkillTrigger(slashCommand)}"`
+  );
+}
+
+// Antigravity 인터랙티브(agy TUI). cwd의 .agents/skills + AGENTS.md 자동 로드(codex와 동일
+// 규약 — gen-agent-skills.sh 산출물 공유).
+// - AGY_BIN_SH 절대경로 실행 — PATH 이름 `agy`는 CLI가 지워진 상태에서 동명 IDE 런처로
+//   폴백돼 편집기가 뜨는 오동작이 된다(paths.ts 주석 참고). 절대경로면 명확한 실패.
+// - 격리 홈 env 없음(CLAUDE_CONFIG_DIR/CODEX_HOME 대응물 부재, 실측 1.0.16) — 설정·세션
+//   기록이 사용자 전역 ~/.gemini에 남는다. HOME 오버라이드는 키링 인증을 깨므로 금지.
+// - --dangerously-skip-permissions: 무인 스킬 실행용 자동 승인. 단 E2E 실측: 이 플래그는
+//   **메인 세션만** 자동 승인하고, 서브에이전트의 워크스페이스 밖 파일 접근은 승인 대기
+//   (Blocked)로 멈춘다 — /meeting 1단계 병렬 4건이 전부 사람 승인을 기다렸다.
+// - --add-dir: 그래서 codex와 동일하게 앱 데이터 디렉토리(세션·신호·staging이 있는
+//   app.junmit)를 워크스페이스에 포함 — 워크스페이스 안이면 승인 대상이 아니게 된다.
+//   해당 경로의 신뢰는 ensure_antigravity_trust가 미리 베이크.
+// - --sandbox는 "terminal restrictions"라 스킬의 스크립트 실행(lib/*.sh)과 안 맞아 미사용.
+// - -i(--prompt-interactive): 초기 프롬프트 실행 후 TUI 유지(사용자 추가 요청 가능) —
+//   claude의 `claude "/meeting"`과 동일한 상호작용 모델. positional 인자는 없음(실측).
+export function buildAntigravityCommand(
+  appDir: string | null,
+  slashCommand: string,
+  sessionDir: string | null,
+  signalDir: string
+): string {
+  return (
+    `${envPrefix(appDir, sessionDir, signalDir)} && ` +
+    `exec "${AGY_BIN_SH}" --dangerously-skip-permissions --add-dir "${APP_DATA_DIR_SH}" ` +
+    `-i "${agentSkillTrigger(slashCommand)}"`
   );
 }
 
@@ -80,9 +112,16 @@ export function buildCommand(
   if (cli === "mlx") {
     throw new Error("로컬 AI(mlx)는 터미널 스킬을 지원하지 않습니다 (진입점 게이팅 누락)");
   }
-  return cli === "codex"
-    ? buildCodexCommand(appDir, slashCommand, sessionDir, signalDir)
-    : buildClaudeCommand(appDir, slashCommand, sessionDir, signalDir);
+  // exhaustive switch — 새 Cli 값 추가 시 여기서 컴파일 에러가 나야 한다. 삼항 폴백이었다면
+  // 새 백엔드가 조용히 claude로 스폰되는 무언 폴백 사고가 된다.
+  switch (cli) {
+    case "codex":
+      return buildCodexCommand(appDir, slashCommand, sessionDir, signalDir);
+    case "antigravity":
+      return buildAntigravityCommand(appDir, slashCommand, sessionDir, signalDir);
+    case "claude":
+      return buildClaudeCommand(appDir, slashCommand, sessionDir, signalDir);
+  }
 }
 
 export function buildSpawnRequest(
@@ -110,7 +149,7 @@ export function buildShellRequest(commandLine: string): SpawnRequest {
   };
 }
 
-// Atlassian MCP 로그인 도우미 명령 — 각 CLI의 junmit 전용 환경(개인 설정과 격리)에서 OAuth.
+// Atlassian MCP 로그인 도우미 명령 — 각 CLI 환경에서 OAuth.
 // 완료 판정은 도우미 종료 후 cmd_cli_atlassian_authed 재확인이 담당하므로 종료 코드에는
 // 의존하지 않는다(오케스트레이션은 useAtlassianLogin).
 // - codex: `codex mcp login`이 인증 URL을 출력만 하고 브라우저를 열지 않으므로(실측)
@@ -119,12 +158,18 @@ export function buildShellRequest(commandLine: string): SpawnRequest {
 //   TUI는 cwd를 프로젝트로 삼으므로 신뢰가 베이크된 appDir로 이동해야 신뢰 다이얼로그가 안 뜬다
 //   (buildShellRequest는 cd를 안 함). TUI는 인증 후에도 스스로 안 끝나므로 인증 상태 폴링이
 //   확인 즉시 도우미를 정리하고 발행을 잇는다(useAtlassianLogin의 폴링 effect).
+// - antigravity: mcp 서브커맨드 자체가 없어(실측 1.0.16) claude처럼 TUI를 띄운다. 커스텀
+//   슬래시 초기 실행도 없으므로 사용자가 TUI 안에서 MCP 인증을 진행(안내문은 SessionScreen).
+//   MCP 설정은 사용자 전역이라 격리 env 없음. 절대경로 실행은 IDE 런처 폴백 회피(paths.ts).
 export function buildAtlassianLoginCommand(cli: Cli, appDir: string | null): string {
   if (cli === "codex") {
     return (
       `export CODEX_HOME="${CODEX_HOME_SH}" && codex mcp login atlassian 2>&1 | ` +
       `while IFS= read -r line; do echo "$line"; case "$line" in https://*) open "$line";; esac; done`
     );
+  }
+  if (cli === "antigravity") {
+    return (appDir ? `cd "${appDir}" && ` : "") + `"${AGY_BIN_SH}"`;
   }
   return (
     (appDir ? `cd "${appDir}" && ` : "") +

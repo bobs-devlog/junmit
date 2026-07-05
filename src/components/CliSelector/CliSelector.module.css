@@ -201,3 +201,31 @@
   border-color: transparent;
   cursor: default;
 }
+
+/* antigravity 로그인 폴링 표시 — 실제 확인이 도는 순간에만 스피너+문구를 노출.
+   visibility로 숨겨 자리를 유지한다 (표시/숨김 반복이 레이아웃 점프가 되지 않게). */
+.poll-status {
+  visibility: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.poll-status-active {
+  visibility: visible;
+}
+
+.poll-spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: poll-spin 0.8s linear infinite;
+}
+
+@keyframes poll-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

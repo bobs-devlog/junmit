@@ -11,10 +11,11 @@ import {
 } from "@/constants";
 import { useToast } from "@/contexts/ToastContext";
 import { useDialog } from "@/contexts/DialogContext";
+import { cliAuthedOf, cliInstalledOf } from "@/constants";
 import type { Cli, CliAvailability, SpawnRequest } from "@/types";
 import { routeAfterCliSelected } from "@/utils/bootstrap";
 import { buildShellRequest } from "@/utils/spawn";
-import { CLAUDE_CONFIG_DIR_SH, CODEX_HOME_SH } from "@/utils/paths";
+import { AGY_BIN_SH, CLAUDE_CONFIG_DIR_SH, CODEX_HOME_SH } from "@/utils/paths";
 import TerminalWorkspace from "@/components/TerminalWorkspace";
 import styles from "./CliSelector.module.css";
 
@@ -33,8 +34,9 @@ interface CliOption {
 
 // 공식 native 인스톨러(curl) — brew·node·sudo 불필요, ~/.local/bin에 설치(감지 경로). npm은 node가
 // 필요해 피한다. 누구나(brew 없어도) 동작하므로 brew 분기 없이 이 방식으로 통일.
-// 로그인은 각 CLI의 junmit 전용 환경(개인 설정·기록과 격리) 기준 — Rust ensure_*가 detect 시
+// 로그인은 claude/codex는 junmit 전용 환경(개인 설정·기록과 격리) 기준 — Rust ensure_*가 detect 시
 // 환경을 만들어두므로 여기선 env만 지정. 자격은 환경 간 공유되지 않아 1회 재로그인이 필요하다.
+// antigravity는 격리 환경이 없어(spawn.ts 참고) 사용자 전역 로그인을 그대로 쓴다.
 const OPTIONS: CliOption[] = [
   {
     id: "claude",
@@ -53,6 +55,21 @@ const OPTIONS: CliOption[] = [
     loginCmd: `export CODEX_HOME="${CODEX_HOME_SH}" && codex login`,
     loginCmdLabel: "codex login",
     docsUrl: "https://developers.openai.com/codex/cli",
+  },
+  {
+    id: "antigravity",
+    // "Antigravity"만 쓰면 IDE(별도 제품)와 혼동 — 공식 도구명 "Antigravity CLI"로 표기
+    // (claude 카드가 "Claude"가 아닌 "Claude Code"인 것과 같은 관례).
+    name: "Antigravity CLI",
+    // "무료" 표현 금지 — 무료 티어는 있지만 쿼터(하루 ~20 에이전트 요청, 2026-03 기준)가
+    // 회의록 파이프라인(스킬 + 병렬 sub-agent)에 부족할 수 있다. 타깃은 Google AI 구독자.
+    subtitle: "Google AI 구독(Pro·Ultra 등)을 쓰신다면 이쪽 · Gemini 기반",
+    installCmd: "curl -fsSL https://antigravity.google/cli/install.sh | bash",
+    // agy는 로그인 서브커맨드가 없다(실측 1.0.16) — TUI 첫 실행이 곧 로그인 흐름(브라우저
+    // OAuth, 시스템 키링 저장). 절대경로 실행은 동명 IDE 런처 폴백 회피(paths.ts 주석 참고).
+    loginCmd: `"${AGY_BIN_SH}"`,
+    loginCmdLabel: "agy",
+    docsUrl: "https://antigravity.google/docs/cli/reference",
   },
   {
     id: "mlx",
@@ -124,6 +141,8 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
   const [persisted, setPersisted] = useState<LocalVariantId | null>(null);
   // 설치/로그인 단계로 들어간 대상 CLI(null이면 선택 단계).
   const [setupFor, setSetupFor] = useState<Cli | null>(null);
+  // antigravity 로그인 폴링의 "지금 확인 중" 순간 표시 — 스피너 노출 여부(아래 폴링 effect가 관리).
+  const [loginChecking, setLoginChecking] = useState(false);
   const [busy, setBusy] = useState(false);
   // 우측 터미널 도우미 — 설치/로그인 명령을 앱 안에서 직접 실행(복붙 대신 통제된 환경).
   // isDone: 종료 후 fresh 감지 결과로 성공 판정 — 성공이면 터미널을 닫고 토스트로 알린다
@@ -146,7 +165,14 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
         return a;
       })
       .catch(() => {
-        setAvail({ claude: false, claude_authed: false, codex: false, codex_authed: false });
+        setAvail({
+          claude: false,
+          claude_authed: false,
+          codex: false,
+          codex_authed: false,
+          antigravity: false,
+          antigravity_authed: false,
+        });
         return null;
       })
       .finally(() => setDetecting(false));
@@ -187,6 +213,46 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
     void detect();
   }, [detect]);
 
+  // antigravity 로그인 도우미 폴링 — agy TUI는 로그인 후에도 스스로 안 끝나는데, 사용자에게
+  // 종료 조작을 요구했더니 /logout(계정 로그아웃)을 종료 명령으로 오인하는 사고가 실측됐다.
+  // 도우미가 떠 있는 동안 인증을 주기 폴링해 확인 즉시 카드를 갱신한다 — 터미널을 닫을 필요
+  // 자체가 없어진다(claude /mcp의 useAtlassianLogin 폴링과 같은 패턴, in-flight 가드 동일).
+  // 자동 kill은 하지 않는다: agy는 인증이 초기 설정 마법사보다 먼저 완료되므로 확인 즉시
+  // 죽이면 마법사를 중단시킨다(설정 미저장 → 다음 spawn에서 마법사 재등장 위험). 터미널은
+  // 사용자가 다음 화면으로 진행하면 자연히 정리된다.
+  // detect()는 detecting을 true로 만들지 않아 배지가 "확인 중…"으로 깜빡이지 않는다.
+  useEffect(() => {
+    if (helper == null || setupFor !== "antigravity") return;
+    if (avail?.antigravity_authed) return;
+    let stopped = false;
+    let inFlight = false;
+    const id = window.setInterval(async () => {
+      if (inFlight) return;
+      inFlight = true;
+      setLoginChecking(true);
+      const started = Date.now();
+      const a = await detect();
+      // 확인 순간에만 스피너를 보이는 정책인데, 미인증 응답은 ~0.2초에 끝나 그대로면 인지
+      // 불가한 깜빡임(glitch처럼 보임)이 된다 — 최소 600ms 노출을 보장해 5초 주기의
+      // 또렷한 리듬으로 만든다.
+      const remain = 600 - (Date.now() - started);
+      if (remain > 0) await new Promise((resolve) => setTimeout(resolve, remain));
+      setLoginChecking(false);
+      inFlight = false;
+      if (stopped || !a) return;
+      if (a.antigravity_authed) {
+        stopped = true;
+        window.clearInterval(id);
+        toast.success("Antigravity CLI 로그인이 확인되었습니다.");
+      }
+    }, 5000);
+    return () => {
+      stopped = true;
+      window.clearInterval(id);
+      setLoginChecking(false);
+    };
+  }, [helper, setupFor, avail?.antigravity_authed, detect, toast]);
+
   // 도우미 실행 — 우측 터미널에 설치/로그인 명령을 띄운다.
   const runHelper = useCallback(
     (
@@ -217,11 +283,11 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
     invoke("plugin:shell|open", { path: url }).catch(() => {});
   };
 
-  const isInstalled = (id: Cli) => (id === "claude" ? avail?.claude : avail?.codex) ?? false;
-  // 양쪽 모두 junmit 전용 환경 기준 인증까지 확인 → 미인증이면 로그인 유도. 개인 환경에 이미
-  // 로그인돼 있어도 자격이 환경 간 공유되지 않으므로(실측) junmit 환경 로그인이 별도로 필요하다.
-  const needsLogin = (id: Cli) =>
-    isInstalled(id) && (id === "claude" ? avail?.claude_authed : avail?.codex_authed) === false;
+  const isInstalled = (id: Cli) => (avail ? cliInstalledOf(avail, id) : false);
+  // 인증까지 확인 → 미인증이면 로그인 유도. claude/codex는 junmit 전용 환경 기준이라 개인
+  // 환경에 이미 로그인돼 있어도 별도 로그인이 필요하고(자격 미공유, 실측), antigravity는
+  // 격리 환경이 없어 사용자 전역 로그인이 그대로 인정된다.
+  const needsLogin = (id: Cli) => isInstalled(id) && avail != null && !cliAuthedOf(avail, id);
   // mlx는 CLI 설치/로그인이 없고 "모델 존재"가 곧 준비 완료.
   const isReady = (id: Cli) =>
     id === "mlx" ? localModel === true : isInstalled(id) && !needsLogin(id);
@@ -317,8 +383,8 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
             /* ── 1단계: AI 도구 선택 ── */
             <>
               <p className={styles.selectSubtitle}>
-                Junmit은 회의를 녹음·전사하고 AI가 회의록을 작성합니다. Claude·ChatGPT 구독을
-                쓰거나, 구독 없이 이 기기에서 도는 로컬 AI(무료)로 작성할 수 있어요. 하나만
+                Junmit은 회의를 녹음·전사하고 AI가 회의록을 작성합니다. Claude·ChatGPT·Google AI
+                구독을 쓰거나, 구독 없이 이 기기에서 도는 로컬 AI(무료)로 작성할 수 있어요. 하나만
                 고르세요.
               </p>
               <div className={styles.cards}>
@@ -575,7 +641,7 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
                           runHelper(
                             setupOpt.installCmd,
                             `${setupOpt.name} 설치`,
-                            (a) => (setupOpt.id === "claude" ? a.claude : a.codex),
+                            (a) => cliInstalledOf(a, setupOpt.id),
                             `${setupOpt.name} 설치가 완료되었습니다. 이어서 로그인해주세요.`
                           )
                         }
@@ -602,7 +668,7 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
                           runHelper(
                             setupOpt.loginCmd,
                             `${setupOpt.name} 로그인`,
-                            (a) => (setupOpt.id === "claude" ? a.claude_authed : a.codex_authed),
+                            (a) => cliAuthedOf(a, setupOpt.id),
                             `${setupOpt.name} 로그인이 확인되었습니다.`
                           )
                         }
@@ -610,17 +676,69 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
                         로그인하기
                       </button>
                       <div className={styles.installLabel}>
-                        우측 터미널에서{" "}
-                        <code className={styles.installCmd}>{setupOpt.loginCmdLabel}</code> 실행 ·
-                        브라우저로 로그인하면 자동 확인
-                        <br />
-                        Junmit 전용 환경에 로그인합니다 — 개인 {setupOpt.name} 설정·기록과 분리되어,
-                        이미 로그인하셨더라도 1회 더 필요합니다.
+                        {setupOpt.id === "antigravity" ? (
+                          // agy는 로그인 명령이 없어 TUI 첫 실행이 로그인 흐름인데, 세부 절차
+                          // (인증 토큰 붙여넣기·최초 설정 마법사 등)는 버전마다 바뀔 수 있는
+                          // 프리뷰 제품이라 여기서 중계하지 않고 agy 자체 안내에 위임한다.
+                          // 종료 조작은 요구하지 않는다 — 위 폴링 effect가 확인을 대신하며,
+                          // "닫아라" 안내는 /logout 오입력 사고(계정 로그아웃)를 유발했다(실측).
+                          <>
+                            우측 터미널에 {setupOpt.name}가 뜹니다. 화면의 안내에 따라 로그인과
+                            초기 설정을 마쳐주세요.
+                            <br />
+                            {/* 전역 설정 수정 고지 — claude/codex의 "전용 환경" 고지와 대칭.
+                                agy는 격리 환경이 없어 사용자 전역 설정에 항목을 추가하므로 알린다. */}
+                            회의록 작성에 필요한 설정(작업 폴더 신뢰)은 Junmit이 {setupOpt.name}{" "}
+                            설정에 자동 등록합니다.
+                            <br />
+                            {helper != null ? (
+                              // 폴링 표시 — 상시 문구 대신 실제 확인이 도는 순간에만 스피너를
+                              // 잠깐 노출(loginChecking, 최소 600ms 보장). 자리는 visibility로
+                              // 유지해 레이아웃이 점프하지 않는다.
+                              <>
+                                로그인이 확인되면 이 화면이 자동으로 바뀝니다. 터미널은 닫지
+                                않아도 됩니다.
+                                <br />
+                                <span
+                                  className={clsx(
+                                    styles.pollStatus,
+                                    loginChecking && styles.pollStatusActive
+                                  )}
+                                >
+                                  <span className={styles.pollSpinner} aria-hidden="true" />
+                                  로그인 상태를 확인하는 중…
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                로그인이 확인되면 이 화면이 자동으로 바뀝니다. 터미널은 닫지
+                                않아도 됩니다.
+                              </>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            우측 터미널에서{" "}
+                            <code className={styles.installCmd}>{setupOpt.loginCmdLabel}</code> 실행
+                            · 브라우저로 로그인하면 자동 확인
+                            <br />
+                            Junmit 전용 환경에 로그인합니다. 개인 {setupOpt.name} 설정·기록과
+                            분리되어 있어, 이미 로그인하셨더라도 1회 더 필요합니다.
+                          </>
+                        )}
                       </div>
                     </div>
                   ) : (
                     <div className={styles.ready}>
-                      준비 완료 — {setupOpt.name}로 시작할 수 있어요.
+                      준비 완료. {setupOpt.name}로 시작할 수 있어요.
+                      {setupOpt.id === "antigravity" && (
+                        // 이미 로그인된 사용자는 로그인 화면(위 고지)을 안 거치므로 여기서 고지.
+                        <>
+                          {" "}
+                          회의록 작성에 필요한 설정(작업 폴더 신뢰)은 Junmit이 {setupOpt.name}{" "}
+                          설정에 자동 등록합니다.
+                        </>
+                      )}
                     </div>
                   )}
 

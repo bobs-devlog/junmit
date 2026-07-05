@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Cli } from "@/types";
-import { codexSkillTrigger } from "@/utils/spawn";
+import { agentSkillTrigger } from "@/utils/spawn";
 
 // 살아있는 PTY의 CLI TUI에 스킬 트리거 전송 (Tier 1 재사용 — 세션 컨텍스트 유지).
 //
@@ -14,18 +14,20 @@ import { codexSkillTrigger } from "@/utils/spawn";
 //
 // \r (CR) suffix — 두 TUI 모두 stdin의 \n이 아닌 \r을 enter로 인식.
 //
-// CLI별 차이: 입력 내용(claude=슬래시 커맨드, codex=자연어 스킬 트리거 — spawn.ts
-// codexSkillTrigger와 단일 소스) + 전송 방식. codex TUI는 한 read로 도착한 청크를
-// 붙여넣기로 취급해 끝의 \r을 제출이 아닌 입력으로 처리한다(tmux 대조 실측: 단일
+// CLI별 차이: 입력 내용(claude=슬래시 커맨드, codex·antigravity=자연어 스킬 트리거 —
+// spawn.ts agentSkillTrigger와 단일 소스) + 전송 방식. codex TUI는 한 read로 도착한
+// 청크를 붙여넣기로 취급해 끝의 \r을 제출이 아닌 입력으로 처리한다(tmux 대조 실측: 단일
 // 청크=입력란 잔류, 분리 전송=제출. claude는 단일 청크도 제출됨). 그래서 codex는
 // 텍스트와 \r을 별개 write로 보내고, 사이 지연으로 PTY 버퍼에서 한 청크로 다시
 // 합쳐지는 것을 방지한다(120ms 실측 검증).
+// antigravity는 청크 처리 미실측이라 보수적으로 codex 경로(분리 전송)를 공유 — 단일 청크를
+// 제출로 처리하는 TUI에서도 분리 전송은 무해하다(E2E에서 단일 청크 제출 확인 시 간소화 여지).
 //
 // 호출자는 슬래시(/) 포함된 명령 + 현재 cli를 넘긴다 (예: "/meeting", "/publish").
 // cli 기본값 없음 — 빠뜨리면 codex에서 슬래시가 평문 입력되는 사고라 컴파일 타임에 차단.
 export async function sendSlashCommand(slash: string, cli: Cli): Promise<void> {
-  if (cli === "codex") {
-    await invoke<void>("cmd_pty_input", { data: `\x01\x0b${codexSkillTrigger(slash)}` });
+  if (cli === "codex" || cli === "antigravity") {
+    await invoke<void>("cmd_pty_input", { data: `\x01\x0b${agentSkillTrigger(slash)}` });
     await new Promise((resolve) => setTimeout(resolve, 120));
     await invoke<void>("cmd_pty_input", { data: "\r" });
     return;

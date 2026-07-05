@@ -28,6 +28,9 @@ interface UseAtlassianLogin {
 
 // Atlassian 로그인 오케스트레이션 — SessionScreen에서 분리한 응집 단위(SRP).
 // 도우미 spawn → (claude는 폴링 / codex는 자가종료) → 인증 확인 → 주입된 onAuthed로 발행 재개.
+// antigravity는 인증 판정 수단이 없어 발행 게이트가 항상 통과 — beginLogin에 도달하지 않는다
+// (도달해도 판정이 항상 true라 폴링을 켜면 도우미가 즉시 종료되는 오작동이 되므로 폴링은
+// claude 전용 유지. agy가 판정 수단을 제공하면 폴링 조건에 antigravity를 추가할 것).
 export default function useAtlassianLogin(opts: UseAtlassianLoginOptions): UseAtlassianLogin {
   const { cli, appDir, spawnShell, openDrawer, notifyPtyExit, onAuthed, toast } = opts;
 

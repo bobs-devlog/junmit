@@ -390,7 +390,18 @@ export default function SessionScreen() {
       {
         // MCP 등록(플래그 set + config 반영) 후 fresh 조회 — 방금 config를 바꿨으므로 등록 전
         // 결과를 쓰면 안 된다(미등록 상태는 "통과"로 잡혀 로그인을 건너뛰게 됨).
-        await invoke("cmd_enable_atlassian_mcp", { cli }).catch(() => {});
+        // antigravity는 격리 환경이 없어 등록이 사용자 전역 agy 설정에 남는다 — 신규 등록일
+        // 때만 1회 고지해, 사용자가 나중에 개인 agy에서 이 서버를 발견해도 출처를 알게 한다
+        // (claude/codex는 junmit 소유 config라 false 고정, 고지 없음).
+        const newlyRegistered = await invoke<boolean>("cmd_enable_atlassian_mcp", { cli }).catch(
+          () => false
+        );
+        if (newlyRegistered) {
+          toast.info("Antigravity CLI 설정에 Atlassian 연결을 등록했습니다.");
+        }
+        // antigravity는 MCP 인증 조회 수단이 없어(agy에 mcp 서브커맨드 부재) 항상 통과 —
+        // 아래 로그인 다이얼로그에 도달하지 않으며, 미인증은 publish 스킬이 실행 중 안내한다.
+        // agy가 판정 수단을 제공하면 여기 codex/claude처럼 전용 안내 분기를 추가할 것.
         const authed = await invoke<boolean>("cmd_cli_atlassian_authed", { cli }).catch(() => true);
         if (!authed) {
           const ok = await confirm({
