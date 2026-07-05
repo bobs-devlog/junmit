@@ -153,6 +153,7 @@ speaker_mapping.json + meeting-notes.md
 - ❌ 발언 헤더·의견 출처 라벨에 **`참석자A`, `참석자B`** 같은 임시 이름 사용
 - ❌ 발언 헤더·의견 출처 라벨에 **실제 이름**(`Bobs` 등) 직접 박기 — `**SPEAKER_XX**:`, `의견 (SPEAKER_XX)` 형식 유지
 - ❌ 산문 안에 등장한 인물 이름을 SPEAKER_XX로 강제 치환 (예: "Bobs가 만든 V1" → "SPEAKER_05가 만든 V1") — sentinel은 발화 주체 식별에만 사용
+- ❌ **이름(SPEAKER_XX) 병기** (예: "Bobs(SPEAKER_01)에게 요청") — 앱이 표시 시점에 라벨을 이름으로 치환하므로 "Bobs(Bobs)"처럼 깨진다. 산문은 이름만, 출처 라벨은 라벨만
 - ❌ 3인칭 명시 지시("Bobs가 해주세요")의 Action Items assignee를 발화자 SPEAKER로 매핑 — 산문에 명시된 이름을 그대로 `@Bobs`로 사용
 
 ### 허용/지시 사항
