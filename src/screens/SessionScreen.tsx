@@ -383,25 +383,13 @@ export default function SessionScreen() {
         return;
       }
 
-      // create — 발행 직전 Atlassian MCP 등록(lazy) + 인증 게이트(JIT). 이 시점 전까지는 MCP가
-      // CLI config에 선언돼 있지 않아 비-Confluence 사용자가 기동 워닝을 보지 않는다. 등록은 동의
-      // 맥락이 자명한 발행 시점에 1회 한다. 판정 자체가 실패하면 통과 — publish 스킬이 실패를
-      // 안내하는 쪽이 게이트 오작동으로 발행이 막히는 것보다 낫다.
+      // create — 발행 직전 Atlassian 등록(lazy) + 인증 게이트(JIT). **claude/codex만 도달**한다
+      // (antigravity·mlx는 모달에서 create가 비활성). 이 시점 전까지는 MCP가 CLI config에 선언돼
+      // 있지 않아 비-Confluence 사용자가 기동 워닝을 보지 않는다. 판정 실패 시 통과 — publish
+      // 스킬이 실패를 안내하는 쪽이 게이트 오작동으로 발행이 막히는 것보다 낫다.
       {
-        // MCP 등록(플래그 set + config 반영) 후 fresh 조회 — 방금 config를 바꿨으므로 등록 전
-        // 결과를 쓰면 안 된다(미등록 상태는 "통과"로 잡혀 로그인을 건너뛰게 됨).
-        // antigravity는 격리 환경이 없어 등록이 사용자 전역 agy 설정에 남는다 — 신규 등록일
-        // 때만 1회 고지해, 사용자가 나중에 개인 agy에서 이 서버를 발견해도 출처를 알게 한다
-        // (claude/codex는 junmit 소유 config라 false 고정, 고지 없음).
-        const newlyRegistered = await invoke<boolean>("cmd_enable_atlassian_mcp", { cli }).catch(
-          () => false
-        );
-        if (newlyRegistered) {
-          toast.info("Antigravity CLI 설정에 Atlassian 연결을 등록했습니다.");
-        }
-        // antigravity는 MCP 인증 조회 수단이 없어(agy에 mcp 서브커맨드 부재) 항상 통과 —
-        // 아래 로그인 다이얼로그에 도달하지 않으며, 미인증은 publish 스킬이 실행 중 안내한다.
-        // agy가 판정 수단을 제공하면 여기 codex/claude처럼 전용 안내 분기를 추가할 것.
+        // junmit 전용 격리 config에 lazy 등록(플래그 set + 베이크). 이후 fresh 인증 조회.
+        await invoke("cmd_enable_atlassian_mcp", { cli }).catch(() => {});
         const authed = await invoke<boolean>("cmd_cli_atlassian_authed", { cli }).catch(() => true);
         if (!authed) {
           const ok = await confirm({
@@ -527,6 +515,13 @@ export default function SessionScreen() {
             reloadPublishMode();
           }}
           onConfirm={handleConfluencePublish}
+          createUnavailableReason={
+            cli === "antigravity"
+              ? "Antigravity는 아직 새 페이지 자동 생성을 지원하지 않아요 (추후 지원 예정). 지금은 “회의록 복사”로 등록해주세요."
+              : cli === "mlx"
+                ? "로컬 AI는 새 페이지 자동 생성을 지원하지 않아요. “회의록 복사”로 등록해주세요."
+                : undefined
+          }
         />
       )}
     </>

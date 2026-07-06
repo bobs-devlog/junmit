@@ -63,6 +63,36 @@
   margin: 0;
 }
 
+/* 선택 불가(자동 발행 미지원) — opacity 페이드/native disabled 대신 정적 dim 색 + filter로
+   (paint flicker·글리프 재렌더 회피). --text-secondary(#8892a4)보다 확실히 어둡게 + 가라앉은 배경. */
+.mode-option.disabled {
+  color: #565d70;
+  cursor: default;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.mode-option.disabled:hover {
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.mode-option.disabled input[type="radio"] {
+  accent-color: #565d70;
+  filter: grayscale(1) brightness(0.55);
+  pointer-events: none;
+  cursor: default;
+}
+
+/* 비활성 사유 배지 — 옵션 옆에 어디서 되는지(Claude·Codex 전용) 텍스트로 명시(색만으론 약함). */
+.need-connect {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
 /* 모드별 컨텐츠 — min-height로 모드 전환 시 modal 높이 변동 회피. */
 .mode-content {
   min-height: 80px;

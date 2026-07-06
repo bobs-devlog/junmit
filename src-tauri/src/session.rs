@@ -263,10 +263,11 @@ pub fn write_detailed_default(on: bool) -> Result<(), String> {
 /// 양쪽 전용 환경에 베이크되는 단일 값.
 const ATLASSIAN_MCP_URL: &str = "https://mcp.atlassian.com/v1/mcp";
 
-/// antigravity(agy)용 Atlassian MCP 엔드포인트 — agy 동봉 문서가 원격 MCP를 SSE transport
-/// (`serverUrl`)로 명시해 SSE 엔드포인트를 쓴다. streamable HTTP(/v1/mcp)도 통하는 것으로
-/// 확인되면 ATLASSIAN_MCP_URL로 통합할 것(E2E 검증 항목).
-const ATLASSIAN_MCP_SSE_URL: &str = "https://mcp.atlassian.com/v1/sse";
+// antigravity(agy)는 Confluence 자동 발행을 **아직 지원하지 않는다(추후)**. agy CLI는 원격 MCP
+// OAuth가 실제로 안 된다 — 네이티브 serverUrl은 `initialize: Unauthorized`로 실패(실측, agy
+// Issue #25), mcp-remote는 Node 의존. 그래서 junmit은 antigravity에 atlassian을 등록하지 않고
+// (전용 상수·ensure 함수 없음), 발행 모달이 antigravity의 자동 발행(create)을 막는다. 워크스페이스
+// 신뢰 베이크(ensure_antigravity_trust)는 /meeting·/assist spawn에 필요하므로 유지.
 
 /// codex 스킬 실행 전용 CODEX_HOME — 사용자 개인 `~/.codex`(플러그인·hooks·trust 가득)와
 /// 격리된 junmit 소유 home. 격리 이유: skill 런타임이 사용자 설정에 안 흔들려 결정론적이고,
@@ -290,13 +291,10 @@ pub fn atlassian_enabled() -> bool {
     atlassian_flag_path().exists()
 }
 
-/// 첫 Confluence 발행 게이트에서 호출 — 플래그 set + 해당 CLI config에 MCP 즉시 반영.
-/// 이후 그 CLI(및 다음 기동의 각 CLI)는 atlassian MCP를 선언한 채 뜬다.
+/// 첫 Confluence 발행 게이트(claude/codex)에서 호출 — 플래그 set + 해당 CLI 격리 config에 MCP
+/// 즉시 반영. 이후 그 CLI는 atlassian MCP를 선언한 채 뜬다.
 /// 명시 match — `_` 폴백이면 새 CLI가 조용히 codex home에 베이크되는 무언 폴백 사고가 된다.
-/// 반환값: **antigravity 전역 설정에 Atlassian을 이번 호출에서 새로 등록했는지** — 사용자
-/// 소유 파일 수정이라 프론트가 1회 고지 토스트를 띄운다. claude/codex는 junmit 소유 격리
-/// config라 고지 대상이 아니며 항상 false.
-pub fn enable_atlassian_mcp(app: &tauri::AppHandle, cli: &str) -> Result<bool, String> {
+pub fn enable_atlassian_mcp(app: &tauri::AppHandle, cli: &str) -> Result<(), String> {
     let p = atlassian_flag_path();
     if let Some(parent) = p.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("atlassian 플래그 디렉토리 생성 실패: {e}"))?;
@@ -305,16 +303,13 @@ pub fn enable_atlassian_mcp(app: &tauri::AppHandle, cli: &str) -> Result<bool, S
         fs::write(&p, b"1").map_err(|e| format!("atlassian 플래그 쓰기 실패: {e}"))?;
     }
     match cli {
-        "claude" => {
-            ensure_claude_config_dir(app);
-            Ok(false)
-        }
-        "antigravity" => Ok(ensure_antigravity_mcp()),
-        _ => {
-            ensure_codex_home(app);
-            Ok(false)
-        }
+        "claude" => ensure_claude_config_dir(app),
+        // antigravity는 Confluence 발행 미지원(추후) — atlassian을 등록하지 않는다. 프론트가
+        // antigravity의 자동 발행(create)을 게이팅하므로 이 경로는 실질적으로 안 탄다.
+        "antigravity" => {}
+        _ => ensure_codex_home(app),
     }
+    Ok(())
 }
 
 /// agy 워크스페이스 신뢰 베이크 — 스킬 spawn cwd(appDir)를 사용자 전역
@@ -322,8 +317,8 @@ pub fn enable_atlassian_mcp(app: &tauri::AppHandle, cli: &str) -> Result<bool, S
 /// 실행의 영문 신뢰 다이얼로그를 없앤다(claude `.claude.json`·codex config.toml 신뢰
 /// 베이크와 패리티). 실측(A5): 다이얼로그는 존재하며 `--dangerously-skip-permissions`로
 /// 우회되지 않고, 신뢰는 하위 디렉토리로 상속되지 않아 정확히 그 경로가 등록돼야 한다.
-/// ⚠️ 사용자 소유 파일 — ensure_antigravity_mcp와 동일 정책: read-merge-write(기존 키·항목
-/// 전부 보존), 파싱 실패 시 불간섭(다이얼로그가 한 번 뜨는 게 설정 파손보다 낫다), 원자 교체.
+/// ⚠️ 사용자 소유 파일 — read-merge-write(기존 키·항목 전부 보존), 파싱 실패 시 불간섭
+/// (다이얼로그가 한 번 뜨는 게 설정 파손보다 낫다), 원자 교체.
 pub fn ensure_antigravity_trust(app: &tauri::AppHandle) {
     // 신뢰 대상 2곳: 스킬 spawn cwd(appDir) + 앱 데이터 디렉토리(app.junmit — spawn이
     // --add-dir로 워크스페이스에 포함하는 세션·신호·staging 위치. 추가 워크스페이스에도
@@ -385,84 +380,6 @@ pub fn ensure_antigravity_trust(app: &tauri::AppHandle) {
             }
         }
         Err(e) => eprintln!("antigravity settings.json 직렬화 실패: {e}"),
-    }
-}
-
-/// antigravity(agy) 전역 MCP 설정에 Atlassian 서버를 merge — lazy(atlassian_enabled 후에만,
-/// claude/codex ensure와 동일 의미론: 비-Confluence 사용자에게 MCP 워닝을 만들지 않는다).
-///
-/// agy는 격리 홈 env가 없어(실측 1.0.16, CLAUDE_CONFIG_DIR/CODEX_HOME 대응물 부재) 사용자
-/// 전역 `~/.gemini/config/mcp_config.json`을 공유한다(경로·스키마는 agy 동봉 문서 확정 —
-/// builtin/skills/agy-customizations/docs/mcp_servers.md).
-/// ⚠️ 사용자 소유 파일 — codex config.toml식 통파일 rewrite 절대 금지. read-merge-write:
-/// - 파싱 실패 = 불간섭 return. 잘못 덮으면 사용자의 다른 MCP 서버 설정을 파괴한다.
-///   MCP 부재의 실제 결과는 publish 스킬이 실행 중 안내하므로 보수적 실패가 안전하다.
-/// - `mcpServers.atlassian`이 이미 있으면(사용자 직접 등록 포함) 덮지 않음 — 멱등.
-///
-/// 반환값: 이번 호출에서 항목을 **새로 등록해 저장까지 성공**했는지 — 사용자 소유 파일
-/// 수정이라 프론트가 1회 고지 토스트에 쓴다(이미 있음·실패·비활성은 전부 false).
-pub fn ensure_antigravity_mcp() -> bool {
-    if !atlassian_enabled() {
-        return false;
-    }
-    let home = std::env::var("HOME").unwrap_or_default();
-    if home.is_empty() {
-        return false;
-    }
-    let path = PathBuf::from(home).join(".gemini/config/mcp_config.json");
-    let mut root: serde_json::Value = match fs::read_to_string(&path) {
-        Ok(s) => match serde_json::from_str(&s) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("antigravity mcp_config.json 파싱 실패 — 불간섭: {e}");
-                return false;
-            }
-        },
-        // 파일 부재는 신규 생성 대상 (agy 미기동 상태 포함).
-        Err(_) => serde_json::json!({}),
-    };
-    let Some(obj) = root.as_object_mut() else {
-        eprintln!("antigravity mcp_config.json 루트가 객체가 아님 — 불간섭");
-        return false;
-    };
-    let servers = obj
-        .entry("mcpServers")
-        .or_insert_with(|| serde_json::json!({}));
-    let Some(servers) = servers.as_object_mut() else {
-        eprintln!("antigravity mcpServers가 객체가 아님 — 불간섭");
-        return false;
-    };
-    if servers.contains_key("atlassian") {
-        return false;
-    }
-    servers.insert(
-        "atlassian".to_string(),
-        serde_json::json!({ "serverUrl": ATLASSIAN_MCP_SSE_URL }),
-    );
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    // 원자 교체 — 사용자 소유 파일이라 쓰기 도중 크래시로 반쪽 JSON을 남기면 사용자의 다른
-    // MCP 서버 설정까지 파손된다(파손 반경이 앱 밖). 같은 디렉토리 임시 파일 + rename(동일
-    // 볼륨이라 원자적)으로 어느 시점에 죽어도 원본은 온전하게 유지.
-    match serde_json::to_string_pretty(&root) {
-        Ok(s) => {
-            let tmp = path.with_extension("json.junmit-tmp");
-            if let Err(e) = fs::write(&tmp, s) {
-                eprintln!("antigravity mcp_config.json 임시 쓰기 실패: {e}");
-                return false;
-            }
-            if let Err(e) = fs::rename(&tmp, &path) {
-                eprintln!("antigravity mcp_config.json 교체 실패: {e}");
-                let _ = fs::remove_file(&tmp);
-                return false;
-            }
-            true
-        }
-        Err(e) => {
-            eprintln!("antigravity mcp_config.json 직렬화 실패: {e}");
-            false
-        }
     }
 }
 
@@ -985,11 +902,9 @@ pub fn cli_atlassian_authed(app: &tauri::AppHandle, cli: &str) -> Result<bool, S
         return claude_atlassian_authed(app);
     }
     if cli == "antigravity" {
-        // agy는 mcp 서브커맨드가 없어(실측 1.0.16) 인증 상태를 조회할 수단이 없다 —
-        // config 반영만 보장하고 통과(best-effort 게이트의 극단). 미인증의 실제 결과는
-        // publish 스킬이 실행 중 안내한다. agy가 조회 수단을 제공하면 codex처럼 판별로 상향.
-        ensure_antigravity_mcp();
-        return Ok(true);
+        // antigravity는 Confluence 자동 발행 미지원(추후) — atlassian을 관리하지 않는다.
+        // 프론트가 antigravity의 create(자동 발행)를 애초에 막으므로 이 경로는 안 탄다.
+        return Ok(false);
     }
     // config.toml에 atlassian 서버가 베이크돼 있어야 목록에 잡힌다.
     ensure_codex_home(app);

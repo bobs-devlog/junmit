@@ -17,21 +17,32 @@ interface Props {
   // Promise를 반환하면 완료까지 버튼이 "확인 중…" busy 상태가 된다 — codex 발행 게이트의
   // 인증 판정(외부 프로세스 ~1초+)처럼 트리거가 즉답이 아닌 경우의 무반응 구간 제거.
   onConfirm: (mode: ConfluencePublishMode, displayMd: string) => void | Promise<void>;
+  // create(새 페이지 자동 생성) 불가 사유 — 있으면 create 라디오를 비활성 + 이 문구를 안내하고
+  // append로 유도한다. claude/codex는 undefined(create 가능), antigravity(추후 지원)·mlx는 사유 전달.
+  createUnavailableReason?: string;
 }
 
 const MODE_LABELS: Record<ConfluencePublishMode, string> = {
   create: "새 페이지로 생성",
-  append: "기존 페이지에 추가",
+  // 실제 동작은 "클립보드 복사 → 사용자가 직접 붙여넣기". "기존 페이지에 추가"는 앱이 자동으로
+  // 추가하는 것처럼 오해를 줘서, 복사+수동 붙여넣기임을 라벨에 그대로 드러낸다.
+  append: "회의록 복사 (직접 붙여넣기)",
   skip: "등록하지 않음",
 };
 
 const MODE_BUTTON_LABELS: Record<ConfluencePublishMode, string> = {
   create: "Confluence에 등록",
-  append: "회의록 복사 + 발행 완료",
+  append: "회의록 복사하고 완료",
   skip: "건너뛰고 완료",
 };
 
-export default function PublishModal({ open, sessionPath, onDismiss, onConfirm }: Props) {
+export default function PublishModal({
+  open,
+  sessionPath,
+  onDismiss,
+  onConfirm,
+  createUnavailableReason,
+}: Props) {
   const { confirm } = useDialog();
   const toast = useToast();
   const [config, setConfig] = useState<PublishConfig>(defaultPublishConfig);
@@ -75,6 +86,8 @@ export default function PublishModal({ open, sessionPath, onDismiss, onConfirm }
   const mode = config.confluence.mode;
   const published = config.confluence.published;
   const displayMd = substituteNames(rawNotes, mapping);
+  // create(자동 발행) 불가 여부 — antigravity(추후)·mlx. 사유 문구가 있으면 disabled.
+  const createDisabled = !!createUnavailableReason;
 
   // 모드 변경은 가드 없이 즉시 반영. published=true였다면 false로 reset (재발행 필요 상태로).
   // 실제 발행 위험은 handleConfirm의 재발행 confirm에서만 가드 (이중 confirm 회피).
@@ -92,6 +105,14 @@ export default function PublishModal({ open, sessionPath, onDismiss, onConfirm }
     },
     [mode, sessionPath, config.confluence, toast]
   );
+
+  // create 불가(antigravity·mlx)인데 저장된 모드가 create면 append로 자동 전환 — 열자마자 유효한
+  // 모드에 놓이게 한다.
+  useEffect(() => {
+    if (open && createDisabled && config.confluence.mode === "create") {
+      void handleModeChange("append");
+    }
+  }, [open, createDisabled, config.confluence.mode, handleModeChange]);
 
   const handleParentUrlBlur = useCallback(async () => {
     const trimmed = parentUrlDraft.trim();
@@ -175,18 +196,36 @@ export default function PublishModal({ open, sessionPath, onDismiss, onConfirm }
         )}
 
         <div className={styles.modeGroup}>
-          {(["create", "append", "skip"] as ConfluencePublishMode[]).map((m) => (
-            <label key={m} className={clsx(styles.modeOption, mode === m && styles.checked)}>
-              <input
-                type="radio"
-                name="publish-mode"
-                checked={mode === m}
-                onChange={() => handleModeChange(m)}
-              />
-              <span>{MODE_LABELS[m]}</span>
-            </label>
-          ))}
+          {(["create", "append", "skip"] as ConfluencePublishMode[]).map((m) => {
+            // create는 claude/codex에서만 가능. antigravity(추후)·mlx는 비활성 + 배지로 표시하고
+            // 이유는 아래 안내로. aria-disabled + JS 가드(native disabled 글리프 깜빡임 회피).
+            const disabled = m === "create" && createDisabled;
+            return (
+              <label
+                key={m}
+                className={clsx(
+                  styles.modeOption,
+                  mode === m && styles.checked,
+                  disabled && styles.disabled
+                )}
+                aria-disabled={disabled || undefined}
+              >
+                <input
+                  type="radio"
+                  name="publish-mode"
+                  checked={mode === m}
+                  onChange={() => {
+                    if (!disabled) handleModeChange(m);
+                  }}
+                />
+                <span>{MODE_LABELS[m]}</span>
+                {disabled && <span className={styles.needConnect}>Claude·Codex 전용</span>}
+              </label>
+            );
+          })}
         </div>
+
+        {createDisabled && <div className={styles.notice}>{createUnavailableReason}</div>}
 
         <div className={styles.modeContent}>
           {mode === "create" && (

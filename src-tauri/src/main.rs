@@ -197,11 +197,10 @@ fn cmd_get_active_cli(app: tauri::AppHandle) -> String {
     match cli.as_str() {
         "codex" => session::ensure_codex_home(&app),
         "mlx" => {} // 로컬 LLM은 CLI 설정 디렉토리 불필요 (모델 존재 확인은 cmd_check_local_model)
-        // 격리 환경이 없어 준비할 홈은 없고, 워크스페이스 신뢰 베이크(spawn 다이얼로그 제거) +
-        // MCP merge(atlassian 활성 사용자의 재기동 대비)만 보장.
+        // 격리 홈은 없다. 워크스페이스 신뢰만 베이크(spawn 신뢰 다이얼로그 제거).
+        // Confluence 자동 발행은 미지원(추후)이라 atlassian은 등록하지 않는다.
         "antigravity" => {
             session::ensure_antigravity_trust(&app);
-            session::ensure_antigravity_mcp();
         }
         _ => session::ensure_claude_config_dir(&app),
     }
@@ -217,7 +216,6 @@ fn cmd_set_active_cli(app: tauri::AppHandle, cli: String) -> Result<(), String> 
         "mlx" => {} // 로컬 LLM은 CLI 설정 디렉토리 불필요
         "antigravity" => {
             session::ensure_antigravity_trust(&app);
-            session::ensure_antigravity_mcp();
         }
         _ => session::ensure_claude_config_dir(&app),
     }
@@ -350,7 +348,7 @@ async fn cmd_cli_atlassian_authed(app: tauri::AppHandle, cli: String) -> Result<
 /// 파일 I/O(config rewrite)라 async + blocking pool.
 /// 반환 true = antigravity 사용자 전역 설정에 이번에 새로 등록됨 (프론트가 1회 고지 토스트).
 #[tauri::command]
-async fn cmd_enable_atlassian_mcp(app: tauri::AppHandle, cli: String) -> Result<bool, String> {
+async fn cmd_enable_atlassian_mcp(app: tauri::AppHandle, cli: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || session::enable_atlassian_mcp(&app, &cli))
         .await
         .map_err(|e| format!("Atlassian MCP 등록 작업 실패: {e}"))?

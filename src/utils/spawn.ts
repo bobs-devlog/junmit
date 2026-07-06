@@ -158,18 +158,13 @@ export function buildShellRequest(commandLine: string): SpawnRequest {
 //   TUI는 cwd를 프로젝트로 삼으므로 신뢰가 베이크된 appDir로 이동해야 신뢰 다이얼로그가 안 뜬다
 //   (buildShellRequest는 cd를 안 함). TUI는 인증 후에도 스스로 안 끝나므로 인증 상태 폴링이
 //   확인 즉시 도우미를 정리하고 발행을 잇는다(useAtlassianLogin의 폴링 effect).
-// - antigravity: mcp 서브커맨드 자체가 없어(실측 1.0.16) claude처럼 TUI를 띄운다. 커스텀
-//   슬래시 초기 실행도 없으므로 사용자가 TUI 안에서 MCP 인증을 진행(안내문은 SessionScreen).
-//   MCP 설정은 사용자 전역이라 격리 env 없음. 절대경로 실행은 IDE 런처 폴백 회피(paths.ts).
+// antigravity는 Confluence 발행 미지원(추후)이라 이 로그인 흐름에 도달하지 않는다 — 분기 없음.
 export function buildAtlassianLoginCommand(cli: Cli, appDir: string | null): string {
   if (cli === "codex") {
     return (
       `export CODEX_HOME="${CODEX_HOME_SH}" && codex mcp login atlassian 2>&1 | ` +
       `while IFS= read -r line; do echo "$line"; case "$line" in https://*) open "$line";; esac; done`
     );
-  }
-  if (cli === "antigravity") {
-    return (appDir ? `cd "${appDir}" && ` : "") + `"${AGY_BIN_SH}"`;
   }
   return (
     (appDir ? `cd "${appDir}" && ` : "") +
