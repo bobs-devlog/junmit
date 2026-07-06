@@ -16,6 +16,7 @@ import { Activity, Step, cliHasAgent } from "@/constants";
 import type { ConfluencePublishMode } from "@/types";
 import { loadPublishConfig, updatePublishConfig, defaultPublishConfig } from "@/utils/publishMeta";
 import { killPty, sendSlashCommand } from "@/utils/pty";
+import { copyMarkdownRich } from "@/utils/clipboard";
 import { invoke } from "@tauri-apps/api/core";
 import { sendNotification } from "@/utils/notification";
 
@@ -364,7 +365,7 @@ export default function SessionScreen() {
 
       if (mode === "append") {
         try {
-          await navigator.clipboard.writeText(displayMd);
+          await copyMarkdownRich(displayMd);
           await sendNotification(
             "Junmit — 회의록 복사 완료",
             "Confluence 페이지에 직접 붙여넣어주세요."

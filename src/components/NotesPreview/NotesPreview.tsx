@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import NotesMarkdownView from "../NotesMarkdownView";
 import { substituteNames } from "@/utils/meetingNotes";
 import { loadMeetingMeta } from "@/utils/meetingMeta";
+import { copyMarkdownRich } from "@/utils/clipboard";
 import { invoke } from "@tauri-apps/api/core";
 import { useSession } from "@/contexts/SessionContext";
 import { Activity } from "@/constants";
@@ -32,7 +33,7 @@ function CopyButton({ text }: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(text);
+    await copyMarkdownRich(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }, [text]);
