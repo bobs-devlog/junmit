@@ -22,10 +22,25 @@ export default function LocalProgressPanel({ activity, emptyState }: LocalProgre
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const prevActivityRef = useRef(activity);
 
-  // Composing 진입(rising edge) 시 이전 실행 라인 정리.
+  // Composing 진입(rising edge) 시 이전 실행 라인 정리, 이탈(falling edge=완료) 시 마무리:
+  //  ① 마지막 진행 카운터("작성 중… N자")를 정지 문구("본문 N자")로 고정 — 카운터는 터미널 \r
+  //     갱신을 흉내낸 라이브 표시라 끝나면 정지시켜야 아직 작성 중인 것처럼 안 보인다.
+  //  ② 완료 줄을 맨 아래에 추가 — 패널이 하단 자동 스크롤이라 사용자 시선이 바닥에 머문다.
+  //     상단 완료 띠는 잘 안 보게 되므로, 시선이 닿는 마지막 줄에 완료를 한 번 더 명시한다.
+  //     (.line:last-child가 밝게 강조하므로 별도 스타일 불필요.)
   useEffect(() => {
-    if (prevActivityRef.current !== Activity.Composing && activity === Activity.Composing) {
+    const was = prevActivityRef.current;
+    if (was !== Activity.Composing && activity === Activity.Composing) {
       setLines([]);
+    } else if (was === Activity.Composing && activity !== Activity.Composing) {
+      setLines((prev) => {
+        if (prev.length === 0) return prev;
+        const last = prev[prev.length - 1].trimStart();
+        const base = last.startsWith("작성 중…")
+          ? [...prev.slice(0, -1), `   본문 ${last.replace(/^작성 중…\s*/, "")}`]
+          : prev;
+        return [...base, "✓ 회의록 작성 완료"];
+      });
     }
     prevActivityRef.current = activity;
   }, [activity]);
