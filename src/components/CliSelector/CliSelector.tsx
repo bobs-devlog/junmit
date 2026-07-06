@@ -387,6 +387,12 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
                 구독을 쓰거나, 구독 없이 이 기기에서 도는 로컬 AI(무료)로 작성할 수 있어요. 하나만
                 고르세요.
               </p>
+              {detecting && (
+                <div className={styles.detectingRow}>
+                  <span className={styles.pollSpinner} aria-hidden="true" />
+                  설치된 AI 도구를 확인하는 중이에요… 잠시만 기다려주세요.
+                </div>
+              )}
               <div className={styles.cards}>
                 {OPTIONS.map((o) => {
                   const ready = isReady(o.id);

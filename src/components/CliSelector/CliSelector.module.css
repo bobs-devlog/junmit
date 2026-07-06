@@ -28,6 +28,18 @@
   gap: 12px;
 }
 
+/* AI 도구 감지 중 — 카드가 잠시 선택 불가임을 중앙에 명시. 감지는 네트워크 왕복(설치·로그인
+   확인)이라 수 초 걸릴 수 있어, 어두운 카드가 "영구 비활성"처럼 오해되지 않게 로딩 신호를 준다. */
+.detecting-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
 /* 선택 카드 — 클릭이 곧 동작(준비됐으면 진행, 아니면 설치/로그인 단계로). 버튼 리셋 + 카드 외형. */
 .choice-card {
   appearance: none;
