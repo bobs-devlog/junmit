@@ -14,11 +14,13 @@ warn() { printf "\033[1;33m[경고]\033[0m %s\n" "$1"; }
 err()  { printf "\033[1;31m[오류]\033[0m %s\n" "$1" >&2; }
 
 # 용량 기반 다운로드 진행 표시 — $1 감시 경로(파일/디렉토리), $2 예상 MB, $3 다운로드 프로세스 PID.
-# 앱(SetupScreen)이 "(NN%)"로 게이지를, "MB" 포함 줄을 본문으로 표기한다.
+# 앱(SetupScreen)이 "(NN%)"로 게이지를, "MB" 포함 줄을 본문으로 표기한다. 본문엔 직전 샘플
+# 델타로 계산한 실시간 속도·ETA도 함께 싣는다 — 대용량 구간에서 진행 중임이 더 분명해진다.
 # curl/HF 자체 진행바를 안 쓰는 이유(둘 다 실측): curl -L은 리다이렉트 응답마다 바를 새로
 # 그려 시작 직후 100%→0%로 보이고, HF 바는 파일 개수 기준이라 수 GB 샤드 동안 멈춘 듯 보인다.
 progress_du() {
   local target="$1" total_mb="$2" pid="$3" cur_kb cur_mb pct
+  local prev_mb=0 prev_ts=0 now dmb dt speed rem eta extra
   while kill -0 "$pid" 2>/dev/null; do
     cur_kb=$(du -sk "$target" 2>/dev/null | cut -f1 || echo 0)
     cur_mb=$(( cur_kb * 1024 / 1000000 ))  # 십진 MB — Finder·모델 용량 표기(6.8GB 등)와 단위 통일
@@ -26,7 +28,19 @@ progress_du() {
     # 모순되지 않게 총량으로 클램프 (게이지도 99%에 머묾, 완료 판정은 wait가 담당).
     [[ $cur_mb -gt $total_mb ]] && cur_mb=$total_mb
     pct=$(( cur_mb * 100 / total_mb )); [[ $pct -gt 99 ]] && pct=99
-    echo "  받는 중... ${cur_mb}MB / ${total_mb}MB (${pct}%)"
+    # 실시간 속도·ETA — 직전 샘플과의 델타. 초기·정체(0/음수 델타)는 생략해 "0MB/s" 깜빡임 방지.
+    now=$(date +%s); extra=""
+    if [[ $prev_ts -gt 0 ]]; then
+      dt=$(( now - prev_ts )); dmb=$(( cur_mb - prev_mb ))
+      if [[ $dt -gt 0 && $dmb -gt 0 ]]; then
+        speed=$(( dmb / dt )); [[ $speed -lt 1 ]] && speed=1
+        rem=$(( total_mb - cur_mb )); eta=$(( rem / speed ))
+        if [[ $eta -ge 60 ]]; then extra=" · ${speed}MB/s · 약 $(( eta / 60 ))분 남음"
+        else extra=" · ${speed}MB/s · 약 ${eta}초 남음"; fi
+      fi
+    fi
+    echo "  받는 중... ${cur_mb}MB / ${total_mb}MB${extra} (${pct}%)"
+    prev_mb=$cur_mb; prev_ts=$now
     sleep 3
   done
 }
@@ -77,7 +91,7 @@ if [[ "$LOCAL_MODEL_NAME" == "gemma-4-12b-qat" ]]; then
 fi
 LOCAL_MODEL_DIR="$MODELS_DIR/mlx/$LOCAL_MODEL_NAME"
 # 로컬 AI 런타임 패키지 (base·model 모드 공유 — 버전 정책은 model 모드 설치부 주석 참조)
-MLX_RUNTIME_PKGS=("mlx-vlm~=0.6.3" "transformers~=5.12.1" "truststore")
+MLX_RUNTIME_PKGS=("mlx-vlm~=0.6.3" "transformers~=5.12.1" "truststore" "hf_transfer~=0.1.9")
 
 # uv 바이너리 (앱 번들 또는 워크스페이스 bin/에 있음)
 UV="$SCRIPT_DIR/bin/uv"
@@ -124,26 +138,44 @@ if [[ "$INSTALL_MODE" == "model" ]]; then
   # snapshot_download는 부분 다운로드 resume을 지원해 중단돼도 이어받는다.
   # 진행률은 "받은 용량" 기준으로 이 스크립트가 직접 출력 — HF 진행바는 파일 개수 기준이라
   # 수 GB 샤드 하나를 받는 몇 분 동안 갱신이 없어 UI 게이지가 0%에 멈춘 것처럼 보인다(실측).
-  # 다운로드는 백그라운드, 진행 루프는 포그라운드 — 실패·취소 시 루프가 고아로 남아
-  # stdout 파이프를 잡고 있으면 Rust 스트림 스레드가 영영 안 끝난다.
-  # HF_HUB_DISABLE_XET=1 — Xet 백엔드는 청크를 전역 캐시(~/.cache/huggingface/xet)에 받다가
-  # 재조립 때 한 번에 목적지로 옮겨, 목적지 용량 기반 게이지가 "정체 후 점프"로 보인다(실측).
-  # 고전 HTTP는 목적지 안 .incomplete에 직접 이어써 진행률이 연속이고 속도도 충분(실측 ~50MB/s).
-  HF_HUB_DISABLE_XET=1 HF_HUB_DISABLE_PROGRESS_BARS=1 "$VENV_DIR/bin/python3" - "$LOCAL_MODEL_REPO" "$LOCAL_MODEL_DIR" <<'PY' &
+  # 다운로드는 백그라운드, 진행 루프(progress_du)는 포그라운드 — 실패·취소 시 루프가 고아로
+  # 남아 stdout 파이프를 잡고 있으면 Rust 스트림 스레드가 영영 안 끝난다.
+  #
+  # 다운로드 백엔드 — hf_transfer(Rust 병렬)로 회선을 채운다: 실측 단일 스트림 6.6MB/s →
+  # 병렬 ~12MB/s(회선 천장)로 대략 절반 시간. HF_HUB_DISABLE_XET=1은 유지 — Xet은 청크를
+  # 전역 캐시(~/.cache/huggingface/xet)에 받았다 재조립 때 목적지로 옮겨, 목적지 용량 기반
+  # 게이지가 "정체 후 점프"로 보인다(실측). hf_transfer는 Xet과 달리 목적지 안
+  # .incomplete(local_dir/.cache/huggingface/download/)에 병렬로 직접 이어써 진행률이 연속이다(실측).
+  # 실패 시(일부 프록시 환경 등) huggingface_hub는 자동 폴백 없이 하드 에러라, 여기서 고전
+  # 단일 스트림으로 재시도한다 — 두 백엔드가 같은 .incomplete를 써서 이어받는다(중복 다운로드 없음).
+  download_model() {  # $1: 추가 env ("HF_HUB_ENABLE_HF_TRANSFER=1" 또는 빈 값=고전 단일 스트림)
+    # hf_transfer의 "unauthenticated requests … set a HF_TOKEN" 경고는 Rust가 stderr로 직접
+    # 출력해 아래 python logging 억제로 안 잡힌다(실측) — 출력 단계에서 걸러낸다. 공개 리포라
+    # 토큰은 불필요이고(HF 계정 없이 쓰는 게 제품 원칙), 사용자에겐 조치 불가능한 소음이라서.
+    env HF_HUB_DISABLE_XET=1 HF_HUB_DISABLE_PROGRESS_BARS=1 $1 \
+      "$VENV_DIR/bin/python3" - "$LOCAL_MODEL_REPO" "$LOCAL_MODEL_DIR" \
+      2> >(grep -vE "unauthenticated requests to the HF Hub|Please set a HF_TOKEN" >&2) <<'PY'
 import logging, sys, warnings
 import truststore
 truststore.inject_into_ssl()  # 사내 TLS 프록시(zscaler) 대응 — macOS 키체인 신뢰 (위 설치 주석 참조)
-# "unauthenticated requests … set a HF_TOKEN" 경고 숨김 — 공개 리포라 토큰 불필요이고
-# (HF 계정 없이 쓰게 하는 게 제품 원칙), 사용자에겐 조치 불가능한 소음이라서.
 warnings.filterwarnings("ignore")
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 from huggingface_hub import snapshot_download
 repo, dest = sys.argv[1], sys.argv[2]
 snapshot_download(repo_id=repo, local_dir=dest)
 PY
+  }
+
+  download_model "HF_HUB_ENABLE_HF_TRANSFER=1" &
   DL_PID=$!
   progress_du "$LOCAL_MODEL_DIR" "$LOCAL_MODEL_MB" "$DL_PID"
-  wait "$DL_PID"   # 실패 시 비0 종료 → set -e가 여기서 중단
+  if ! wait "$DL_PID"; then
+    warn "가속 다운로드에 실패해 표준 방식으로 다시 받습니다 (받던 데이터는 이어받음)..."
+    download_model "" &
+    DL_PID=$!
+    progress_du "$LOCAL_MODEL_DIR" "$LOCAL_MODEL_MB" "$DL_PID"
+    wait "$DL_PID"   # 실패 시 비0 종료 → set -e가 여기서 중단
+  fi
   echo "  다운로드 완료 (100%)"
 
   # 스모크 테스트 — 현재 런타임에서 로드·생성 가능한지 지금 검증(첫 회의 때 실패 방지).
