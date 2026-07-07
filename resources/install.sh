@@ -20,7 +20,7 @@ err()  { printf "\033[1;31m[오류]\033[0m %s\n" "$1" >&2; }
 # 그려 시작 직후 100%→0%로 보이고, HF 바는 파일 개수 기준이라 수 GB 샤드 동안 멈춘 듯 보인다.
 progress_du() {
   local target="$1" total_mb="$2" pid="$3" cur_kb cur_mb pct
-  local prev_mb=0 prev_ts=0 now dmb dt speed rem eta extra
+  local prev_mb=0 prev_ts=0 now dmb dt speed speed_ema=0 rem eta extra
   while kill -0 "$pid" 2>/dev/null; do
     cur_kb=$(du -sk "$target" 2>/dev/null | cut -f1 || echo 0)
     cur_mb=$(( cur_kb * 1024 / 1000000 ))  # 십진 MB — Finder·모델 용량 표기(6.8GB 등)와 단위 통일
@@ -29,14 +29,18 @@ progress_du() {
     [[ $cur_mb -gt $total_mb ]] && cur_mb=$total_mb
     pct=$(( cur_mb * 100 / total_mb )); [[ $pct -gt 99 ]] && pct=99
     # 실시간 속도·ETA — 직전 샘플과의 델타. 초기·정체(0/음수 델타)는 생략해 "0MB/s" 깜빡임 방지.
+    # 크기 뒤 괄호로 묶어 부가 정보로 구분(점 나열보다 가독성 좋음). 앱은 말미 "(NN%)"만 떼고
+    # 나머지(이 괄호 포함)를 본문으로 표시한다 — SetupScreen의 (\d+%)$ strip이 %괄호만 제거.
     now=$(date +%s); extra=""
     if [[ $prev_ts -gt 0 ]]; then
       dt=$(( now - prev_ts )); dmb=$(( cur_mb - prev_mb ))
       if [[ $dt -gt 0 && $dmb -gt 0 ]]; then
         speed=$(( dmb / dt )); [[ $speed -lt 1 ]] && speed=1
-        rem=$(( total_mb - cur_mb )); eta=$(( rem / speed ))
-        if [[ $eta -ge 60 ]]; then extra=" · ${speed}MB/s · 약 $(( eta / 60 ))분 남음"
-        else extra=" · ${speed}MB/s · 약 ${eta}초 남음"; fi
+        # EMA 평활(alpha≈1/3) — 순간 속도 노이즈로 속도·ETA가 요동치지 않게. 표시·ETA 모두 평활값 사용.
+        if [[ $speed_ema -le 0 ]]; then speed_ema=$speed; else speed_ema=$(( (speed_ema * 2 + speed) / 3 )); fi
+        rem=$(( total_mb - cur_mb )); eta=$(( rem / speed_ema ))
+        if [[ $eta -ge 60 ]]; then extra=" (${speed_ema}MB/s, 약 $(( eta / 60 ))분 남음)"
+        else extra=" (${speed_ema}MB/s, 약 ${eta}초 남음)"; fi
       fi
     fi
     echo "  받는 중... ${cur_mb}MB / ${total_mb}MB${extra} (${pct}%)"
@@ -160,7 +164,7 @@ if [[ "$INSTALL_MODE" == "model" ]]; then
     # 토큰은 불필요이고(HF 계정 없이 쓰는 게 제품 원칙), 사용자에겐 조치 불가능한 소음이라서.
     env HF_HUB_DISABLE_XET=1 HF_HUB_DISABLE_PROGRESS_BARS=1 $1 \
       "$VENV_DIR/bin/python3" - "$LOCAL_MODEL_REPO" "$LOCAL_MODEL_DIR" \
-      2> >(grep -vE "unauthenticated requests to the HF Hub|Please set a HF_TOKEN" >&2) <<'PY'
+      2> >(grep --line-buffered -vE "unauthenticated requests to the HF Hub|Please set a HF_TOKEN" >&2) <<'PY'
 import logging, sys, warnings
 import truststore
 truststore.inject_into_ssl()  # 사내 TLS 프록시(zscaler) 대응 — macOS 키체인 신뢰 (위 설치 주석 참조)
