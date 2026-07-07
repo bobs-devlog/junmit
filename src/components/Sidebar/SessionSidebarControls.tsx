@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import { Activity, Step, activityMeta, cliHasAgent, stepsForCli } from "@/constants";
 import type { StepId } from "@/constants";
-import type { Cli, ConfluencePublishMode, SessionSteps } from "@/types";
+import type { Cli, SessionSteps } from "@/types";
 import Spinner from "@/components/Spinner";
 import styles from "./Sidebar.module.css";
 
@@ -14,26 +14,20 @@ function activeStepFor(
   if (activity === Activity.Processing) return currentStepId;
   if (activity === Activity.Correcting) return Step.Correct;
   if (activity === Activity.Composing) return Step.Notes;
-  if (activity === Activity.Publishing) return Step.Publish;
   return null;
 }
 
 interface Props {
-  activity: Activity; // Idle / Saving / Processing / Correcting / Composing / Publishing (Recording은 RecordingSidebarControls)
+  activity: Activity; // Idle / Saving / Processing / Correcting / Composing (Recording은 RecordingSidebarControls)
   steps: SessionSteps;
   currentStepId: StepId | null;
-  // 활성 백엔드 — mlx(로컬 LLM)는 에이전트·MCP가 없어 stepper 단계와 발행·추가 요청 버튼을 게이팅.
+  // 활성 백엔드 — mlx(로컬 LLM)는 에이전트·MCP가 없어 stepper 단계와 추가 요청 버튼을 게이팅.
   cli: Cli;
-  // publish.json.confluence.mode — published 상태에서 "Confluence 열기" 노출 분기에 사용.
-  // create만 외부 페이지 URL 보유. append/skip은 시스템이 외부 URL 모르므로 버튼 미노출.
-  publishMode: ConfluencePublishMode;
   // 핸들러 — 화면이 직접 closure로 작성. 사용 안 하는 것은 noop으로 받지 말고 화면이 책임지고 전달.
-  onAbort: () => void; // Saving/Processing/Composing/Publishing 진행 중 중단 (PTY kill + 화면 reset)
+  onAbort: () => void; // Saving/Processing/Composing 진행 중 중단 (PTY kill + 화면 reset)
   onStartProcessing: () => void; // idle + transcribed=false
   onResumeProcessing: () => void; // idle + transcribed=true, diarized=false
   onComposeNotes: () => void; // idle + diarized=true, notes_written=false
-  onPublish: () => void; // idle + notes_written=true (review 또는 republish)
-  onOpenConfluence: () => void; // idle + published=true + mode=create
   onRequestAi: () => void; // idle + notes_written=true (자유 추가 요청 — panel expand + 필요시 spawn)
   onForceCompose: () => void; // idle + no_speech (escape hatch — 무음 판정 무효화 후 재개)
   onResetSession: () => void; // dev 전용: 녹음 끝난 시점으로 초기화 (처리 산출물 삭제)
@@ -46,13 +40,10 @@ export default function SessionSidebarControls({
   steps,
   currentStepId,
   cli,
-  publishMode,
   onAbort,
   onStartProcessing,
   onResumeProcessing,
   onComposeNotes,
-  onPublish,
-  onOpenConfluence,
   onRequestAi,
   onForceCompose,
   onResetSession,
@@ -61,13 +52,12 @@ export default function SessionSidebarControls({
   const meta = activityMeta(activity);
   const activeStep = activeStepFor(activity, currentStepId, steps);
 
-  // 자동 진행 중 (Saving/Processing/Correcting/Composing/Publishing) — 중단만 노출.
+  // 자동 진행 중 (Saving/Processing/Correcting/Composing) — 중단만 노출.
   const isActiveWork =
     activity === Activity.Saving ||
     activity === Activity.Processing ||
     activity === Activity.Correcting ||
-    activity === Activity.Composing ||
-    activity === Activity.Publishing;
+    activity === Activity.Composing;
 
   return (
     <>
@@ -114,12 +104,9 @@ export default function SessionSidebarControls({
             <IdleActions
               steps={steps}
               cli={cli}
-              publishMode={publishMode}
               onStartProcessing={onStartProcessing}
               onResumeProcessing={onResumeProcessing}
               onComposeNotes={onComposeNotes}
-              onPublish={onPublish}
-              onOpenConfluence={onOpenConfluence}
               onRequestAi={onRequestAi}
               onForceCompose={onForceCompose}
             />
@@ -146,80 +133,34 @@ export default function SessionSidebarControls({
 interface IdleProps {
   steps: SessionSteps;
   cli: Cli;
-  publishMode: ConfluencePublishMode;
   onStartProcessing: () => void;
   onResumeProcessing: () => void;
   onComposeNotes: () => void;
-  onPublish: () => void;
-  onOpenConfluence: () => void;
   onRequestAi: () => void;
   onForceCompose: () => void;
 }
 
 // idle 상태에서 진척도별 다음 단계 액션. 분기 로직을 별도 컴포넌트로 분리해 가독성 ↑.
-// "AI에게 추가 요청" 보조 버튼은 회의록 작성 후(notes_written) 분기에만 노출 —
-// 그 전엔 자유 대화할 컨텍스트가 부족해 사이드바 정형 흐름이 우선.
+// "AI에게 추가 요청"은 회의록 작성 후(notes_written) 분기에만 노출 — 그 전엔 자유 대화할
+// 컨텍스트가 부족해 사이드바 정형 흐름이 우선. 작성 후엔 이게 유일한 다음 액션(에이전트 한정).
 function IdleActions({
   steps,
   cli,
-  publishMode,
   onStartProcessing,
   onResumeProcessing,
   onComposeNotes,
-  onPublish,
-  onOpenConfluence,
   onRequestAi,
   onForceCompose,
 }: IdleProps) {
-  // mlx(로컬 LLM)는 에이전트·MCP가 없어 발행(/publish)·추가 요청(/assist) 불가 → 버튼 미노출.
-  // "Confluence 열기"는 저장된 URL을 열 뿐이라 유지 (클라우드 백엔드로 발행했던 세션 대비).
   const agent = cliHasAgent(cli);
-  if (steps.published) {
-    // create 모드만 외부 페이지 URL 보유 → "Confluence 열기" 노출.
-    // append/skip은 시스템이 외부 URL 모르므로 "다시 등록"을 Primary로 승격.
-    if (publishMode === "create") {
-      return (
-        <>
-          <button className="btn btn-primary btn-large" onClick={onOpenConfluence}>
-            Confluence 열기
-          </button>
-          {agent && (
-            <>
-              <button className="btn btn-secondary" onClick={onPublish}>
-                다시 등록
-              </button>
-              <button className="btn btn-secondary" onClick={onRequestAi}>
-                AI에게 추가 요청
-              </button>
-            </>
-          )}
-        </>
-      );
-    }
-    if (!agent) return null;
-    return (
-      <>
-        <button className="btn btn-primary btn-large" onClick={onPublish}>
-          다시 등록
-        </button>
-        <button className="btn btn-secondary" onClick={onRequestAi}>
-          AI에게 추가 요청
-        </button>
-      </>
-    );
-  }
   if (steps.notes_written) {
-    // mlx: 발행·추가 요청이 없으므로 회의록 작성이 곧 마지막 단계 — 액션 없음.
+    // 회의록 작성이 곧 마지막 단계. 복사(내보내기)는 회의록 탭 인라인 버튼이 담당하므로
+    // 사이드바엔 두지 않는다. mlx는 추가 요청(/assist)이 없어 액션 없음 = 담백한 완료 상태.
     if (!agent) return null;
     return (
-      <>
-        <button className="btn btn-primary btn-large" onClick={onPublish}>
-          Confluence 등록
-        </button>
-        <button className="btn btn-secondary" onClick={onRequestAi}>
-          AI에게 추가 요청
-        </button>
-      </>
+      <button className="btn btn-primary btn-large" onClick={onRequestAi}>
+        AI에게 추가 요청
+      </button>
     );
   }
   // 무음("발화 없음") — diarize·회의록을 건너뛴 상태. 정형 흐름("처리 이어서 진행") 대신

@@ -216,7 +216,7 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
   // antigravity 로그인 도우미 폴링 — agy TUI는 로그인 후에도 스스로 안 끝나는데, 사용자에게
   // 종료 조작을 요구했더니 /logout(계정 로그아웃)을 종료 명령으로 오인하는 사고가 실측됐다.
   // 도우미가 떠 있는 동안 인증을 주기 폴링해 확인 즉시 카드를 갱신한다 — 터미널을 닫을 필요
-  // 자체가 없어진다(claude /mcp의 useAtlassianLogin 폴링과 같은 패턴, in-flight 가드 동일).
+  // 자체가 없어진다(in-flight 가드로 판정이 폴링보다 느려도 프로세스가 누적되지 않는다).
   // 자동 kill은 하지 않는다: agy는 인증이 초기 설정 마법사보다 먼저 완료되므로 확인 즉시
   // 죽이면 마법사를 중단시킨다(설정 미저장 → 다음 spawn에서 마법사 재등장 위험). 터미널은
   // 사용자가 다음 화면으로 진행하면 자연히 정리된다.
@@ -518,8 +518,8 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
                         {variantReady
                           ? " 선택한 모델은 이미 설치되어 있어요."
                           : ` 모델(${chosenVariant.size})을 한 번만 내려받아요.`}{" "}
-                        녹음·전사·화자 구분·회의록 작성은 모두 동일하고, Confluence 발행과 AI에게
-                        추가 요청(대화로 다듬기)은 Claude·Codex에서만 지원돼요.
+                        녹음·전사·화자 구분·회의록 작성은 모두 동일하고, AI에게 추가
+                        요청(대화로 다듬기)은 Claude·Codex에서만 지원돼요.
                       </p>
                       <div className={styles.cards}>
                         {LOCAL_VARIANTS.map((v) => {

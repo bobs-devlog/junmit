@@ -14,8 +14,6 @@ function panelLabelFor(activity: Activity): string {
       return "AI가 회의 내용을 다듬는 중입니다";
     case Activity.Composing:
       return "AI가 회의록을 작성하는 중입니다";
-    case Activity.Publishing:
-      return "AI가 Confluence에 등록하는 중입니다";
     default:
       return "AI 작업";
   }
@@ -27,8 +25,6 @@ function doneLabelFor(completed: Activity): string {
     case Activity.Correcting:
     case Activity.Composing:
       return "✓ 회의록 작성 완료";
-    case Activity.Publishing:
-      return "✓ Confluence 등록 완료";
     default:
       return "✓ 완료";
   }
@@ -44,7 +40,7 @@ interface WorkAreaProps {
   drawerOpen: boolean;
   // phase_done OSC로 정상 완료한 직전 Activity. null이면 일반 라벨. SessionContext 관리.
   completedActivity: Activity | null;
-  // activity 기반 라벨 대신 표시할 임시 라벨 (예: 발행 전 Atlassian 로그인 도우미 진행 중).
+  // activity 기반 라벨 대신 표시할 임시 라벨 (도우미 프로세스 진행 중 등).
   labelOverride?: string | null;
   // 단계 완료 시 SessionViewer가 자동 이동할 sub-tab id. 사용자 탭 클릭 시 onUserTabChange로 clear.
   focusSubtab: string | null;

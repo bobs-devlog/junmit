@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 사용자 머신용 setup. 사용자 데이터(.venv, models, python-runtime)와 캘린더 권한 안내만 책임.
-# AI CLI(claude/codex/antigravity)는 온보딩 "AI 도구 선택" 화면이 설치·로그인을 보장하고,
-# Atlassian MCP는 앱이 CLI별 config에 자동 등록하므로 여기서 할 일이 없다.
+# AI CLI(claude/codex/antigravity)는 온보딩 "AI 도구 선택" 화면이 설치·로그인을 보장하므로
+# 여기서 할 일이 없다.
 # 단 로컬 AI(mlx)는 CLI가 아니라서 이 스크립트가 런타임(mlx-vlm)·모델 다운로드까지 책임진다
 # (INSTALL_MODE=model, 아래 참조).
 # sidecar 바이너리(whisper-cli, diarize, uv 등)는 앱 번들에 포함되어 있으므로 여기서 빌드하지 않는다.
@@ -261,16 +261,10 @@ fi
 # pyannote 화자분리 모델은 앱 번들에 동봉되어 있다 (resources/models/pyannote,
 # CC-BY-4.0 — build-binaries.sh가 배치). HF 계정·토큰·prefetch 단계 없음.
 
-# Atlassian MCP는 앱이 각 CLI config에 자동 등록(claude: .claude.json 베이크, codex:
-# config.toml 베이크, antigravity: 전역 mcp_config.json merge)하므로 setup에서 등록하지 않는다.
-
 echo ""
 info "캘린더 연동 (최초 1회):"
 echo "  시스템 설정 → 인터넷 계정 → Google 계정 추가 → 캘린더 동기화 켜기"
 echo "  (이미 연동되어 있으면 이 단계는 건너뛰세요)"
-echo ""
-
-info "Atlassian 연동은 첫 Confluence 등록 시 앱이 로그인을 안내합니다."
 echo ""
 
 echo ""

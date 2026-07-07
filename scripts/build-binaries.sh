@@ -127,17 +127,15 @@ else
   ok "ffmpeg 빌드 완료 ($("$BIN_DIR/ffmpeg" -version | head -1))"
 fi
 
-# === Swift CLI (diarize, whisper-parse, apply-edits, mention-cache, adf) ===
+# === Swift CLI (diarize, whisper-parse, apply-edits) ===
 SWIFT_SRC="$SCRIPT_DIR/swift-cli/diarize"
 DIARIZE_BIN="$BIN_DIR/diarize"
 PARSE_BIN="$BIN_DIR/whisper-parse"
 APPLY_EDITS_BIN="$BIN_DIR/apply-edits"
-MENTION_CACHE_BIN="$BIN_DIR/mention-cache"
-ADF_BIN="$BIN_DIR/adf"
 # 재빌드 필요 판정 — 바이너리 부재/손상이거나 소스가 빌드본보다 새로우면(stale) 재빌드.
 # (`--help`만 보고 건너뛰면 소스만 고쳐도 옛 바이너리를 조용히 쓰는 사고가 남.)
 swift_build_needed=0
-for b in "$DIARIZE_BIN" "$PARSE_BIN" "$APPLY_EDITS_BIN" "$MENTION_CACHE_BIN" "$ADF_BIN"; do
+for b in "$DIARIZE_BIN" "$PARSE_BIN" "$APPLY_EDITS_BIN"; do
   if [[ ! -x "$b" ]] || ! "$b" --help &>/dev/null; then
     swift_build_needed=1; break
   fi
@@ -154,8 +152,6 @@ else
   cp "$SWIFT_SRC/.build/release/diarize" "$BIN_DIR/"
   cp "$SWIFT_SRC/.build/release/whisper-parse" "$BIN_DIR/"
   cp "$SWIFT_SRC/.build/release/apply-edits" "$BIN_DIR/"
-  cp "$SWIFT_SRC/.build/release/mention-cache" "$BIN_DIR/"
-  cp "$SWIFT_SRC/.build/release/adf" "$BIN_DIR/"
   ok "Swift CLI 빌드 완료"
 fi
 

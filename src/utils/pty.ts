@@ -23,7 +23,7 @@ import { agentSkillTrigger } from "@/utils/spawn";
 // antigravity는 청크 처리 미실측이라 보수적으로 codex 경로(분리 전송)를 공유 — 단일 청크를
 // 제출로 처리하는 TUI에서도 분리 전송은 무해하다(E2E에서 단일 청크 제출 확인 시 간소화 여지).
 //
-// 호출자는 슬래시(/) 포함된 명령 + 현재 cli를 넘긴다 (예: "/meeting", "/publish").
+// 호출자는 슬래시(/) 포함된 명령 + 현재 cli를 넘긴다 (예: "/meeting", "/assist").
 // cli 기본값 없음 — 빠뜨리면 codex에서 슬래시가 평문 입력되는 사고라 컴파일 타임에 차단.
 export async function sendSlashCommand(slash: string, cli: Cli): Promise<void> {
   if (cli === "codex" || cli === "antigravity") {

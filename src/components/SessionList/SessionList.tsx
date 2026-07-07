@@ -16,7 +16,7 @@ export default function SessionList({ onSelect }: SessionListProps) {
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const { confirm } = useDialog();
   const toast = useToast();
-  // 활성 백엔드에 따라 카드 단계 표시 필터 — mlx는 AI 다듬기·Confluence 등록 단계가 없다.
+  // 활성 백엔드에 따라 카드 단계 표시 필터 — mlx는 AI 다듬기 단계가 없다.
   const { cli } = useSession();
 
   useEffect(() => {

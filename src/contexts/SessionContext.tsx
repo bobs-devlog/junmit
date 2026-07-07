@@ -15,7 +15,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { updateMeetingMeta } from "@/utils/meetingMeta";
 import { killPty, sendSlashCommand } from "@/utils/pty";
-import { buildShellRequest, buildSpawnRequest } from "@/utils/spawn";
+import { buildSpawnRequest } from "@/utils/spawn";
 
 // 새 회의 시작·reset 시 초기 진척도. 화면이 직접 사용 가능 (예: 처리 단계 reset).
 export const EMPTY_STEPS: SessionSteps = {
@@ -23,12 +23,11 @@ export const EMPTY_STEPS: SessionSteps = {
   diarized: false,
   corrected: false,
   notes_written: false,
-  published: false,
   no_speech: false,
 };
 
-// PTY 명령 빌더는 `@/utils/spawn`에 공유 (유형 관리 화면과 단일 소스). publish 등 신규 스킬은
-// APP_SESSION_DIR env에서 sessionDir read, meeting 스킬은 기존 $ARGUMENTS 사용 (외부 bash quote가 보호).
+// PTY 명령 빌더는 `@/utils/spawn`에 공유 (유형 관리 화면과 단일 소스). 스킬은 APP_SESSION_DIR
+// env에서 sessionDir read, meeting 스킬은 기존 $ARGUMENTS 사용 (외부 bash quote가 보호).
 
 // SessionContext는 데이터 + 모든 transition을 책임진다 (action 메소드 패턴).
 // 화면은 의도만 표현 — 데이터 변경 책임은 Context에 캡슐화.
@@ -106,25 +105,18 @@ interface SessionContextValue {
   markPipelineSubStep: (stepId: string) => void;
   // ProcessingPanel이 각 단계(transcribe/diarize) 완료 시 개별 호출 — stepper ✓ 즉시 반영.
   markStepDone: (stepId: StepId) => void;
-  // append/skip 모드 발행 완료 마킹 — frontend 직접 처리 시 사용 (publish 스킬 미호출 케이스).
-  markPublished: () => void;
-  // Activity.Publishing 진입 — 발행 트리거 시 호출 (PTY 분기는 호출자 책임).
-  enterPublishing: () => void;
   notifyPtyExit: () => void;
   // CLI 전환 등에서 PTY+로컬(mlx) 작업을 함께 중단하고 진행 상태를 정리 (회의 컨텍스트는 유지).
   abortLlmWork: () => Promise<void>;
 
   // ─── PTY 직접 조작 (Tier 1 stdin write 패턴 위해 노출) ──────
   // 살아있는 PTY가 있으면 stdin에 텍스트 그대로 write. 없으면 throw.
-  // 호출자(예: 다듬기·발행)가 isPtyAlive() 먼저 확인 후 호출하는 패턴.
+  // 호출자(예: 다듬기)가 isPtyAlive() 먼저 확인 후 호출하는 패턴.
   isPtyAlive: () => Promise<boolean>;
   sendPtyInput: (data: string) => Promise<void>;
-  // 새 PTY spawn — 외부에서 명시 spawn 트리거 (예: Tier 2 발행 시 fresh PTY).
-  // 호출자가 슬래시 커맨드 명시 (예: `/publish ${sessionDir}`).
+  // 새 PTY spawn — 외부에서 명시 spawn 트리거 (예: Tier 2 fresh PTY).
+  // 호출자가 슬래시 커맨드 명시 (예: `/meeting ${sessionDir}`).
   spawnPty: (slashCommand: string) => void;
-  // 임의 셸 명령을 작업 패널 PTY에서 실행 (예: 발행 게이트의 codex Atlassian 로그인 도우미).
-  // 기존 PTY는 대체됨(spawn이 kill 선행). 종료 후속 처리는 화면의 onExit이 담당.
-  spawnShell: (commandLine: string) => void;
 
   // "AI에게 추가 요청" — 사이드바·빈 상태 UI 공통 진입점. drawer expand + (PTY 죽었으면) 자유 대화 spawn.
   requestAi: () => Promise<void>;
@@ -209,11 +201,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           // 배너도 가드 안 — 이미 Idle(사용자 중단·다른 경로가 선처리)이면 늦게 온 신호에
           // 배너만 또 띄우지 않는다 (상태 전환과 알림을 항상 함께).
           const prev = activityRef.current;
-          if (
-            prev === Activity.Correcting ||
-            prev === Activity.Composing ||
-            prev === Activity.Publishing
-          ) {
+          if (prev === Activity.Correcting || prev === Activity.Composing) {
             setActivity(Activity.Idle);
             setCompletedActivity(null);
             showTabBanner(`작업을 완료하지 못했어요${signal.msg ? `\n${signal.msg}` : ""}`);
@@ -231,10 +219,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             showTabBanner("전사 교정 완료\n교정된 전사본을 확인할 수 있어요");
           }
         } else if (signal.type === "phase_done") {
-          // 활동성이 Correcting/Composing/Publishing이 아닐 땐 신호 무시 — 의도치 않은 도착 방어.
+          // 활동성이 Correcting/Composing이 아닐 땐 신호 무시 — 의도치 않은 도착 방어.
           // 정상 완료 신호이므로 completedActivity set → WorkArea가 "✓ 완료" 띠 노출.
           // SessionViewer refreshKey++로 새 파일 가용성 재체크. Composing 완료는 회의록 탭 자동 이동.
-          // Publishing 완료는 외부 URL이라 탭 이동 불필요 (회의록 탭 그대로).
           const prev = activityRef.current;
           if (prev === Activity.Correcting || prev === Activity.Composing) {
             // 교정 신호 누락 케이스 방어 — corrected까지 함께 true로 보정.
@@ -244,11 +231,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             setRefreshKey((k) => k + 1);
             setFocusSubtab("notes");
             showTabBanner("회의록 초안 완성\n내용을 검토하고 화자 매핑을 진행해주세요");
-          } else if (prev === Activity.Publishing) {
-            setSteps((s) => ({ ...s, published: true }));
-            setActivity(Activity.Idle);
-            setCompletedActivity(prev);
-            setRefreshKey((k) => k + 1);
           }
         }
       } catch {}
@@ -468,22 +450,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await runSkillTier("/meeting");
   }, [runSkillTier, cli, runLocalMeeting]);
 
-  // Activity.Publishing 진입 — 발행 트리거 시 호출. PTY 분기(stdin write vs spawn)는 호출자(SessionScreen) 책임.
-  const enterPublishing = useCallback(() => {
-    setActivity(Activity.Publishing);
-    setDrawerOpen(true);
-    setCompletedActivity(null);
-  }, []);
-
-  // append/skip 모드 발행 완료 — frontend 직접 처리 시 사용 (publish 스킬 미호출 케이스).
-  // create 모드는 publish 스킬이 phase_done 신호 → SessionContext listener가 자동 마킹.
-  const markPublished = useCallback(() => {
-    setSteps((s) => ({ ...s, published: true }));
-  }, []);
-
   // 회의 유형 변경 → 본문 백업 + meta 갱신 + 회의록 재작성 트리거. corrected는 유지.
   // 화면이 confirm 다이얼로그를 띄우고 사용자 동의 후 호출. 실패는 throw — 화면이 toast 처리.
-  // Tier 1 (살아있는 PTY 활용): sendSlashCommand로 /meeting 호출 — PTY kill 안 함 (publish 패턴과 일관).
+  // Tier 1 (살아있는 PTY 활용): sendSlashCommand로 /meeting 호출 — PTY kill 안 함 (다듬기 패턴과 일관).
   // Tier 2 (없으면): 새 PTY spawn. backup 파일은 meeting 스킬이 재작성 모드 감지 신호로 사용.
   const restartCompose = useCallback(
     async (newType: string) => {
@@ -547,9 +516,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // PTY 명시 종료 (사용자 exit) — 정상 phase 완료는 phase_done 신호가 처리. 미완료 종료는 idle 복귀.
   const notifyPtyExit = useCallback(() => {
     setActivity((prev) =>
-      prev === Activity.Correcting || prev === Activity.Composing || prev === Activity.Publishing
-        ? Activity.Idle
-        : prev
+      prev === Activity.Correcting || prev === Activity.Composing ? Activity.Idle : prev
     );
   }, []);
 
@@ -562,9 +529,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setCurrentStepId(null);
     setCompletedActivity(null);
     setActivity((prev) =>
-      prev === Activity.Correcting || prev === Activity.Composing || prev === Activity.Publishing
-        ? Activity.Idle
-        : prev
+      prev === Activity.Correcting || prev === Activity.Composing ? Activity.Idle : prev
     );
   }, []);
 
@@ -578,7 +543,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await invoke<void>("cmd_pty_input", { data });
   }, []);
 
-  // 새 PTY spawn — Tier 2 fallback 또는 명시 fresh start. 호출자가 슬래시 커맨드 명시 (예: `/publish`).
+  // 새 PTY spawn — Tier 2 fallback 또는 명시 fresh start. 호출자가 슬래시 커맨드 명시 (예: `/meeting`).
   // sessionDir은 APP_SESSION_DIR env로 자동 전달 — 슬래시 커맨드 인자 공백 처리 한계 회피.
   const spawnPty = useCallback(
     (slashCommand: string) => {
@@ -587,10 +552,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [appDir, sessionDir, signalDir, cli]
   );
 
-  // 임의 셸 명령 spawn — CLI 세션이 아닌 짧은 도우미 명령(로그인 등)용.
-  const spawnShell = useCallback((commandLine: string) => {
-    setSpawnRequest(buildShellRequest(commandLine));
-  }, []);
 
   // "AI에게 추가 요청" — 사이드바·빈 상태 UI 공통 진입점. drawer expand + /assist 스킬 호출.
   // Tier 1 (살아있는 PTY): stdin write로 /assist 호출 — 회의록 작성 직후 PTY 잔류 상태에서
@@ -664,14 +625,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       updateAttendees,
       markPipelineSubStep,
       markStepDone,
-      markPublished,
-      enterPublishing,
       notifyPtyExit,
       abortLlmWork,
       isPtyAlive,
       sendPtyInput,
       spawnPty,
-      spawnShell,
       requestAi,
     }),
     [
@@ -716,14 +674,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       updateAttendees,
       markPipelineSubStep,
       markStepDone,
-      markPublished,
-      enterPublishing,
       notifyPtyExit,
       abortLlmWork,
       isPtyAlive,
       sendPtyInput,
       spawnPty,
-      spawnShell,
       requestAi,
     ]
   );

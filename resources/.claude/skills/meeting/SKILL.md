@@ -1,6 +1,6 @@
 ---
 name: meeting
-description: 회의 녹음 전사본을 분석하여 화자를 식별하고 회의록을 작성합니다. (Confluence 등록은 publish 스킬에서 별도 처리)
+description: 회의 녹음 전사본을 분석하여 화자를 식별하고 회의록을 작성합니다.
 disable-model-invocation: true
 user-invocable: true
 allowed-tools: Read Write Edit Bash Grep
@@ -46,8 +46,6 @@ SESSION_DIR="$APP_SESSION_DIR"
 - **1단계 sub-agent 병렬 spawn(정밀 3개 / 빠른 2개, type이 auto면 유형 분류까지 +1개)은 "AI 다듬기" todo 한 항목으로 묶음** — 메인이 모든 sub-agent 결과를 받은 뒤 자체 마킹만 업데이트
 - 단계별 한국어 요약 출력(`📝 전사 교정 완료 ...`, `🎤 화자 매칭 ...` 등) 기존 형식은 그대로 유지 — TodoWrite는 그 위에 진행 지도를 덧붙이는 역할. **이 이모지 요약 줄 외에 "작업을 시작합니다"류 메타 산문은 출력하지 않습니다** (진행은 TodoWrite가 전담)
 
-> Confluence 등록은 별도 스킬(`/publish`)에서 처리. 사용자가 발행 탭 입력 후 "Confluence에 등록" 클릭 시 frontend가 호출합니다.
-
 ---
 
 ## 📁 파일별 편집 규칙 (매우 중요 — 먼저 읽기)
@@ -67,11 +65,10 @@ SESSION_DIR="$APP_SESSION_DIR"
 | `transcript_corrected.txt` | sidecar | LLM, 앱 UI | 교정 작업본. **LLM 직접 편집 금지 — sidecar로만 수정** |
 | `transcript_text_edits.json` | LLM (1단계, **정밀 경로에서만**) | sidecar, 앱 UI | 텍스트 교정 명세. sidecar가 corrected.txt에 적용한 뒤, 이 JSON을 실패 항목 제외하고 재작성. 빠른 경로(정밀 끔)에선 생성되지 않음 |
 | `transcript_speaker_edits.json` | LLM (1단계) | sidecar, 앱 UI | 화자 라벨 재할당 명세. sidecar가 corrected.txt에 적용한 뒤, 이 JSON을 실패 항목 제외하고 재작성 |
-| `speaker_mapping.json` | LLM, 사용자 (앱 UI) | LLM, 앱 UI, publish 스킬 | 화자 → 이름 매핑의 **단일 진실 원천** |
-| `meeting-notes.md` | LLM (이 스킬), 사용자 (앱 UI) | 앱 UI, 사용자, publish 스킬 | 회의록 본문(유일한 본문 파일). SPEAKER_XX 라벨 유지 (앱이 표시 시점에 치환) |
-| `meeting.json` | 앱 (녹음 단계), 사용자 (앱 UI), LLM (type 갱신만 — [notes-rules.md](notes-rules.md) "type 갱신 절차") | LLM, publish 스킬 | 회의 메타데이터 단일 진실 원천. 필드: `title`, `date`, `time?`, `type`, `attendees`, `agenda`, `source` |
+| `speaker_mapping.json` | LLM, 사용자 (앱 UI) | LLM, 앱 UI | 화자 → 이름 매핑의 **단일 진실 원천** |
+| `meeting-notes.md` | LLM (이 스킬), 사용자 (앱 UI) | 앱 UI, 사용자 | 회의록 본문(유일한 본문 파일). SPEAKER_XX 라벨 유지 (앱이 표시 시점에 치환) |
+| `meeting.json` | 앱 (녹음 단계), 사용자 (앱 UI), LLM (type 갱신만 — [notes-rules.md](notes-rules.md) "type 갱신 절차") | LLM | 회의 메타데이터 단일 진실 원천. 필드: `title`, `date`, `time?`, `type`, `attendees`, `agenda`, `source` |
 | `notes.json` | 앱 (녹음 중 사용자 메모) | speaker-mapping sub-agent, LLM | 녹음 중 사용자 메모. **없을 수 있음**(메모 안 남긴 정상 케이스). `notes` 배열의 각 항목: `{ t(경과 초), kind }`. `kind: "speaker"`(+`speaker`) = 화자 힌트, `"text"`(+`text`) = 자유 메모 |
-| `publish.json` | 사용자 (앱 UI 발행 탭), publish 스킬 (결과) | 앱 UI, publish 스킬 | 발행 설정·결과의 단일 진실 원천. **이 스킬은 읽거나 쓰지 않음** |
 
 ### 파일 흐름
 
@@ -116,7 +113,7 @@ speaker_mapping.json + meeting-notes.md
 | 의견·발언 출처 라벨 | `SPEAKER_XX` | `검색 정렬 변경 필요 (SPEAKER_03)` |
 | Action Items의 `@assignee` | **케이스 분기** (아래 별도 항목) | 1인칭 자기지정: `@SPEAKER_05`, 3인칭 지시: `@Bobs` |
 | **그룹핑/메타 표기** (sub-section 헤더, 발표자 줄) | **매핑 확정 시 자연어, 미확정 시 케이스별** | 아래 별도 항목 참고 |
-| **참석자 섹션** (`meeting.json.attendees` 기준) | 회사 멤버는 `@firstName` 접두. 미확인 SPEAKER는 추가 X | `- 참석자: @Bobs, @Charlie` ([notes-rules.md](notes-rules.md) "참석자 섹션 표기" 참고) |
+| **참석자 섹션** (`meeting.json.attendees` 기준) | 평문 이름. 미확인 SPEAKER는 추가 X | `- 참석자: Bobs, Charlie` ([notes-rules.md](notes-rules.md) "참석자 섹션 표기" 참고) |
 | **산문 내 인물 언급** | **자연어 (실제 이름)** | "Bobs가 작년에 만든 V1을 베이스로", "A 작업은 Bobs가 진행" |
 
 **그룹핑/메타 표기 처리 규칙** — 발언 단위가 아니라 "한 섹션 전체가 누구의 것인지" 표기하는 영역이라 sentinel 의미가 약함:
@@ -144,7 +141,6 @@ speaker_mapping.json + meeting-notes.md
 - 1인칭 케이스는 발화자 식별 = 담당자 식별이라 발화 주체 표기와 동일 (SPEAKER_XX)
 - 3인칭 명시 케이스는 산문에 직접 등장한 이름 = 확실한 정보 (산문 정책과 일관)
 - 매핑 변경 시 자연어 이름은 자동 치환되지 않으나 산문 이름과 동일 한계 (refine 스킬에서 보정)
-- publish 스킬의 ADF 변환 시 `@SPEAKER_XX`는 `speaker_mapping.json`으로 이름 추출, 자연어 이름은 그대로 사용
 
 ### 금지 사항 (위반 시 매칭이 깨지거나 데이터 손실)
 
@@ -161,7 +157,7 @@ speaker_mapping.json + meeting-notes.md
 - ✅ transcript 교정은 모두 `transcript_*_edits.json` 작성 후 `bin/apply-edits` 호출로 처리
 - ✅ 발화 주체 표기(발언 헤더, 의견 출처 라벨)는 `SPEAKER_XX` 라벨로 저장. Action Items의 `@assignee`는 케이스별 분기 (1인칭 자기지정 → `@SPEAKER_XX`, 3인칭 명시 지시 → 산문 이름 그대로 `@Bobs`)
 - ✅ 그룹핑/메타 표기(sub-section 헤더, 발표자 줄)는 매핑 확정 시 자연어, 미확정 시 케이스별 처리 (위 sentinel 적용 표 참고). 진행자 줄은 작성 X
-- ✅ 참석자 섹션은 `meeting.json.attendees` 기준으로 작성 — 회사 멤버는 `@firstName` 접두 (publish 스킬의 ADF mention 변환을 위함). `speaker_mapping`의 미확인 SPEAKER는 참석자 섹션에 추가하지 않음 (발화 분리 오차로 매칭 못 한 화자일 뿐, [notes-rules.md](notes-rules.md) "참석자 섹션 표기" 참고)
+- ✅ 참석자 섹션은 `meeting.json.attendees` 기준으로 작성 — 평문 이름으로 표기. `speaker_mapping`의 미확인 SPEAKER는 참석자 섹션에 추가하지 않음 (발화 분리 오차로 매칭 못 한 화자일 뿐, [notes-rules.md](notes-rules.md) "참석자 섹션 표기" 참고)
 - ✅ 산문 내 인물 언급은 **자연어 그대로** 작성. 매핑 변경 시 자동 치환되지 않으므로, 매핑이 바뀐 경우 사용자가 refine 스킬로 본문 보정
 - ✅ 미확인 화자도 `SPEAKER_XX` 라벨 유지. `speaker_mapping.json`의 `name`을 빈 문자열로 두면 UI가 "미확인 (SPEAKER_XX)" 형태로 자연스럽게 표시
 
@@ -365,12 +361,12 @@ bash -c 'source "$APP_DIR/lib/signal.sh" && app_phase_step_done correct'
 
 **첫 작성·재작성 무관 항상 모두 실행** — 특히 1번 `app_phase_done`을 누락하면 frontend가 Activity.Composing 상태에 멈춰 review 화면 전환·사용자 다음 작업 모두 차단됩니다. 작성 끝나면 즉시:
 
-1. **회의록 작성 완료 신호 전송 (반드시 가장 먼저, 다른 단계와 무관 항상)** — 앱이 Activity.Idle 전환 + review 화면(회의록 탭) 노출 + 사이드바 Primary "Confluence 등록" 활성:
+1. **회의록 작성 완료 신호 전송 (반드시 가장 먼저, 다른 단계와 무관 항상)** — 앱이 Activity.Idle 전환 + review 화면(회의록 탭) 노출 + 사이드바에 "AI에게 추가 요청"(에이전트 CLI 한정) 노출. 회의록 내보내기는 회의록 탭의 "복사" 버튼:
    ```bash
    bash -c 'source "$APP_DIR/lib/signal.sh" && app_phase_done'
    ```
 
-   > 앱은 이 신호를 받아도 PTY는 종료하지 않습니다. 사용자가 결과 검토 중 추가 질문·개선 요청을 하면 같은 PTY에서 그대로 응답하세요. 사용자가 사이드바에서 "Confluence 등록"을 누르면 frontend가 살아있는 PTY에 `/publish` stdin write로 publish 스킬을 트리거합니다.
+   > 앱은 이 신호를 받아도 PTY는 종료하지 않습니다. 사용자가 결과 검토 중 추가 질문·개선 요청을 하면 같은 PTY에서 그대로 응답하세요.
 
 2. macOS 알림 전송 (사용자가 다른 앱에 있을 수 있으므로):
    ```bash
