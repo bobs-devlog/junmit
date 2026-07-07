@@ -16,6 +16,7 @@ import { listen } from "@tauri-apps/api/event";
 import { updateMeetingMeta } from "@/utils/meetingMeta";
 import { killPty, sendSlashCommand } from "@/utils/pty";
 import { buildSpawnRequest } from "@/utils/spawn";
+import { track, meetingTypeCategory } from "@/utils/analytics";
 
 // 새 회의 시작·reset 시 초기 진척도. 화면이 직접 사용 가능 (예: 처리 단계 reset).
 export const EMPTY_STEPS: SessionSteps = {
@@ -166,12 +167,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const activityRef = useRef<Activity>(activity);
   // steps 최신값 ref — startComposing 같은 콜백이 stale closure 회피하며 corrected 분기 결정.
   const stepsRef = useRef<SessionSteps>(steps);
+  // app:signal 리스너(빈 deps)에서 사용량 이벤트에 붙일 cli·회의유형을 stale 없이 읽기 위한 ref.
+  const cliRef = useRef<Cli>(cli);
+  const meetingRef = useRef<Meeting | null>(meeting);
 
   useEffect(() => {
     activityRef.current = activity;
   });
   useEffect(() => {
     stepsRef.current = steps;
+  });
+  useEffect(() => {
+    cliRef.current = cli;
+  });
+  useEffect(() => {
+    meetingRef.current = meeting;
   });
 
   // Rust 녹음 상태 동기화 (window close 시 prevent_close 결정)
@@ -205,6 +215,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             setActivity(Activity.Idle);
             setCompletedActivity(null);
             showTabBanner(`작업을 완료하지 못했어요${signal.msg ? `\n${signal.msg}` : ""}`);
+            void track("meeting_failed", { cli: cliRef.current });
           }
         } else if (signal.type === "phase_step_done") {
           // Phase 내 sub-step 종료. 현재는 phase1의 "correct"만 처리 (후보정 → 회의록 작성 전이).
@@ -231,6 +242,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             setRefreshKey((k) => k + 1);
             setFocusSubtab("notes");
             showTabBanner("회의록 초안 완성\n내용을 검토하고 화자 매핑을 진행해주세요");
+            void track("meeting_generated", {
+              cli: cliRef.current,
+              meeting_type: meetingTypeCategory(meetingRef.current?.meetingType),
+            });
           }
         }
       } catch {}

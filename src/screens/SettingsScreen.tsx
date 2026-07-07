@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import clsx from "clsx";
 import { LOCAL_MODEL_HIGH } from "@/constants";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
@@ -6,6 +7,8 @@ import { invoke } from "@tauri-apps/api/core";
 import SidebarNav from "@/components/Sidebar/SidebarNav";
 import { useSidebarTarget } from "@/components/MainLayout";
 import { useSession } from "@/contexts/SessionContext";
+import { resetAnalyticsGate } from "@/utils/analytics";
+import { logError } from "@/utils/logging";
 import type { Cli } from "@/types";
 import styles from "./Settings.module.css";
 
@@ -31,6 +34,29 @@ export default function SettingsScreen() {
       .then((m) => setLocalVariant(m === LOCAL_MODEL_HIGH ? " · 고품질" : " · 표준"))
       .catch(() => {});
   }, [cli]);
+
+  // 진단·사용 통계 수집 동의 (기본 켜짐). 끄면 원격 전송이 앱 재시작 후 완전히 멈춘다.
+  const [telemetryOn, setTelemetryOn] = useState(true);
+  useEffect(() => {
+    invoke<boolean>("cmd_get_telemetry_enabled")
+      .then(setTelemetryOn)
+      .catch(() => {});
+  }, []);
+
+  const toggleTelemetry = () => {
+    const next = !telemetryOn;
+    setTelemetryOn(next); // 낙관적 반영
+    invoke<void>("cmd_set_telemetry_enabled", { on: next })
+      .then(() => resetAnalyticsGate())
+      .catch((e) => {
+        logError("SettingsScreen.setTelemetry", e);
+        setTelemetryOn(!next); // 실패 시 롤백
+      });
+  };
+
+  const openLogDir = () => {
+    invoke<void>("cmd_open_log_dir").catch((e) => logError("SettingsScreen.openLogDir", e));
+  };
 
   return (
     <>
@@ -107,6 +133,44 @@ export default function SettingsScreen() {
           >
             확인
           </button>
+        </section>
+
+        {/* 진단·사용 통계 — 오류 원인 파악과 기능 개선을 위한 익명 수집. 회의 내용은 절대 보내지 않음. */}
+        <section className={clsx(styles.settingsCard, styles.settingsCardVertical)}>
+          <div className={styles.settingsCardRow}>
+            <div className={styles.settingsCardMeta}>
+              <span className={styles.settingsCardLabel}>진단 및 사용 통계</span>
+              <span className={styles.settingsCardDesc}>
+                오류 원인 파악과 기능 개선에 쓰이는 익명 정보를 보냅니다.
+              </span>
+            </div>
+            <button
+              type="button"
+              className={clsx(styles.settingsSwitch, telemetryOn && styles.active)}
+              role="switch"
+              aria-checked={telemetryOn}
+              aria-label="진단 및 사용 통계 수집"
+              onClick={toggleTelemetry}
+            >
+              <span className={styles.settingsSwitchKnob} aria-hidden="true" />
+            </button>
+          </div>
+
+          <div className={styles.settingsCollectList}>
+            <span>
+              <strong>보내는 것.</strong> 오류·충돌 기록, 어떤 기능을 얼마나 썼는지(횟수·유형)
+            </span>
+            <span>
+              <strong>보내지 않는 것.</strong> 녹음·전사·회의록·회의 제목 등 회의 내용 일체
+            </span>
+          </div>
+
+          <div className={styles.settingsCardActions}>
+            <button type="button" className="btn btn-secondary" onClick={openLogDir}>
+              로그 폴더 열기
+            </button>
+            <span className={styles.settingsCardNote}>끄면 앱을 다시 켠 뒤 완전히 멈춰요.</span>
+          </div>
         </section>
       </div>
     </>

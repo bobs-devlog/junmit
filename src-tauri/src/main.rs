@@ -3,6 +3,7 @@
 
 mod pty;
 mod session;
+mod telemetry;
 
 use pty::PtyManager;
 use std::process::Child;
@@ -481,6 +482,40 @@ fn cmd_set_detailed_default(on: bool) -> Result<(), String> {
     session::write_detailed_default(on)
 }
 
+/// 진단·사용 통계 수집 동의 조회 — 설정 화면 토글 초기값.
+#[tauri::command]
+fn cmd_get_telemetry_enabled() -> bool {
+    session::read_telemetry_enabled()
+}
+
+/// 진단·사용 통계 수집 동의 저장. 완전 반영은 앱 재시작 후(Sentry는 시작 시 init).
+#[tauri::command]
+fn cmd_set_telemetry_enabled(on: bool) -> Result<(), String> {
+    session::write_telemetry_enabled(on)
+}
+
+/// 익명 사용량 이벤트를 실제로 보낼 조건인지 — 프론트 analytics 게이트.
+/// 키가 없거나(dev·미설정) debug 빌드거나 사용자가 껐으면 false → trackEvent를 아예 시도하지 않는다.
+#[tauri::command]
+fn cmd_analytics_active() -> bool {
+    !APTABASE_KEY.is_empty() && !cfg!(debug_assertions) && session::read_telemetry_enabled()
+}
+
+/// 로컬 로그 폴더를 Finder로 연다 — 사용자가 진단 로그를 직접 열람·공유할 수 있게.
+#[tauri::command]
+fn cmd_open_log_dir(app: tauri::AppHandle) -> Result<(), String> {
+    let dir = app
+        .path()
+        .app_log_dir()
+        .map_err(|e| format!("로그 폴더 경로 확인 실패: {e}"))?;
+    let _ = std::fs::create_dir_all(&dir);
+    std::process::Command::new("open")
+        .arg(&dir)
+        .spawn()
+        .map_err(|e| format!("로그 폴더 열기 실패: {e}"))?;
+    Ok(())
+}
+
 #[tauri::command]
 fn cmd_list_meeting_types() -> Result<Vec<session::MeetingTypeOption>, String> {
     session::list_meeting_types()
@@ -632,6 +667,48 @@ fn strip_ansi(s: &str) -> String {
         }
     }
     out
+}
+
+/// 로그·원격 전송 전 민감정보 스크러빙 — 홈 경로와 회의 제목을 가린다.
+/// 세션 디렉토리명이 `{timestamp}_{title}` 형태라 회의 제목이 그대로 들어있어,
+/// 진단 텍스트를 로그/Sentry로 흘리기 전 반드시 통과시킨다. (프라이버시 기본)
+fn scrub_diagnostics(text: &str, session_dir: &str) -> String {
+    let mut out = text.to_string();
+    // 세션 경로·디렉토리명 → <session> (회의 제목 유출 차단). 홈 치환보다 먼저.
+    if let Some(name) = std::path::Path::new(session_dir)
+        .file_name()
+        .and_then(|n| n.to_str())
+    {
+        if !name.is_empty() {
+            out = out.replace(session_dir, "<session>");
+            out = out.replace(name, "<session>");
+        }
+    }
+    // /Users/<name> → ~ (홈 경로 익명화)
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.is_empty() {
+            out = out.replace(&home, "~");
+        }
+    }
+    out
+}
+
+/// 파이프라인/로컬LLM 실패를 전역 로그에 보고 — pipeline.log 마지막 ~30줄을
+/// 스크러빙해 남긴다. 릴리스+텔레메트리 ON이면 Sentry로도 전송(원인 파악 단서).
+/// "지인 에러 원인 파악 불가" 시나리오의 핵심 진단 경로.
+fn report_pipeline_failure(session_dir: &str, label: &str, code: Option<i32>) {
+    let log_path = std::path::PathBuf::from(session_dir).join("pipeline.log");
+    let tail = std::fs::read_to_string(&log_path)
+        .ok()
+        .map(|c| {
+            let lines: Vec<&str> = c.lines().collect();
+            let start = lines.len().saturating_sub(30);
+            lines[start..].join("\n")
+        })
+        .unwrap_or_default();
+    let tail = scrub_diagnostics(&tail, session_dir);
+    log::error!("{label} 실패 (exit code: {code:?})\n----- pipeline.log tail -----\n{tail}");
+    telemetry::capture_pipeline_failure(label, code, &tail);
 }
 
 /// 셸 명령을 자식 프로세스로 실행하고 stdout/stderr를 이벤트로 스트리밍
@@ -817,6 +894,7 @@ async fn cmd_run_pipeline(
         }
         Ok(())
     } else {
+        report_pipeline_failure(&session_dir, &step, status.code());
         Err(format!("{step} 실패 (exit code: {:?})", status.code()))
     }
 }
@@ -993,6 +1071,7 @@ async fn cmd_run_local_meeting(
     if status.success() {
         Ok(())
     } else {
+        report_pipeline_failure(&session_dir, "local-meeting", status.code());
         Err(format!("로컬 회의록 작성 실패 (exit code: {:?})", status.code()))
     }
 }
@@ -1162,6 +1241,36 @@ async fn cmd_run_install(
     }
 }
 
+/// 로컬 파일 로그 플러그인 — `~/Library/Logs/app.junmit/`에 회전 로그를 남긴다.
+/// 앱 전역 진단의 단일 저장소(세션별 pipeline.log와 별개). dev에선 콘솔에도 출력.
+/// 원격 전송은 하지 않는다 — 파일로만 남기고, 사용자가 "로그 폴더 열기"로 열람.
+fn build_log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_log::{Target, TargetKind};
+
+    let mut targets = vec![Target::new(TargetKind::LogDir {
+        file_name: Some("junmit".into()),
+    })];
+    // dev 빌드에서만 콘솔로도 흘려 즉시 확인 가능하게.
+    if cfg!(debug_assertions) {
+        targets.push(Target::new(TargetKind::Stdout));
+    }
+
+    tauri_plugin_log::Builder::new()
+        .targets(targets)
+        .level(log::LevelFilter::Info)
+        .max_file_size(5_000_000) // 5MB
+        .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+        .build()
+}
+
+/// Aptabase 앱 키 — **빌드 시 env `JUNMIT_APTABASE_KEY`로만 주입**(공개 레포라 소스엔 두지 않음).
+/// SENTRY_DSN과 동일 정책: CI는 GitHub 시크릿, 로컬 dmg는 `.env.release`에서 주입. 포크는 빈 값.
+/// 비어 있으면 트래킹 이벤트가 무시된다(전송 안 함).
+const APTABASE_KEY: &str = match option_env!("JUNMIT_APTABASE_KEY") {
+    Some(v) => v,
+    None => "",
+};
+
 fn main() {
     let pty_manager = Arc::new(PtyManager::new());
     let pipeline_child = PipelineChild(Arc::new(Mutex::new(None)));
@@ -1172,11 +1281,45 @@ fn main() {
         close_attempts: AtomicUsize::new(0),
     });
 
-    tauri::Builder::default()
+    // Sentry — 반드시 Tauri Builder보다 먼저 초기화(패닉/크래시 훅 선점).
+    // 비활성(debug·토글 OFF·DSN 미설정)이면 DSN 없는 클라이언트라 아무 것도 전송하지 않는다.
+    // guard는 앱 수명 동안 살려둬야 이벤트가 flush된다.
+    let version = env!("CARGO_PKG_VERSION").to_string();
+    let _sentry_guard = sentry::init(telemetry::client_options(version));
+    // 네이티브 크래시(minidump)는 활성일 때만 별도 리포터 프로세스로 수집.
+    let _minidump_guard = if telemetry::is_enabled() {
+        Some(tauri_plugin_sentry::minidump::init(&_sentry_guard))
+    } else {
+        None
+    };
+
+    // Aptabase는 앱 키가 있을 때만 등록한다 — 키가 없으면 익명 사용량을 보낼 곳이 없고,
+    // 플러그인 init이 tokio::spawn(폴링)을 호출하므로 그 경우에만 tokio 런타임 컨텍스트를 진입한다
+    // (컨텍스트 밖 spawn은 "no reactor" 패닉). guard는 앱 수명 동안 유지.
+    let aptabase_on = !APTABASE_KEY.is_empty();
+    let _tokio_rt = if aptabase_on {
+        Some(
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("tokio 런타임 생성 실패"),
+        )
+    } else {
+        None
+    };
+    let _tokio_guard = _tokio_rt.as_ref().map(|rt| rt.enter());
+
+    let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_sentry::init(&_sentry_guard))
+        .plugin(build_log_plugin())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_process::init());
+    if aptabase_on {
+        builder = builder.plugin(tauri_plugin_aptabase::Builder::new(APTABASE_KEY).build());
+    }
+    builder
         .manage(pty_manager)
         .manage(pipeline_child)
         .manage(install_child)
@@ -1226,12 +1369,12 @@ fn main() {
 
             // 회의 유형 가이드 시드 — 사용자 위치에 없는 파일만 복사 (idempotent)
             if let Err(e) = session::seed_user_templates(app.handle()) {
-                eprintln!("templates 시드 실패: {e}");
+                log::warn!("templates 시드 실패: {e}");
             }
 
             // 용어 사전 시드 — 사용자 위치에 없을 때만 복사 (idempotent)
             if let Err(e) = session::seed_user_vocabulary(app.handle()) {
-                eprintln!("vocabulary 시드 실패: {e}");
+                log::warn!("vocabulary 시드 실패: {e}");
             }
 
             // 슬립 감지 콜백 등록(핸들 보관 후) — 녹음 중 슬립 시 네이티브가 on_native_sleep 호출.
@@ -1252,7 +1395,7 @@ fn main() {
                 .join("run")
                 .join(std::process::id().to_string());
             if let Err(e) = std::fs::create_dir_all(&signal_dir) {
-                eprintln!("신호 디렉토리 생성 실패 ({}): {e}", signal_dir.display());
+                log::error!("신호 디렉토리 생성 실패 ({}): {e}", signal_dir.display());
             }
             let signal_path = signal_dir.join(".app-signal");
             let app_handle = app.handle().clone();
@@ -1319,6 +1462,10 @@ fn main() {
             cmd_create_session,
             cmd_get_detailed_default,
             cmd_set_detailed_default,
+            cmd_get_telemetry_enabled,
+            cmd_set_telemetry_enabled,
+            cmd_analytics_active,
+            cmd_open_log_dir,
             cmd_list_meeting_types,
             cmd_read_meeting_type,
             cmd_delete_meeting_type,

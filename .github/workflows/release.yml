@@ -64,6 +64,10 @@ jobs:
           # 업데이터 서명(minisign/EdDSA) — Apple 서명과 무관. ad-hoc 서명은 tauri.conf.json이 담당.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # 텔레메트리 키 — 공개 레포라 소스엔 두지 않고 CI 시크릿으로만 주입(option_env!이 컴파일 시 읽음).
+          # 포크는 시크릿을 상속받지 못해 빈 값 → 원격 전송 안 함(포크가 우리 프로젝트를 오염시키지 않음).
+          JUNMIT_SENTRY_DSN: ${{ secrets.JUNMIT_SENTRY_DSN }}
+          JUNMIT_APTABASE_KEY: ${{ secrets.JUNMIT_APTABASE_KEY }}
         with:
           # tag에서 버전 추출. tauri-action이 .app.tar.gz(+.sig)·DMG 생성 후
           # Release를 만들고 latest.json(uploadUpdaterJson 기본 true)까지 업로드한다.
