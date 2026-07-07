@@ -18,7 +18,7 @@ const CLI_LABELS: Record<Cli, string> = {
 
 // 앱 설정 화면 — 빈도 낮은 설정의 모음 자리. 자주 쓰는 콘텐츠 관리(용어 사전·회의 유형)는
 // 사이드바 직접 항목으로, 한두 번 만지는 설정은 여기로 모은다.
-// v1: AI 도구 변경. 추후 후보: Atlassian 연결 상태·codex 로그아웃 등.
+// v1: AI 도구 변경. 추후 후보: codex 로그아웃 등.
 export default function SettingsScreen() {
   const sidebarTarget = useSidebarTarget();
   const navigate = useNavigate();

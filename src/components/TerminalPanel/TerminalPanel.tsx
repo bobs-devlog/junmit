@@ -314,8 +314,8 @@ const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(functi
     if (!term) return;
 
     // 전체 리셋(RIS) — clear()는 버퍼만 비우고 터미널 상태(SGR·스크롤 영역·화면 모드)는
-    // 남긴다. 직전 프로세스가 TUI였고 강제 종료라 화면 복원 시퀀스 없이 죽은 경우(발행
-    // 게이트의 로그인 도우미 정리 등) 그 잔존 상태 위에 새 세션이 겹쳐 그려져 화면이 깨진다.
+    // 남긴다. 직전 프로세스가 TUI였고 강제 종료라 화면 복원 시퀀스 없이 죽은 경우(AI 작업
+    // 중단 등) 그 잔존 상태 위에 새 세션이 겹쳐 그려져 화면이 깨진다.
     term.reset();
 
     // 현재 xterm 크기로 PTY를 연다 — 크기 동기화를 ResizeObserver에만 맡기면 드로어가

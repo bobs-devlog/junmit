@@ -28,7 +28,7 @@ export default function NotesEditor({
   onCancel,
 }: NotesEditorProps) {
   const [buffer, setBuffer] = useState(initialContent || "");
-  // 편집 모드에선 본문에 SPEAKER_XX 원본이 그대로 보인다(저장·발행 안정 식별자).
+  // 편집 모드에선 본문에 SPEAKER_XX 원본이 그대로 보인다(저장·표시 치환의 안정 식별자).
   // 저장하면 화면에선 "참석자 N"/이름으로 치환돼 보인다는 걸 안내. 한 번 닫으면 영구 숨김.
   const [hintDismissed, setHintDismissed] = useState(
     () => localStorage.getItem(SPEAKER_HINT_DISMISSED_KEY) === "1"

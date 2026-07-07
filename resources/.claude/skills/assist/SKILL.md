@@ -18,7 +18,7 @@ SESSION_DIR="$APP_SESSION_DIR"
 > **스크립트는 `$APP_DIR`(이 세션이 시작된 작업 루트)에 있습니다.** `signal.sh` 호출은 `$APP_DIR/lib/signal.sh` 절대경로로 하고 **절대 `cd` 하지 마세요.** `app_refresh`는 앱 회의록 탭 갱신의 신호라, `No such file`이 떠도 경로 오류이지 생략 사유가 아닙니다.
 
 사용자가 사이드바 "AI에게 추가 요청" 또는 panel 빈 상태 버튼을 눌러 진입한 자유 대화 스킬.
-`meeting`·`publish` 스킬과 달리 **`AskUserQuestion` 사용 허용**.
+`meeting` 스킬과 달리 **`AskUserQuestion` 사용 허용**.
 
 **핵심 원칙: 초기 응답 시간 최소화**. 무거운 컨텍스트 로드는 보류하고, 사용자 요청 분기에
 따라 그때그때 필요한 파일만 lazy load. 익숙한 사용자는 추천 단계 없이 바로 작업 가능.
@@ -42,14 +42,13 @@ SESSION_DIR="$APP_SESSION_DIR"
 
 사용자 입력의 의도를 파악해 세 가지로 분기:
 
-### 분기 A — 구체 요청 (예: "3번 항목 빼줘", "결정사항 정리", "Jira 티켓 만들어줘")
+### 분기 A — 구체 요청 (예: "3번 항목 빼줘", "결정사항 정리", "결정사항만 추출해줘")
 
 **가장 빠른 경로.** 작업에 필요한 파일만 lazy load 후 즉시 3단계로.
 
 예시:
 - 회의록 본문 수정 요청 → `meeting-notes.md`만 read
 - 화자 관련 요청 → `speaker_mapping.json` 추가 read
-- Jira 티켓 → `meeting-notes.md`(액션 아이템 파싱용) read
 - 회의 유형 변경 → `meeting.json` + 새 유형 가이드 read
 
 ### 분기 B — 도움 요청 (예: "도와줘", "도움", "뭐 할 수 있어?", "어떤 작업이 가능해?", "추천해줘")
@@ -62,15 +61,13 @@ SESSION_DIR="$APP_SESSION_DIR"
 - `meeting-notes.md`
 - `speaker_mapping.json`
 - `transcript_corrected.txt` (없으면 `transcript.txt`)
-- `publish.json`
 
 회의 상태 종합 평가 후 **현재 회의에 가장 적합한 작업 3~4개를 동적 선택**해 AskUserQuestion으로 제시.
 
 선택지 결정 가이드 (회의 상태 기준):
 - 회의록이 너무 길면 → "회의록 축약" 우선
-- 액션 아이템이 명확하면 → "Jira 티켓 생성" 제안
 - 결정사항이 빈약하면 → "결정사항 강화"
-- 발행 완료된 회의이고 회의록 깔끔하면 → "Slack/메일 공유"
+- 회의록이 깔끔하면 → "Slack/메일 공유"
 - 후속 미팅 약속 흔적이 있으면 → "캘린더 일정 등록"
 
 선택지는 카탈로그(아래)에서 동적 선택. **마지막 옵션은 항상 "기타 (자유 입력)"**.
@@ -105,8 +102,6 @@ cp "$SESSION_DIR/meeting-notes.md" "$SESSION_DIR/meeting-notes.bak.$(date +%Y%m%
   SPEAKER_XX 라벨 보존 (앱이 표시 시점에 치환).
 - **유형 변경**: `meeting.json`의 `type` 필드 갱신 + 새 유형 가이드로 재작성
   (meeting 스킬 재작성 패턴 참고). 본문 큰 변경이므로 백업 필수.
-- **Jira 티켓 생성**: 액션 아이템 파싱 → AskUserQuestion으로 프로젝트 키·assignee 받기 →
-  `mcp__claude_ai_Atlassian__createJiraIssue` 호출 → 회의록에 티켓 링크 삽입.
 - **MCP 실패**: 인증 안 됨·권한 없음 등으로 실패하면 사용자에게 정확한 원인 안내 +
   다른 가능한 작업 제안.
 
@@ -125,15 +120,6 @@ bash -c 'source "$APP_DIR/lib/signal.sh" && app_refresh'
 사용자에게 **변경 내용을 1~3줄로 요약** 출력:
 
 > 예: "결정사항 섹션을 정리했고 액션 아이템 3개를 추가했습니다. 회의록 탭에서 확인해주세요."
-
-### 발행된 회의록 sync 안내
-
-`publish.json`의 `confluence.published === true`이고 회의록 본문을 수정한 경우, 출력 끝에
-한 줄 추가:
-
-> Confluence에 반영하려면 사이드바 "다시 등록"을 눌러주세요.
-
-로컬과 Confluence 페이지가 분기되는 것을 사용자가 인지하게 함.
 
 ---
 
@@ -163,13 +149,6 @@ bash -c 'source "$APP_DIR/lib/signal.sh" && app_refresh'
 - **화자 매핑 검토** + 회의록 호칭 반영
 - **결정사항만 별도 파일로 추출** (`decisions.md`)
 - **회의록 요약본·풀버전 분리**
-
-### 즉시 가능 — Atlassian MCP
-
-- **Jira 티켓 자동 생성** — 액션 아이템 → 티켓 (assignee·프로젝트 키 받기)
-- **이전 회의록 검색** — CQL/JQL로 비슷한 주제·attendee 회의 찾기 → cross-reference
-- **Confluence 별도 페이지 등록** — 결정사항·요약본만 다른 space에
-- **기존 페이지에 댓글로 변경사항 알림**
 
 ### MCP 인증되어 있으면 가능
 

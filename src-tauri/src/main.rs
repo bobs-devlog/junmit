@@ -198,7 +198,6 @@ fn cmd_get_active_cli(app: tauri::AppHandle) -> String {
         "codex" => session::ensure_codex_home(&app),
         "mlx" => {} // 로컬 LLM은 CLI 설정 디렉토리 불필요 (모델 존재 확인은 cmd_check_local_model)
         // 격리 홈은 없다. 워크스페이스 신뢰만 베이크(spawn 신뢰 다이얼로그 제거).
-        // Confluence 자동 발행은 미지원(추후)이라 atlassian은 등록하지 않는다.
         "antigravity" => {
             session::ensure_antigravity_trust(&app);
         }
@@ -326,32 +325,12 @@ fn cmd_is_cli_chosen() -> bool {
 /// claude/codex/antigravity 설치·인증 감지 — 온보딩 "AI 도구 선택" 화면용.
 /// 외부 프로세스 최대 5개(which×2 + 인증 판정 3건 — 판정은 detect_clis 내부에서 병렬,
 /// agy는 네트워크 왕복 최대 10초)라 async + blocking pool — 동기 커맨드는 메인 스레드
-/// (창 이벤트 루프)를 막는다(cmd_cli_atlassian_authed와 동일 근거).
+/// (창 이벤트 루프)를 막는다.
 #[tauri::command]
 async fn cmd_detect_clis(app: tauri::AppHandle) -> Result<session::CliAvailability, String> {
     tauri::async_runtime::spawn_blocking(move || session::detect_clis(&app))
         .await
         .map_err(|e| format!("CLI 감지 작업 실패: {e}"))
-}
-
-/// 선택 CLI의 Atlassian MCP 인증 여부 — 발행(create) 직전 JIT 게이트용.
-/// 외부 프로세스 실행(~1초+)이라 async + blocking pool — 메인 스레드(창 이벤트 루프)를 막지 않는다.
-#[tauri::command]
-async fn cmd_cli_atlassian_authed(app: tauri::AppHandle, cli: String) -> Result<bool, String> {
-    tauri::async_runtime::spawn_blocking(move || session::cli_atlassian_authed(&app, &cli))
-        .await
-        .map_err(|e| format!("인증 확인 작업 실패: {e}"))?
-}
-
-/// Atlassian MCP를 선택 CLI config에 등록(lazy) — 발행(create) 게이트가 로그인·인증 확인 직전 호출.
-/// 이 시점 전까지는 MCP가 선언돼 있지 않아 비-Confluence 사용자가 기동 워닝을 보지 않는다.
-/// 파일 I/O(config rewrite)라 async + blocking pool.
-/// 반환 true = antigravity 사용자 전역 설정에 이번에 새로 등록됨 (프론트가 1회 고지 토스트).
-#[tauri::command]
-async fn cmd_enable_atlassian_mcp(app: tauri::AppHandle, cli: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || session::enable_atlassian_mcp(&app, &cli))
-        .await
-        .map_err(|e| format!("Atlassian MCP 등록 작업 실패: {e}"))?
 }
 
 /// 현재 앱 인스턴스의 신호 디렉토리 — frontend가 PTY spawn 시 APP_SIGNAL_DIR env로 전달.
@@ -1320,8 +1299,6 @@ fn main() {
             cmd_delete_local_model,
             cmd_check_local_capable,
             cmd_detect_clis,
-            cmd_cli_atlassian_authed,
-            cmd_enable_atlassian_mcp,
             cmd_get_signal_dir,
             cmd_fetch_calendar,
             cmd_read_attendee_names,

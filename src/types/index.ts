@@ -157,26 +157,6 @@ export interface MeetingMeta {
   capture_mode?: "mic" | "mic+system";
 }
 
-// ── Publish ──────────────────────────────────────
-// 세션 디렉토리의 `publish.json` — 발행 설정 + 결과의 단일 진실 원천.
-// 기존 `confluence-url.txt`를 통합. 모드 무관 `confluence.published`로 완료 판정.
-export type ConfluencePublishMode = "create" | "append" | "skip";
-
-export interface ConfluencePublishConfig {
-  mode: ConfluencePublishMode;
-  // create 모드 입력 — 새 페이지를 만들 상위 페이지의 Confluence URL.
-  parentUrl: string;
-  // create 모드 결과 — 등록 후 LLM이 채움. append 모드는 비어있음 (URL 입력 X 정책).
-  pageUrl: string;
-  // 모드 무관 발행 완료 마킹. Rust find_resumable_sessions의 published 판정 단일 지점.
-  published: boolean;
-}
-
-export interface PublishConfig {
-  confluence: ConfluencePublishConfig;
-  // jira는 PR5에서 추가 예정.
-}
-
 // ── Recorder ─────────────────────────────────────
 export interface Recorder {
   isRecording: boolean;
@@ -197,7 +177,6 @@ export interface SessionSteps {
   diarized: boolean;
   corrected: boolean;
   notes_written: boolean;
-  published: boolean;
   /** 녹음에 발화가 없어(무음) diarize·회의록을 건너뛴 세션. transcribe_result.json에서 파생. */
   no_speech: boolean;
 }

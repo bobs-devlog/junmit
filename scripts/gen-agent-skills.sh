@@ -75,8 +75,8 @@ Codex 도구명 표기입니다 — 자신이 어느 CLI인지에 따라 아래 
 
 공통 (양쪽 모두):
 
-- **`mcp__atlassian__*` 형태의 도구명**: atlassian MCP 서버의 같은 이름 도구를 사용하세요
-  (예: createConfluencePage, lookupJiraAccountId).
+- **`mcp__<서버>__*` 형태의 도구명**: 해당 MCP 서버의 같은 이름 도구를 사용하세요
+  (예: create_event, search_threads).
 
 ### Codex로 실행 시
 

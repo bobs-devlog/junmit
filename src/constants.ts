@@ -21,7 +21,6 @@ export const Activity = {
   Processing: "processing", // 전사 + 화자분리
   Correcting: "correcting", // LLM 후보정 (Phase 1 1·2단계: 화자 라벨 교정·이름 매칭, 정밀 시 전사 교정)
   Composing: "composing", // LLM 회의록 작성 (Phase 1 3·4단계)
-  Publishing: "publishing", // LLM Confluence/Jira 등록
 } as const;
 
 export type Activity = (typeof Activity)[keyof typeof Activity];
@@ -38,21 +37,19 @@ const ACTIVITY_META: Record<Activity, { label: string; tone: ActivityTone }> = {
   [Activity.Processing]: { label: "오디오 처리 중", tone: "processing" },
   [Activity.Correcting]: { label: "AI 다듬기 중", tone: "processing" },
   [Activity.Composing]: { label: "회의록 작성 중", tone: "processing" },
-  [Activity.Publishing]: { label: "Confluence 등록 중", tone: "processing" },
 };
 
 export function activityMeta(a: Activity) {
   return ACTIVITY_META[a];
 }
 
-// 회의 진행 5단계의 단일 진실 원천.
+// 회의 진행 단계의 단일 진실 원천.
 // 사용처: Sidebar stepper, SessionList 카드, ProcessingPanel, nextPendingStep 헬퍼.
 export const Step = {
   Transcribe: "transcribe",
   Diarize: "diarize",
   Correct: "correct",
   Notes: "notes",
-  Publish: "publish",
 } as const;
 
 export type StepId = (typeof Step)[keyof typeof Step];
@@ -94,17 +91,10 @@ export const STEPS: ReadonlyArray<StepInfo> = [
     icon: "📋",
     field: "notes_written",
   },
-  {
-    id: Step.Publish,
-    label: "Confluence 등록",
-    description: "회의록 게시 (Jira 통합은 추후)",
-    icon: "📤",
-    field: "published",
-  },
 ];
 
 // 로컬 LLM(mlx)은 에이전트·MCP 없이 도는 결정론적 파이프라인 — 후보정(AI 다듬기)·대화형 추가
-// 요청(/assist)·Confluence 등록(/publish)을 지원하지 않는다. UI 게이팅의 단일 진실 원천.
+// 요청(/assist)을 지원하지 않는다. UI 게이팅의 단일 진실 원천.
 export const cliHasAgent = (cli: Cli) => cli !== "mlx";
 
 // Rust 등 경계에서 넘어온 문자열의 Cli 검증 — 유니온 목록의 단일 진실 원천.
@@ -132,11 +122,9 @@ export type LocalModelId = typeof LOCAL_MODEL_STANDARD | typeof LOCAL_MODEL_HIGH
 export const isLocalModelId = (m: string): m is LocalModelId =>
   m === LOCAL_MODEL_STANDARD || m === LOCAL_MODEL_HIGH;
 
-// 백엔드별 표시 단계 — mlx는 AI 다듬기(Correct)·Confluence 등록(Publish) 단계가 존재하지 않으므로
-// stepper·기록 카드에서 숨긴다 (영원히 pending인 단계를 보여주지 않기).
-const LOCAL_STEPS: ReadonlyArray<StepInfo> = STEPS.filter(
-  (s) => s.id !== Step.Correct && s.id !== Step.Publish
-);
+// 백엔드별 표시 단계 — mlx는 AI 다듬기(Correct) 단계가 존재하지 않으므로 stepper·기록
+// 카드에서 숨긴다 (영원히 pending인 단계를 보여주지 않기).
+const LOCAL_STEPS: ReadonlyArray<StepInfo> = STEPS.filter((s) => s.id !== Step.Correct);
 
 export function stepsForCli(cli: Cli): ReadonlyArray<StepInfo> {
   return cliHasAgent(cli) ? STEPS : LOCAL_STEPS;

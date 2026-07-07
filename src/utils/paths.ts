@@ -9,12 +9,12 @@ export const APP_DATA_DIR_SH = "$HOME/Library/Application Support/app.junmit";
 export const CODEX_HOME_SH = `${APP_DATA_DIR_SH}/codex`;
 
 // claude 스킬 실행 전용 CLAUDE_CONFIG_DIR — 사용자 개인 ~/.claude와 격리된 junmit 소유 환경.
-// Rust session.rs `claude_config_dir()`과 동일 경로. spawn(스킬 실행)·로그인 도우미가 함께 사용.
+// Rust session.rs `claude_config_dir()`과 동일 경로. spawn(스킬 실행)이 사용.
 export const CLAUDE_CONFIG_DIR_SH = `${APP_DATA_DIR_SH}/claude`;
 
 // antigravity CLI 실행 파일 — 격리 홈 env가 없어(실측 1.0.16) 경로 상수는 이것 하나다
-// (/meeting·/assist는 사용자 전역 ~/.gemini에서 동작. Confluence 자동 발행은 미지원(추후)이라
-// junmit이 MCP를 관리하지 않는다 — 워크스페이스 신뢰만 session.rs ensure_antigravity_trust가 베이크).
+// (/meeting·/assist는 사용자 전역 ~/.gemini에서 동작. 워크스페이스 신뢰만 session.rs
+// ensure_antigravity_trust가 베이크).
 // PATH 이름 "agy"로 실행하지 않고 절대경로를 쓰는 이유: Antigravity IDE 런처도 동명 agy라서
 // (~/.antigravity/antigravity/bin) CLI가 지워진 상태면 PATH 폴백으로 IDE가 대신 떠버린다 —
 // 절대경로면 명확한 "no such file" 실패가 된다. 공식 인스톨러의 고정 설치 경로이며

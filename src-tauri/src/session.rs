@@ -259,57 +259,14 @@ pub fn write_detailed_default(on: bool) -> Result<(), String> {
         .map_err(|e| format!("detailed_correction 기본값 쓰기 실패: {e}"))
 }
 
-/// 스킬 실행이 쓰는 Atlassian remote MCP 엔드포인트 — claude(.claude.json)·codex(config.toml)
-/// 양쪽 전용 환경에 베이크되는 단일 값.
-const ATLASSIAN_MCP_URL: &str = "https://mcp.atlassian.com/v1/mcp";
-
-// antigravity(agy)는 Confluence 자동 발행을 **아직 지원하지 않는다(추후)**. agy CLI는 원격 MCP
-// OAuth가 실제로 안 된다 — 네이티브 serverUrl은 `initialize: Unauthorized`로 실패(실측, agy
-// Issue #25), mcp-remote는 Node 의존. 그래서 junmit은 antigravity에 atlassian을 등록하지 않고
-// (전용 상수·ensure 함수 없음), 발행 모달이 antigravity의 자동 발행(create)을 막는다. 워크스페이스
-// 신뢰 베이크(ensure_antigravity_trust)는 /meeting·/assist spawn에 필요하므로 유지.
+// 워크스페이스 신뢰 베이크(ensure_antigravity_trust)는 /meeting·/assist spawn에 필요하므로 유지.
 
 /// codex 스킬 실행 전용 CODEX_HOME — 사용자 개인 `~/.codex`(플러그인·hooks·trust 가득)와
 /// 격리된 junmit 소유 home. 격리 이유: skill 런타임이 사용자 설정에 안 흔들려 결정론적이고,
-/// junmit 소유 config.toml에 Atlassian MCP를 박아 사용자 config를 0 터치(키체인 토큰은 user-global이라
-/// 어느 home이든 공유). spawn(spawn.ts)·`codex login`·`codex login status`·`codex mcp login`이 모두
-/// 이 경로를 CODEX_HOME으로 가리킨다.
+/// junmit 소유 config.toml로 사용자 config를 0 터치(자격은 이 home의 auth.json에 격리).
+/// spawn(spawn.ts)·`codex login`·`codex login status`가 이 경로를 CODEX_HOME으로 가리킨다.
 pub fn codex_home() -> PathBuf {
     app_data_dir().join("codex")
-}
-
-/// Atlassian MCP "활성" 플래그 — Confluence/Jira를 실제로 쓰기 전(첫 발행 전)엔 MCP를 CLI
-/// config에 선언하지 않는다. 그래야 Confluence를 안 쓰는 사용자가 codex/claude 기동마다
-/// "atlassian MCP not logged in" 워닝을 보지 않는다. 첫 Confluence 발행 게이트가
-/// `enable_atlassian_mcp`로 set하며, 한 번 켜지면 유지된다. codex·claude 공유(어느 CLI로
-/// 켜도 양쪽 ensure가 동일 플래그를 본다) — CLI 전환 시에도 일관.
-fn atlassian_flag_path() -> PathBuf {
-    app_data_dir().join("atlassian_enabled")
-}
-
-pub fn atlassian_enabled() -> bool {
-    atlassian_flag_path().exists()
-}
-
-/// 첫 Confluence 발행 게이트(claude/codex)에서 호출 — 플래그 set + 해당 CLI 격리 config에 MCP
-/// 즉시 반영. 이후 그 CLI는 atlassian MCP를 선언한 채 뜬다.
-/// 명시 match — `_` 폴백이면 새 CLI가 조용히 codex home에 베이크되는 무언 폴백 사고가 된다.
-pub fn enable_atlassian_mcp(app: &tauri::AppHandle, cli: &str) -> Result<(), String> {
-    let p = atlassian_flag_path();
-    if let Some(parent) = p.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("atlassian 플래그 디렉토리 생성 실패: {e}"))?;
-    }
-    if !p.exists() {
-        fs::write(&p, b"1").map_err(|e| format!("atlassian 플래그 쓰기 실패: {e}"))?;
-    }
-    match cli {
-        "claude" => ensure_claude_config_dir(app),
-        // antigravity는 Confluence 발행 미지원(추후) — atlassian을 등록하지 않는다. 프론트가
-        // antigravity의 자동 발행(create)을 게이팅하므로 이 경로는 실질적으로 안 탄다.
-        "antigravity" => {}
-        _ => ensure_codex_home(app),
-    }
-    Ok(())
 }
 
 /// agy 워크스페이스 신뢰 베이크 — 스킬 spawn cwd(appDir)를 사용자 전역
@@ -435,56 +392,37 @@ pub fn ensure_codex_home(app: &tauri::AppHandle) {
     //   기본값(auto/keyring)은 OS 키체인 전역 항목이라 사용자 본인 codex 자격과 충돌 여지.
     // - agents.max_threads=6: meeting 1단계의 교정/라벨/매핑 3개 하위 에이전트 병렬 실행 여유.
     // - agents.max_depth=1: 루트가 직접 만든 하위 에이전트만 허용해 재귀 fan-out 방지.
-    // - mcp_servers.atlassian: publish/assist가 쓰는 Confluence MCP. **lazy** — 첫 발행으로
-    //   atlassian_enabled 플래그가 set됐을 때만 선언한다(미선언이면 비-Confluence 사용자가
-    //   매 기동 보던 "not logged in" 워닝이 사라짐). 인증은 `codex mcp login atlassian`.
     //
     // 멱등 체크 — codex도 이 파일에 자체 상태를 기록하므로(모델 안내 표시 기록 등) 관리 항목이
-    // 모두 현존하고 atlassian 선언 상태가 플래그와 일치하면 rewrite를 생략해 그 상태를 보존한다.
-    // 관리 내용이 바뀐 경우(플래그 토글·MCP 엔드포인트 변경·앱 이동)에만 전체 rewrite.
-    let want_atlassian = atlassian_enabled();
-    let mut managed_keys = vec![
+    // 모두 현존하면 rewrite를 생략해 그 상태를 보존한다. 관리 내용이 바뀐 경우(앱 이동 등)에만
+    // 전체 rewrite.
+    let managed_keys = [
         "cli_auth_credentials_store = \"file\"".to_string(),
         "[agents]".to_string(),
         "max_threads = 6".to_string(),
         "max_depth = 1".to_string(),
     ];
-    if want_atlassian {
-        managed_keys.push("[mcp_servers.atlassian]".to_string());
-        managed_keys.push(format!("url = \"{ATLASSIAN_MCP_URL}\""));
-    }
-    // 멱등 — 현재 cwd 신뢰가 이미 있고(또는 resource_dir 못 구함) 관리키·atlassian 선언이 일치하면
-    // rewrite 생략(codex가 같은 파일에 쓰는 자체 상태 보존). 현재 cwd가 빠진 clobber 상황이면
-    // 위 union으로 두 경로를 모두 담아 다시 쓴다.
+    // 멱등 — 현재 cwd 신뢰가 이미 있고(또는 resource_dir 못 구함) 관리키가 모두 있으면 rewrite
+    // 생략(codex가 같은 파일에 쓰는 자체 상태 보존). 현재 cwd가 빠진 clobber 상황이면 위 union으로
+    // 두 경로를 모두 담아 다시 쓴다.
     let trust_ok = cur_path
         .as_ref()
         .is_none_or(|p| existing.contains(&format!("[projects.\"{p}\"]")));
-    let atlassian_ok = existing.contains("[mcp_servers.atlassian]") == want_atlassian;
-    if !existing.is_empty()
-        && trust_ok
-        && atlassian_ok
-        && managed_keys.iter().all(|k| existing.contains(k))
-    {
+    if !existing.is_empty() && trust_ok && managed_keys.iter().all(|k| existing.contains(k)) {
         return;
     }
 
-    let atlassian_block = if want_atlassian {
-        format!("\n[mcp_servers.atlassian]\nurl = \"{ATLASSIAN_MCP_URL}\"\n")
-    } else {
-        String::new()
-    };
     let config = format!(
         "\
 # junmit 전용 Codex 설정 — 앱이 자동 생성·관리합니다. 사용자 ~/.codex와 분리된 격리 home.
-# 직접 편집하지 마세요(앱이 덮어쓸 수 있음). Atlassian MCP는 첫 Confluence 발행 시 추가되며
-# `codex mcp login atlassian`으로 인증합니다.
+# 직접 편집하지 마세요(앱이 덮어쓸 수 있음).
 
 cli_auth_credentials_store = \"file\"
 
 [agents]
 max_threads = 6
 max_depth = 1
-{atlassian_block}{trust}"
+{trust}"
     );
     if let Err(e) = fs::write(&config_path, config) {
         eprintln!("codex config.toml 쓰기 실패: {e}");
@@ -496,7 +434,7 @@ max_depth = 1
 /// 회의 내용이 기록되는 곳(세션 로그)·hooks가 프롬프트를 수신하는 경로를 junmit이 소유한다.
 /// 스킬(.claude/skills)·CLAUDE.md 자동 로드는 PTY cwd(resource_dir) 기반이라 영향 없음(실측:
 /// 프로젝트 스킬 `./.claude/skills/`와 사용자 영역은 별도 경로). spawn(spawn.ts)·`claude auth
-/// login/status`·`claude mcp list`가 모두 이 경로를 CLAUDE_CONFIG_DIR로 가리킨다.
+/// login/status`가 이 경로를 CLAUDE_CONFIG_DIR로 가리킨다.
 pub fn claude_config_dir() -> PathBuf {
     app_data_dir().join("claude")
 }
@@ -522,14 +460,12 @@ fn claude_project_key(app: &tauri::AppHandle) -> Option<String> {
 /// junmit 전용 CLAUDE_CONFIG_DIR을 idempotent하게 준비한다(디렉토리 + .claude.json 베이크).
 /// claude는 미존재 dir·파일을 자동 생성하므로(codex와 다름) 생성 자체는 필수가 아니고,
 /// 베이크가 목적이다:
-/// - `mcpServers.atlassian`: publish/assist가 쓰는 Confluence MCP. `claude mcp add -s user`와
-///   동일한 최상위(user scope) 기록(실측) — cwd 무관 적용. 인증은 발행 시점 `/mcp`로.
 /// - `projects.<key>.hasTrustDialogAccepted`: PTY cwd 폴더-신뢰 선반영 — fresh 환경 첫
 ///   인터랙티브 실행의 영문 신뢰 다이얼로그를 없앤다(codex trust 베이크와 패리티).
 ///
 /// ⚠️ codex config.toml과 달리 통파일 덮어쓰기 금지 — claude가 같은 파일에 로그인 메타
 /// (oauthAccount)·온보딩 상태를 기록하므로 덮어쓰면 로그아웃 사고가 된다. 항상 read-merge-write,
-/// 파싱 불가면 손대지 않는다(베이크 실패는 publish 스킬의 graceful 안내가 안전망).
+/// 파싱 불가면 손대지 않는다.
 ///
 /// 인증은 seed하지 않는다(못 한다) — 자격이 config dir에 귀속되어 .claude.json 복사로도
 /// 로그인이 따라오지 않음(실측). 사용자가 junmit 환경에 `claude auth login` 1회.
@@ -604,8 +540,6 @@ pub fn ensure_claude_config_dir(app: &tauri::AppHandle) {
                 "Read(~/Library/Application Support/app.junmit/**)",
                 "Edit(~/Library/Application Support/app.junmit/**)",
                 "Write(~/Library/Application Support/app.junmit/**)",
-                "mcp__atlassian__*",
-                "mcp__claude_ai_Atlassian__*",
             ];
             if let Some(perms) = obj
                 .entry("permissions")
@@ -715,26 +649,6 @@ pub fn ensure_claude_config_dir(app: &tauri::AppHandle) {
             serde_json::json!(false),
         );
         changed = true;
-    }
-
-    // atlassian MCP는 **lazy** — 첫 Confluence 발행으로 플래그가 set됐을 때만 선언한다.
-    // 미설정이면 선언하지 않고(비-Confluence 사용자 워닝 제거), 과거에 박힌 게 있으면 제거한다.
-    if atlassian_enabled() {
-        let atlassian = serde_json::json!({ "type": "http", "url": ATLASSIAN_MCP_URL });
-        if let Some(servers) = root
-            .entry("mcpServers")
-            .or_insert_with(|| serde_json::json!({}))
-            .as_object_mut()
-        {
-            if servers.get("atlassian") != Some(&atlassian) {
-                servers.insert("atlassian".to_string(), atlassian);
-                changed = true;
-            }
-        }
-    } else if let Some(servers) = root.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
-        if servers.remove("atlassian").is_some() {
-            changed = true;
-        }
     }
 
     if let Some(key) = claude_project_key(app) {
@@ -889,73 +803,6 @@ fn claude_logged_in() -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
-}
-
-/// 선택 CLI의 Atlassian MCP 인증 여부 — 발행(create 모드) 직전 JIT 게이트가 호출한다.
-/// 둘 다 junmit 전용 환경 기준이며, 미인증이 확실할 때만 false — 그 외(항목 부재·필드 부재·
-/// 포맷 변화)는 통과시키고 실제 MCP 호출 실패는 publish 스킬이 안내하게 둔다 (게이트는 best-effort).
-/// - codex: `codex mcp list --json`의 `auth_status` == "not_logged_in"만 미인증.
-/// - claude: `claude mcp list` 텍스트(--json 부재, 실측)의 atlassian 라인에
-///   "Needs authentication" 표시만 미인증("✔ Connected"는 통과).
-pub fn cli_atlassian_authed(app: &tauri::AppHandle, cli: &str) -> Result<bool, String> {
-    if cli == "claude" {
-        return claude_atlassian_authed(app);
-    }
-    if cli == "antigravity" {
-        // antigravity는 Confluence 자동 발행 미지원(추후) — atlassian을 관리하지 않는다.
-        // 프론트가 antigravity의 create(자동 발행)를 애초에 막으므로 이 경로는 안 탄다.
-        return Ok(false);
-    }
-    // config.toml에 atlassian 서버가 베이크돼 있어야 목록에 잡힌다.
-    ensure_codex_home(app);
-    let output = Command::new("codex")
-        .args(["mcp", "list", "--json"])
-        .env("PATH", get_user_shell_path())
-        .env("CODEX_HOME", codex_home())
-        .output()
-        .map_err(|e| format!("codex 실행 실패: {e}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "codex mcp list 실패: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    let servers: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("codex mcp list 출력 파싱 실패: {e}"))?;
-    // atlassian 항목이 아예 없으면(config 유실 등) true — 로그인으로 해결될 문제가 아니라
-    // 게이트를 반복해봐야 사용자만 막힌다. 스킬 단계에서 실패가 드러나는 쪽을 택한다.
-    let authed = servers
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|s| s.get("name").and_then(|v| v.as_str()) == Some("atlassian"))
-        .all(|s| s.get("auth_status").and_then(|v| v.as_str()) != Some("not_logged_in"));
-    Ok(authed)
-}
-
-fn claude_atlassian_authed(app: &tauri::AppHandle) -> Result<bool, String> {
-    // .claude.json에 atlassian 서버가 베이크돼 있어야 목록에 잡힌다.
-    ensure_claude_config_dir(app);
-    let output = Command::new("claude")
-        .args(["mcp", "list"])
-        .env("PATH", get_user_shell_path())
-        .env("CLAUDE_CONFIG_DIR", claude_config_dir())
-        .output()
-        .map_err(|e| format!("claude 실행 실패: {e}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "claude mcp list 실패: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    // "atlassian: <url> (HTTP) - ! Needs authentication" 형태(실측). 미인증 표시가 있는
-    // atlassian 라인만 false — 라인 부재·표현 변화는 codex와 같은 이유로 통과.
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let authed = stdout
-        .lines()
-        .filter(|l| l.trim_start().starts_with("atlassian:"))
-        .all(|l| !l.contains("Needs authentication"));
-    Ok(authed)
 }
 
 pub fn detect_clis(app: &tauri::AppHandle) -> CliAvailability {
@@ -1523,18 +1370,6 @@ pub fn read_meeting_attendees(session_dir: &std::path::Path) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// publish.json의 `confluence.published` 필드만 읽는 경량 판정.
-/// 파일 없거나 파싱 실패 = false (미발행). 모드 무관 단일 지점.
-fn read_publish_published(session_dir: &std::path::Path) -> bool {
-    let Ok(raw) = fs::read_to_string(session_dir.join("publish.json")) else {
-        return false;
-    };
-    serde_json::from_str::<serde_json::Value>(&raw)
-        .ok()
-        .and_then(|v| v.get("confluence")?.get("published")?.as_bool())
-        .unwrap_or(false)
-}
-
 /// transcribe.sh가 기록한 무음 판정. 파일 부재(기존 세션·정상 흐름)는 false.
 fn read_no_speech(session_dir: &std::path::Path) -> bool {
     let Ok(raw) = fs::read_to_string(session_dir.join("transcribe_result.json")) else {
@@ -2065,7 +1900,6 @@ pub struct SessionSteps {
     pub diarized: bool,
     pub corrected: bool,
     pub notes_written: bool,
-    pub published: bool,
     /// 녹음에 발화가 없어(무음) diarize·회의록을 건너뛴 세션.
     /// transcribe_result.json에서 파생. frontend가 "발화 없음" 상태 표시.
     pub no_speech: bool,
@@ -2122,9 +1956,6 @@ pub fn find_resumable_sessions() -> Result<Vec<ResumableSession>, String> {
             // 교정본 = LLM sub-agent + sidecar 적용 결과물 모두 존재해야 완료
             corrected: nonempty("transcript_corrected.txt") && nonempty("speaker_mapping.json"),
             notes_written: nonempty("meeting-notes.md"),
-            // 발행 마킹은 publish.json의 confluence.published 필드 (모드 무관 단일 지점).
-            // 1회성 마이그레이션(scripts/) 전 confluence-url.txt만 있는 세션은 false로 보임 — 의도.
-            published: read_publish_published(&path),
             no_speech: read_no_speech(&path),
         };
 
@@ -2188,11 +2019,11 @@ pub fn reset_session_to_recording(session_path: &str) -> Result<(), String> {
 }
 
 /// dev 전용: 화자분리까지 완료된 시점으로 세션 초기화 — 전사·화자분리 산출물은 보존하고
-/// `/meeting`(AI 후보정·회의록·발행) 산출물만 삭제한다. 회의록 작성 단계를 깨끗한 상태로
+/// `/meeting`(AI 후보정·회의록) 산출물만 삭제한다. 회의록 작성 단계를 깨끗한 상태로
 /// 다시 돌릴 때 사용(느린 전사·화자분리를 재실행하지 않아 defer 경로 테스트에 유용).
 pub fn reset_session_to_diarized(session_path: &str) -> Result<(), String> {
     // 보존: 녹음 시점 보존 목록 + 전사(segments/whisper/result)·화자분리(diarize/recording/transcript)
-    // 산출물 + 처리 로그. 삭제: transcript_corrected·*_edits·speaker_mapping·meeting-notes(.bak)·publish.
+    // 산출물 + 처리 로그. 삭제: transcript_corrected·*_edits·speaker_mapping·meeting-notes(.bak) 등.
     reset_session_keeping(
         session_path,
         &[

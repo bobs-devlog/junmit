@@ -15,7 +15,7 @@
     - `transcribe.sh`, `diarize.sh` — 전사/화자분리 파이프라인. 앱이 `bash`로 source해서 호출
     - `signal.sh` — macOS 알림/Tauri 신호 유틸 (`bash -c`로 호출)
     - `pyannote_diarize.py` — pyannote.audio 화자분리 실행 스크립트 (MPS GPU 가속)
-    - `local_meeting.py`, `local_rules.md` — 로컬 LLM 회의록 백엔드 (active_cli=`mlx`, AI 구독 없는 사용자용). Gemma 4 12B(Apache 2.0, mlx-vlm) 2종 — 표준(순수 4bit 6.8GB, 16GB Mac)/고품질(혼합 정밀도 11GB, 24GB+), 선택은 `~/Library/Application Support/app.junmit/local_model` 파일(Rust `cmd_set_local_model`이 기록, install.sh·python이 읽음). 파이프라인: 유형 자동 분류(auto 시) → 화자 매핑 준비(기존 매핑 보존 + 녹음 힌트 결정론 — LLM 제안은 실측 채택 0으로 제거, 팝오버 "AI 힌트"는 에이전트 CLI(claude/codex/antigravity) 경로 전용) → 초안(교정본 우선, 9k 토큰 초과 시 map-reduce, 사용자 메모 앵커) → 자기검증(전사 대조로 시제·상태·누락 교정) → 결정론 후처리(헤더 주입·라벨/추측 병기 정리). 에이전트 아님 — MCP·발행·assist 불가라 프론트가 게이팅(`cliHasAgent`). **실행은 PTY가 아니라 Rust `cmd_run_local_meeting`**(전사·화자분리와 같은 일반 서브프로세스 — stdout을 `local:output` 이벤트로 스트리밍해 진행 패널(LocalProgressPanel)에 표시, 완료/실패는 신호 파일 → app:signal). 모델 실측 근거는 memory `project_local_llm_spike` 참고
+    - `local_meeting.py`, `local_rules.md` — 로컬 LLM 회의록 백엔드 (active_cli=`mlx`, AI 구독 없는 사용자용). Gemma 4 12B(Apache 2.0, mlx-vlm) 2종 — 표준(순수 4bit 6.8GB, 16GB Mac)/고품질(혼합 정밀도 11GB, 24GB+), 선택은 `~/Library/Application Support/app.junmit/local_model` 파일(Rust `cmd_set_local_model`이 기록, install.sh·python이 읽음). 파이프라인: 유형 자동 분류(auto 시) → 화자 매핑 준비(기존 매핑 보존 + 녹음 힌트 결정론 — LLM 제안은 실측 채택 0으로 제거, 팝오버 "AI 힌트"는 에이전트 CLI(claude/codex/antigravity) 경로 전용) → 초안(교정본 우선, 9k 토큰 초과 시 map-reduce, 사용자 메모 앵커) → 자기검증(전사 대조로 시제·상태·누락 교정) → 결정론 후처리(헤더 주입·라벨/추측 병기 정리). 에이전트 아님 — MCP·assist 불가라 프론트가 게이팅(`cliHasAgent`). **실행은 PTY가 아니라 Rust `cmd_run_local_meeting`**(전사·화자분리와 같은 일반 서브프로세스 — stdout을 `local:output` 이벤트로 스트리밍해 진행 패널(LocalProgressPanel)에 표시, 완료/실패는 신호 파일 → app:signal). 모델 실측 근거는 memory `project_local_llm_spike` 참고
   - `resources/bin/` — 빌드된 sidecar 바이너리 + 동봉 (whisper-cli, diarize, whisper-parse, libNative.dylib, uv 등). gitignored
   - `resources/models/` — 앱 동봉 ML 모델 (pyannote 화자분리, CC-BY-4.0 — `build-binaries.sh`가 배치). gitignored. 덕분에 사용자는 HF 계정·토큰·게이트 동의가 불필요
   - `resources/install.sh` — 사용자 setup 진입점 (앱이 Setup 화면에서 실행)
@@ -24,7 +24,6 @@
   - `resources/.claude/skills/` — LLM 워크플로우 스킬
     - `meeting/SKILL.md` — 회의록 작성 (전사 교정·화자 식별·회의록 초안. 5단계 자동 처리)
     - `meeting/notes-rules.md` — 회의록 작성 공통 규칙 (자동 판단·품질 경고·sentinel·action items·결론 태그·free-form)
-    - `publish/SKILL.md` — Confluence 등록 (publish.json 기반 결정론적 + ADF 변환)
     - `assist/SKILL.md` — 회의록 작성 후 사용자 자유 추가 요청 (AskUserQuestion으로 의도 파악 + 회의록 직접 수정)
     - `template/SKILL.md` — 회의 유형 가이드 생성/조정 (앱 "회의 유형" 화면에서 진입. 자연어로 새 유형 생성·AI 대화로 조정. 입력은 `templates/.staging/request.json`, 결과는 `.staging/result.md`에 쓰고 `app_template_ready` 신호 → 앱 미리보기. `/assist`처럼 PTY 유지하며 대화로 다듬음)
   - `resources/.claude/CLAUDE.md` — 스킬 실행 시 사용자 친화 출력 규칙 (PTY cwd 기준 자동 로드. release 환경에서 IDE 컨텍스트로 새지 않음)
@@ -48,7 +47,7 @@
 
 | 파일 | 설명 |
 |------|------|
-| `recording.wav` | 녹음 (whisper 입력, 16k mono). 시스템 오디오 캡처 시 마이크↔시스템 RMS 상관으로 자동 분기: 헤드폰(에코 없음)=마이크+시스템 오프라인 믹스 / 스피커(원격이 마이크에 에코로 재유입)=마이크 단독(더블링·울림 회피). **회의 원본 오디오는 민감하므로 화자분리 완료 후 기본 자동 삭제**(전사·화자분리만 오디오를 쓰고 `/meeting`·발행은 텍스트만 씀; Granola식 프라이버시 기본). 숨은 개발자 플래그 `keep_recording` 센티넬(`~/Library/Application Support/app.junmit/keep_recording`, 존재만 체크)이 있으면 보존 — recording.wav 유지 + 분리트랙(스템)도 진단용 보존(재처리·믹스 진단·AEC 실험용, UI 없음, dev/release 동일) |
+| `recording.wav` | 녹음 (whisper 입력, 16k mono). 시스템 오디오 캡처 시 마이크↔시스템 RMS 상관으로 자동 분기: 헤드폰(에코 없음)=마이크+시스템 오프라인 믹스 / 스피커(원격이 마이크에 에코로 재유입)=마이크 단독(더블링·울림 회피). **회의 원본 오디오는 민감하므로 화자분리 완료 후 기본 자동 삭제**(전사·화자분리만 오디오를 쓰고 `/meeting`은 텍스트만 씀; Granola식 프라이버시 기본). 숨은 개발자 플래그 `keep_recording` 센티넬(`~/Library/Application Support/app.junmit/keep_recording`, 존재만 체크)이 있으면 보존 — recording.wav 유지 + 분리트랙(스템)도 진단용 보존(재처리·믹스 진단·AEC 실험용, UI 없음, dev/release 동일) |
 | `segments.json` | whisper 전사 세그먼트 (무음·크레딧 환각 필터 적용) |
 | `diarize.json` | 화자분리 결과 |
 | `transcript.txt` | 원본 전사본 ([SPEAKER_XX M:SS] text 형식) |
@@ -57,7 +56,6 @@
 | `notes.json` | 녹음 중 사용자 메모 (없을 수 있음). `notes` 배열 — `{ t(경과 초), kind }`. `kind`: `speaker`(+`speaker` 이름, 화자 힌트) / `text`(+`text`, 자유 메모). `/meeting`이 화자 매핑·회의록 작성에 활용 |
 | `meeting-notes.md` | 회의록 본문 (SPEAKER_XX 라벨 포함, LLM·사용자 공통 편집. 앱이 표시 시점에만 이름 치환) |
 | `speaker_mapping.json` | 화자 이름 매핑 (사용자 수정 가능, 단일 진실 원천) |
-| `publish.json` | 발행 설정·결과 (사용자 입력 + LLM 결과). `confluence.mode` (create/append/skip), `parentUrl`, `pageUrl`, `published` |
 
 ## 워크플로우
 
@@ -68,26 +66,15 @@
 4. 회의록 작성 (`~/Library/Application Support/app.junmit/templates/{type}.md` + `notes-rules.md` 적용)
 5. 완료 신호 (`app_phase_done`) — 앱 review 화면 전환, PTY 살림 (사용자 추가 요청 가능)
 
-### 2. 사용자 검토 + 발행 설정
-- 회의록 탭에서 본문 검토 + 화자 매핑 검증
-- 발행 탭에서 `publish.json` 입력 (mode 라디오 + parentUrl)
-
-### 3. `/publish {session_dir}` — Confluence 등록
-- `publish.json` 기반 결정론적 동작 (사용자 입력 안 받음)
-- mode `create`만 LLM 호출. `append`(클립보드 복사)·`skip`(건너뛰기)은 frontend가 직접 처리
-- SPEAKER_XX 치환 → ADF 변환 → `createConfluencePage` MCP → `publish.json.pageUrl`/`published` 갱신
-- 완료 신호 (`app_phase_done`)
-
-### 4. (옵션) Jira 티켓 생성
-- 추후 PR에서 `publish.json.jira` 필드 + `publish` 스킬에 Jira 단계 추가 예정
+### 2. 사용자 검토
+- 회의록 탭에서 본문 검토 + 화자 매핑 검증. 필요 시 탭 툴바 "복사"로 클립보드 복사(리치텍스트).
 
 ## 참고
 
 - **모든 출력과 대화는 한국어로 진행**
 - **스킬 실행 시 적용되는 공통 규칙은 [resources/.claude/CLAUDE.md](resources/.claude/CLAUDE.md) 참고** — 사용자 친화 출력 규칙(영문 용어 금지·TodoWrite 진행 표시·sub-agent 묶음 등). 이 파일은 앱 번들에도 동봉되어 release 환경에서 PTY가 자동 로드함
 - 전사본의 SPEAKER_XX 라벨은 자동 화자분리 결과이며 부정확할 수 있음
-- **Confluence 자동 발행(create 모드)은 claude/codex만 지원.** 이들은 CLI가 원격 MCP OAuth를 네이티브 지원해 junmit 전용 격리 config(claude `.claude.json` `{type:http,url:/v1/mcp}`·codex `config.toml`)에 URL만 베이크하면 되고, Node도 불필요. **antigravity는 아직 미지원(추후 예정)** — agy CLI가 원격 MCP OAuth를 실제로 못 한다(네이티브 `serverUrl`은 `initialize: Unauthorized`로 실패(실측, agy Issue #25), `npx mcp-remote`는 Node 의존이라 공개 배포엔 부적합). 그래서 junmit은 antigravity에 atlassian MCP를 등록하지 않고(`ensure_antigravity_trust`로 워크스페이스 신뢰만 베이크), 발행 모달이 antigravity·mlx의 create를 비활성화하고 "회의록 복사"(클립보드)로 유도한다. **향후**: agy CLI에 원격 MCP OAuth가 제대로 생기거나, junmit이 Atlassian OAuth 앱 심사를 거쳐 직접 REST 발행을 붙이면 전 백엔드(mlx 포함) 통합 가능. `append`(클립보드 복사)·`skip`은 전 CLI 공통(인증 불필요)
-- 참석자 이름은 자유 형식(영문·한글·풀네임 가능). 캘린더 참석자는 **이메일을 안정 식별자**로 삼아 표시 이름을 해결한다: ① 사용자 매핑 캐시(`~/Library/Application Support/app.junmit/attendee_names.json`, `{ "email": "name" }`) → ② EKParticipant.name(이메일꼴이 아니면) → ③ 이메일 local-part 휴리스틱(`. _ -` 분리·capitalize, 예: `bobs.kim@x.com` → `Bobs`) → ④ 이메일 그대로. MeetingSelector에서 이름을 인라인 편집하면 이메일에 귀속돼 다음 회의부터 자동 적용된다(EventKit displayName은 Google Workspace에서 이메일로 fallback되므로 신뢰하지 않음). Confluence `@mention`은 Atlassian 계정명과 일치하는 이름일수록 잘 해석되고, 안 맞으면 평문으로 graceful fallback
-- 회의 유형 가이드는 팀-중립으로 작성됩니다. 자기 팀/조직 컨텍스트(특정 Confluence space, 페이지 패턴, 결정사항 보고서 등)는 사용자 정의 유형을 추가해 가이드 본문에 적으세요.
+- 참석자 이름은 자유 형식(영문·한글·풀네임 가능). 캘린더 참석자는 **이메일을 안정 식별자**로 삼아 표시 이름을 해결한다: ① 사용자 매핑 캐시(`~/Library/Application Support/app.junmit/attendee_names.json`, `{ "email": "name" }`) → ② EKParticipant.name(이메일꼴이 아니면) → ③ 이메일 local-part 휴리스틱(`. _ -` 분리·capitalize, 예: `bobs.kim@x.com` → `Bobs`) → ④ 이메일 그대로. MeetingSelector에서 이름을 인라인 편집하면 이메일에 귀속돼 다음 회의부터 자동 적용된다(EventKit displayName은 Google Workspace에서 이메일로 fallback되므로 신뢰하지 않음)
+- 회의 유형 가이드는 팀-중립으로 작성됩니다. 자기 팀/조직 컨텍스트(페이지 패턴, 결정사항 보고서 등)는 사용자 정의 유형을 추가해 가이드 본문에 적으세요.
 - **유형 가이드 위치**: `~/Library/Application Support/app.junmit/templates/{name}.md` (단일 진실 원천). 첫 실행 시 `resources/templates/`의 시드(presentation/note/review)가 자동 복사됨. frontmatter는 `name`, `label`, `description`, `summary` 필드 사용 (`label`/`description`은 UI 버튼 표시용, `summary`는 multi-line block + auto 매칭 핵심). 본문엔 `## 예시 회의록`(샘플) 섹션 포함.
 - **유형 관리는 앱 "회의 유형" 화면**(마스터-디테일: 목록 → 상세): ① 자연어로 새 유형 **생성**(`/template` 스킬) ② 기존 유형을 AI 대화로 **조정** ③ 가이드 원문 **직접 편집** ④ 삭제. 저장 시 Rust 게이트(`cmd_commit_meeting_type`/`cmd_save_meeting_type`)가 frontmatter·예시 형식·slug·중복을 검증. 직접 파일 편집도 여전히 유효(단일 진실 원천). 삭제한 유형으로 작성됐던 과거 회의 재작성 시엔 `/meeting`이 free-form으로 graceful fallback.
