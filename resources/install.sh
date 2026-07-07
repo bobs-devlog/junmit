@@ -91,7 +91,8 @@ if [[ "$LOCAL_MODEL_NAME" == "gemma-4-12b-qat" ]]; then
 fi
 LOCAL_MODEL_DIR="$MODELS_DIR/mlx/$LOCAL_MODEL_NAME"
 # 로컬 AI 런타임 패키지 (base·model 모드 공유 — 버전 정책은 model 모드 설치부 주석 참조)
-MLX_RUNTIME_PKGS=("mlx-vlm~=0.6.3" "transformers~=5.12.1" "truststore" "hf_transfer~=0.1.9")
+# mlx-vlm·transformers는 == 정확 고정(~= 아님) — 범위 드리프트가 gemma4_unified 로딩을 깬다.
+MLX_RUNTIME_PKGS=("mlx-vlm==0.6.3" "transformers==5.12.1" "truststore" "hf_transfer~=0.1.9")
 
 # uv 바이너리 (앱 번들 또는 워크스페이스 bin/에 있음)
 UV="$SCRIPT_DIR/bin/uv"
@@ -118,9 +119,14 @@ if [[ "$INSTALL_MODE" == "model" ]]; then
   # 이미 설치돼 있으면 uv가 수 초 내 no-op.
   # Gemma 4(unified 아키텍처)는 mlx-lm 정식 릴리스가 아직 미지원 — mlx-vlm이 실행 경로 (2026-07 실측).
   info "로컬 AI 런타임(mlx-vlm) 설치 중..."
-  # transformers는 5.12 계열 고정 — 5.13.0이 mlx-lm 0.31의 토크나이저 등록(str 키)과 충돌해
-  # import 자체가 죽는다 (AttributeError: 'str' object has no attribute '__module__', 실측 2026-07-04).
-  # 5.12.1은 Qwen·Gemma 스모크 통과 실측. 상향은 mlx-lm/mlx-vlm 호환 확인 후 의도적으로.
+  # mlx-vlm·transformers는 == 정확 고정 (MLX_RUNTIME_PKGS). ~= 범위는 in-range 신버전이
+  # 새면서 gemma4_unified 프로세서 로딩을 깬다 — 실측 2026-07-07: mlx-vlm 0.6.4가 자체
+  # from_pretrained(video processor를 processor_config.json에서 내부 생성) 경로를 버려
+  # transformers AutoVideoProcessor로 빠지고, 그게 torchvision + video_preprocessor_config.json을
+  # 요구하는데 mlx-community 리포엔 그 파일이 없어 로드 실패. 0.6.3은 동일 모델·transformers로
+  # 정상(torchvision 불필요). transformers 5.13.0도 별건으로 깨짐 — mlx-lm 0.31 토크나이저 등록
+  # (str 키)과 충돌해 import 자체가 죽는다 (AttributeError: 'str' object has no attribute
+  # '__module__', 실측 2026-07-04). 상향은 mlx-lm/mlx-vlm 호환·gemma4_unified 로딩 실측 후 의도적으로.
   # truststore: python HTTP가 macOS 키체인을 신뢰하게 주입 — 사내 TLS 프록시(zscaler)가
   # 모델 CDN(us.aws.cdn.hf.co)을 가로채면 기본 인증서 묶음(certifi)으론 SSL 검증이 실패한다
   # (실측 2026-07-04: 주입 전 CERTIFICATE_VERIFY_FAILED / 주입 후 정상. curl·uv는 원래 키체인 사용).
