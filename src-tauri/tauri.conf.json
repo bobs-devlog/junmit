@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegui-org/nicegui-tauri/main/tauri2/src-tauri/.schema/tauri.conf.json",
   "productName": "Junmit",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "identifier": "app.junmit",
   "build": {
     "frontendDist": "../dist",
