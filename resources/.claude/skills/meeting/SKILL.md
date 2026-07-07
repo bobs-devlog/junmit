@@ -175,6 +175,16 @@ speaker_mapping.json + meeting-notes.md
   ```
   ❌ transcript.txt가 없습니다. 전사 단계를 먼저 완료해주세요.
   ```
+- **빈 전사 가드 (필수 — 지어내기 방지)**: `transcript_corrected.txt`(있으면) 또는 `transcript.txt`를 Read해 `[SPEAKER_XX M:SS]` 시각 마커를 뺀 **실제 발화 텍스트**를 확인하세요. 발화 내용이 사실상 없으면(마커만 있고 텍스트가 비었거나 공백뿐, 또는 의미 있는 발화가 몇 글자 수준) — 무음 녹음을 사용자가 escape hatch로 강제 진행한 경우 등 — **회의록을 작성하지 말고** 다음만 수행 후 종료하세요. 전사가 비어 있으면 회의 정보(제목·참석자)만으로 가짜 회의록을 지어내게 되므로, 판단이 애매하면 **작성하지 않는 쪽**을 택합니다:
+  1. `$SESSION_DIR/meeting.json`을 Read해 날짜·참석자를 확인
+  2. `$SESSION_DIR/meeting-notes.md`를 Write로 아래 플레이스홀더만 작성 (`{날짜}`는 meeting.json의 date, 참석자 줄은 attendees를 `@`접두로, 빈 배열이면 `- 참석자: -`):
+     ```markdown
+     - 날짜: {날짜}
+     - 참석자: @{이름1}, @{이름2}, ...
+
+     인식된 발화가 없어 회의록을 작성하지 못했습니다. 녹음에 음성이 제대로 담겼는지 확인해주세요.
+     ```
+  3. 5단계의 완료 신호(`app_phase_done` + `app_notify`)를 전송하고 종료 — 이후 단계(sub-agent·회의록 작성) 진행 금지. 사용자 출력은 `⚠️ 인식된 발화가 없어 회의록을 작성하지 않았습니다` 한 줄.
 - `$SESSION_DIR/transcript_corrected.txt`가 이미 있으면 이 단계를 건너뛰고 2단계로 진행하세요.
 
 ### 정밀 교정 여부 확인 (sub-agent 구성을 가름)

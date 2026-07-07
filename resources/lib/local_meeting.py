@@ -19,6 +19,23 @@ from pathlib import Path
 
 SPEAKER_RE = re.compile(r"SPEAKER_\d{2}")
 
+# 실질 발화 임계 — 전사에서 [SPEAKER_XX M:SS] 마커를 뺀 발화 텍스트가 이 미만이면 사실상
+# 빈 전사로 보고 회의록 생성을 건너뛴다. 무음 녹음을 escape hatch("그래도 회의록 작성하기")로
+# 강제 진행한 경우 등. 12B는 빈 전사 + 제목·참석자만으로 회의 전체를 confabulate하므로
+# (실측: 15초 무음 → 제목 "데이터 인사이트 세션"만 보고 SPEAKER_01~09 가짜 회의 생성),
+# 프롬프트 지침이 아닌 결정론 코드로 차단한다.
+# 스코프 주의 — 이 임계는 "빈 전사" 그물이지 환각 필터가 아니다. 문자 수로는 환각과 진짜
+# 발화를 못 가른다("시청해주셔서 감사합니다" 류 크레딧 환각은 15자 초과). 환각 방어는 상류가
+# 담당: transcribe.sh no_speech 볼륨 게이트(무음이면 프론트가 회의록 자체를 skip)+ whisper-parse
+# 무음구간/크레딧 denylist 필터. 여기까지 오는 건 사용자가 escape hatch로 강제 진행한 경우뿐.
+MIN_TRANSCRIPT_CHARS = 15
+TRANSCRIPT_MARKER_RE = re.compile(r"\[SPEAKER_\d{2}\s+\d+:\d{2}\]")
+
+
+def transcript_speech(raw: str) -> str:
+    """전사에서 [SPEAKER_XX M:SS] 마커를 제거한 실제 발화 텍스트(공백 정규화)."""
+    return re.sub(r"\s+", " ", TRANSCRIPT_MARKER_RE.sub("", raw)).strip()
+
 APP_DATA = Path.home() / "Library/Application Support/app.junmit"
 TEMPLATES = APP_DATA / "templates"
 VOCAB_FILE = APP_DATA / "vocabulary.json"
@@ -567,11 +584,6 @@ def main():
 
     # 이모지는 기존 스킬 출력 어휘(🎤 화자 / 📝 작성 / ✅ 완료)에 맞춘다 — 🧠류 의인화 지양.
     emit("📝 로컬 AI로 회의록을 작성합니다")
-    emit("   모델 로딩 중…")
-    try:
-        gen, tok = make_generator()
-    except Exception as e:
-        fail(f"로컬 AI 런타임/모델 로딩 실패: {e}")
 
     try:
         meta = json.loads((session / "meeting.json").read_text())
@@ -582,6 +594,26 @@ def main():
         raw = (corrected if corrected.exists() else session / "transcript.txt").read_text()
     except Exception as e:
         fail(f"회의 정보를 읽지 못했습니다: {e}")
+
+    # 빈 전사 가드 — 인식된 발화가 없으면 모델을 로드하지 않고 중단한다(지어내기 방지).
+    # 무음 판정을 escape hatch로 강제 진행한 경우 등. 결정론적이라 모델 상태와 무관하게 보장.
+    if len(transcript_speech(raw)) < MIN_TRANSCRIPT_CHARS:
+        emit("   인식된 발화가 없어 회의록을 작성하지 않았습니다")
+        try:
+            write_speaker_mapping(session, resolve_speakers(raw, meta.get("attendees", []), session))
+        except Exception:
+            pass
+        atomic_write(session / "meeting-notes.md", ensure_header(
+            "인식된 발화가 없어 회의록을 작성하지 못했습니다. 녹음에 음성이 제대로 담겼는지 확인해주세요.",
+            meta))
+        signal({"type": "phase_done"})
+        return
+
+    emit("   모델 로딩 중…")
+    try:
+        gen, tok = make_generator()
+    except Exception as e:
+        fail(f"로컬 AI 런타임/모델 로딩 실패: {e}")
 
     vocab = load_vocab()
 
