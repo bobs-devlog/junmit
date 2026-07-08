@@ -2,8 +2,8 @@
 // **회의 내용(제목·전사·회의록·참석자)은 절대 속성으로 넣지 않는다.** 카운트·카테고리·버킷만.
 // 사용자가 진단·사용 통계 수집을 끄면(telemetry_enabled=false) 전송하지 않는다.
 // dev 빌드에선 Aptabase 앱 키가 비어 있어(릴리스에서만 주입) 자연히 전송되지 않는다.
+// 전송은 Rust 플러그인 command를 invoke로 직접 호출한다 — npm `@aptabase/tauri`는 Tauri v1 전용이라 v2 앱과 호환되지 않음.
 
-import { trackEvent } from "@aptabase/tauri";
 import { invoke } from "@tauri-apps/api/core";
 import { logError } from "./logging";
 
@@ -28,7 +28,10 @@ export async function track(
 ): Promise<void> {
   try {
     if (!(await isEnabled())) return;
-    await trackEvent(name, props);
+    // Rust 플러그인(tauri-plugin-aptabase) command를 직접 호출한다.
+    // npm `@aptabase/tauri`는 Tauri v1 IPC(window.__TAURI_IPC__)만 써서 v2 앱에선 매번 실패 →
+    // v2 호환 경로인 invoke로 직접 부른다. 인자 이름(name/props)은 Rust command 시그니처와 일치.
+    await invoke("plugin:aptabase|track_event", { name, props: props ?? null });
   } catch (e) {
     logError("analytics", e);
   }
