@@ -11,7 +11,7 @@ export async function saveRecording(
   meeting: Meeting | null,
   cancelGetter: () => boolean,
   notes: MeetingNote[] = []
-): Promise<string | null> {
+): Promise<{ dir: string; captureMode: string } | null> {
   const title = meeting?.title || "회의";
   const attendees = meeting?.attendees || [];
   const dir = await invoke<string>("cmd_create_session", {
@@ -25,7 +25,8 @@ export async function saveRecording(
   });
   if (cancelGetter()) return null;
 
-  await invoke<void>("cmd_save_recording", { sessionDir: dir });
+  // convert가 실측으로 결정한 캡처 모드("mic"/"mic+system")를 반환 — 사용량 이벤트에 첨부한다.
+  const captureMode = await invoke<string>("cmd_save_recording", { sessionDir: dir });
   if (cancelGetter()) return null;
 
   // 녹음본 저장이 끝난 뒤 메모를 notes.json으로 flush — 더 중요한 녹음본을 먼저 안전하게 보존.
@@ -40,5 +41,5 @@ export async function saveRecording(
     });
   }
 
-  return dir;
+  return { dir, captureMode };
 }

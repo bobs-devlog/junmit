@@ -18,6 +18,8 @@ import { DEFAULT_DURATION_MIN, Activity, MIC_PRIVACY_SETTINGS_URL } from "@/cons
 import { saveRecording } from "@/utils/saveRecording";
 import { MIC_PERMISSION_DENIED } from "@/hooks/useRecorder";
 import { hideReminderWindow } from "@/utils/reminderWindow";
+import { logError } from "@/utils/logging";
+import { track, durationBucket } from "@/utils/analytics";
 import { invoke } from "@tauri-apps/api/core";
 import styles from "@/App.module.css";
 
@@ -86,6 +88,7 @@ export default function RecordingScreen() {
     (async () => {
       try {
         await recorder.start();
+        void track("recording_started");
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
         if (cancelled) return;
@@ -106,7 +109,7 @@ export default function RecordingScreen() {
             try {
               await invoke<void>("cmd_open_path", { path: MIC_PRIVACY_SETTINGS_URL });
             } catch (openErr) {
-              console.error("설정 열기 실패", openErr);
+              logError("RecordingScreen.openSettings", openErr);
               toast.error(
                 "시스템 설정을 열지 못했어요. 설정 > 개인정보 보호 및 보안 > 마이크에서 직접 허용해 주세요."
               );
@@ -121,14 +124,15 @@ export default function RecordingScreen() {
             if (retry && !cancelled) {
               try {
                 await recorder.start();
+                void track("recording_started");
                 return; // 재시도 성공 — 녹음 진행
               } catch (retryErr) {
-                console.error("마이크 재시도 실패", retryErr);
+                logError("RecordingScreen.micRetry", retryErr);
               }
             }
           }
         } else {
-          console.error("마이크 접근 실패", err);
+          logError("RecordingScreen.micAccess", err);
           toast.error("마이크에 접근하지 못했어요. 다시 시도해 주세요.");
         }
         resetSession();
@@ -147,6 +151,7 @@ export default function RecordingScreen() {
     // reminder가 떠있는 상태에서 사이드바로 종료할 때 잠시 잔존하는 걸 방지.
     void hideReminderWindow();
     markSavingStarted();
+    const elapsedSec = recorder.elapsed; // stop 후 리셋되기 전에 캡처
     const captured = await recorder.stop();
     if (!captured || isCancelled()) {
       if (!isCancelled()) {
@@ -156,11 +161,16 @@ export default function RecordingScreen() {
       return;
     }
     try {
-      const dir = await saveRecording(meeting, isCancelled, notesRef.current);
-      if (!dir || isCancelled()) return;
-      finishRecording(dir);
+      const saved = await saveRecording(meeting, isCancelled, notesRef.current);
+      if (!saved || isCancelled()) return;
+      void track("recording_completed", {
+        duration_bucket: durationBucket(elapsedSec),
+        capture_mode: saved.captureMode,
+      });
+      finishRecording(saved.dir);
       navigate("/session", { replace: true });
     } catch (e) {
+      logError("RecordingScreen.saveRecording", e);
       toast.error(`저장 실패: ${e}`);
       resetSession();
       navigate("/", { replace: true });

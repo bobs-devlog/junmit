@@ -35,7 +35,18 @@ bash scripts/build-binaries.sh
 info "Codex 스킬 산출물 생성 (gen-agent-skills)"
 bash scripts/gen-agent-skills.sh
 
-# === 4. Tauri 빌드 (frontend + Rust + bundle) ===
+# === 4. 텔레메트리 키 주입 (선택) ===
+# 로컬 dmg에도 Sentry/Aptabase를 담고 싶을 때만. gitignore된 .env.release가 있으면 로드한다.
+# 없으면 빈 키로 빌드(원격 전송 없음) — 검증용 dmg엔 이걸로 충분하다.
+# JUNMIT_SENTRY_DSN / JUNMIT_APTABASE_KEY는 option_env!이 컴파일 시 읽으므로,
+# 값이 바뀌어도 소스가 그대로면 cargo가 재컴파일을 안 할 수 있어 main.rs를 touch해 강제한다.
+if [[ -f .env.release ]]; then
+  info "로컬 텔레메트리 키 로드 (.env.release)"
+  set -a; source .env.release; set +a
+  touch src-tauri/src/main.rs
+fi
+
+# === 5. Tauri 빌드 (frontend + Rust + bundle) ===
 info "Tauri 빌드 시작"
 npm run tauri build
 ok "Tauri 빌드 완료"

@@ -6,6 +6,7 @@ import { useRecorderContext } from "@/contexts/RecorderContext";
 import { Activity, isCli } from "@/constants";
 import { saveRecording } from "@/utils/saveRecording";
 import { routeAfterCliSelected } from "@/utils/bootstrap";
+import { track } from "@/utils/analytics";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { sendNotification } from "@/utils/notification";
@@ -36,6 +37,7 @@ export default function AppShell() {
   // deps.installed(bin+venv+whisper)와 pyannote 모델 캐시가 모두 있어야 정상 진입.
   useEffect(() => {
     let cancelled = false;
+    void track("app_started");
     invoke<string>("cmd_get_signal_dir")
       .then((dir) => {
         if (!cancelled) session.setSignalDir(dir);

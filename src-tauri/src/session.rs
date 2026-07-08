@@ -259,6 +259,28 @@ pub fn write_detailed_default(on: bool) -> Result<(), String> {
         .map_err(|e| format!("detailed_correction 기본값 쓰기 실패: {e}"))
 }
 
+/// 진단·사용 통계(텔레메트리) 수집 동의 — 익명 에러/사용 이벤트를 원격 전송할지.
+/// **기본 ON**(부재/그 외=ON, "0"일 때만 OFF). 로컬 파일 로그는 이 토글과 무관하게 항상 남는다.
+/// 회의 내용(전사·회의록·제목)은 이 값이 ON이어도 절대 전송하지 않는다.
+fn telemetry_enabled_path() -> PathBuf {
+    app_data_dir().join("telemetry_enabled")
+}
+
+pub fn read_telemetry_enabled() -> bool {
+    fs::read_to_string(telemetry_enabled_path())
+        .map(|s| s.trim() != "0")
+        .unwrap_or(true)
+}
+
+pub fn write_telemetry_enabled(on: bool) -> Result<(), String> {
+    let path = telemetry_enabled_path();
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    fs::write(&path, if on { "1" } else { "0" })
+        .map_err(|e| format!("telemetry_enabled 쓰기 실패: {e}"))
+}
+
 // 워크스페이스 신뢰 베이크(ensure_antigravity_trust)는 /meeting·/assist spawn에 필요하므로 유지.
 
 /// codex 스킬 실행 전용 CODEX_HOME — 사용자 개인 `~/.codex`(플러그인·hooks·trust 가득)와
@@ -294,21 +316,21 @@ pub fn ensure_antigravity_trust(app: &tauri::AppHandle) {
         Ok(s) => match serde_json::from_str(&s) {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("antigravity settings.json 파싱 실패 — 불간섭: {e}");
+                log::warn!("antigravity settings.json 파싱 실패 — 불간섭: {e}");
                 return;
             }
         },
         Err(_) => serde_json::json!({}),
     };
     let Some(obj) = root.as_object_mut() else {
-        eprintln!("antigravity settings.json 루트가 객체가 아님 — 불간섭");
+        log::warn!("antigravity settings.json 루트가 객체가 아님 — 불간섭");
         return;
     };
     let list = obj
         .entry("trustedWorkspaces")
         .or_insert_with(|| serde_json::json!([]));
     let Some(arr) = list.as_array_mut() else {
-        eprintln!("antigravity trustedWorkspaces가 배열이 아님 — 불간섭");
+        log::warn!("antigravity trustedWorkspaces가 배열이 아님 — 불간섭");
         return;
     };
     let mut changed = false;
@@ -328,15 +350,15 @@ pub fn ensure_antigravity_trust(app: &tauri::AppHandle) {
         Ok(s) => {
             let tmp = path.with_extension("json.junmit-tmp");
             if let Err(e) = fs::write(&tmp, s) {
-                eprintln!("antigravity settings.json 임시 쓰기 실패: {e}");
+                log::warn!("antigravity settings.json 임시 쓰기 실패: {e}");
                 return;
             }
             if let Err(e) = fs::rename(&tmp, &path) {
-                eprintln!("antigravity settings.json 교체 실패: {e}");
+                log::warn!("antigravity settings.json 교체 실패: {e}");
                 let _ = fs::remove_file(&tmp);
             }
         }
-        Err(e) => eprintln!("antigravity settings.json 직렬화 실패: {e}"),
+        Err(e) => log::warn!("antigravity settings.json 직렬화 실패: {e}"),
     }
 }
 
@@ -351,7 +373,7 @@ pub fn ensure_antigravity_trust(app: &tauri::AppHandle) {
 pub fn ensure_codex_home(app: &tauri::AppHandle) {
     let home = codex_home();
     if let Err(e) = fs::create_dir_all(&home) {
-        eprintln!("codex home 생성 실패({}): {e}", home.display());
+        log::warn!("codex home 생성 실패({}): {e}", home.display());
         return;
     }
 
@@ -365,7 +387,7 @@ pub fn ensure_codex_home(app: &tauri::AppHandle) {
     let config_path = home.join("config.toml");
     let existing = fs::read_to_string(&config_path).unwrap_or_default();
     let cur_path = resource_dir(app)
-        .map_err(|e| eprintln!("resource_dir 확인 실패(트러스트 베이크 생략): {e}"))
+        .map_err(|e| log::warn!("resource_dir 확인 실패(트러스트 베이크 생략): {e}"))
         .ok()
         .map(|p| p.display().to_string());
     let mut trusted: Vec<String> = existing
@@ -425,7 +447,7 @@ max_depth = 1
 {trust}"
     );
     if let Err(e) = fs::write(&config_path, config) {
-        eprintln!("codex config.toml 쓰기 실패: {e}");
+        log::warn!("codex config.toml 쓰기 실패: {e}");
     }
 }
 
@@ -472,7 +494,7 @@ fn claude_project_key(app: &tauri::AppHandle) -> Option<String> {
 pub fn ensure_claude_config_dir(app: &tauri::AppHandle) {
     let dir = claude_config_dir();
     if let Err(e) = fs::create_dir_all(&dir) {
-        eprintln!("claude config dir 생성 실패({}): {e}", dir.display());
+        log::warn!("claude config dir 생성 실패({}): {e}", dir.display());
         return;
     }
 
@@ -491,7 +513,7 @@ pub fn ensure_claude_config_dir(app: &tauri::AppHandle) {
             Ok(s) => match serde_json::from_str(&s) {
                 Ok(v) => v,
                 Err(e) => {
-                    eprintln!("claude settings.json 파싱 실패(베이크 생략): {e}");
+                    log::warn!("claude settings.json 파싱 실패(베이크 생략): {e}");
                     serde_json::Value::Null
                 }
             },
@@ -574,7 +596,7 @@ pub fn ensure_claude_config_dir(app: &tauri::AppHandle) {
                 match serde_json::to_string_pretty(&settings) {
                     Ok(j) => {
                         if let Err(e) = fs::write(&settings_path, j) {
-                            eprintln!("claude settings.json 쓰기 실패: {e}");
+                            log::warn!("claude settings.json 쓰기 실패: {e}");
                         } else {
                             // .claude.json과 동일하게 0600 — 일관성.
                             #[cfg(unix)]
@@ -587,11 +609,11 @@ pub fn ensure_claude_config_dir(app: &tauri::AppHandle) {
                             }
                         }
                     }
-                    Err(e) => eprintln!("claude settings.json 직렬화 실패: {e}"),
+                    Err(e) => log::warn!("claude settings.json 직렬화 실패: {e}"),
                 }
             }
         } else {
-            eprintln!("claude settings.json 루트가 객체가 아님(베이크 생략)");
+            log::warn!("claude settings.json 루트가 객체가 아님(베이크 생략)");
         }
     }
 
@@ -600,14 +622,14 @@ pub fn ensure_claude_config_dir(app: &tauri::AppHandle) {
         Ok(s) => match serde_json::from_str(&s) {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("claude .claude.json 파싱 실패(베이크 생략): {e}");
+                log::warn!("claude .claude.json 파싱 실패(베이크 생략): {e}");
                 return;
             }
         },
         Err(_) => serde_json::json!({}),
     };
     let Some(root) = config.as_object_mut() else {
-        eprintln!("claude .claude.json 루트가 객체가 아님(베이크 생략)");
+        log::warn!("claude .claude.json 루트가 객체가 아님(베이크 생략)");
         return;
     };
 
@@ -676,12 +698,12 @@ pub fn ensure_claude_config_dir(app: &tauri::AppHandle) {
     let json = match serde_json::to_string_pretty(&config) {
         Ok(j) => j,
         Err(e) => {
-            eprintln!("claude .claude.json 직렬화 실패: {e}");
+            log::warn!("claude .claude.json 직렬화 실패: {e}");
             return;
         }
     };
     if let Err(e) = fs::write(&config_path, json) {
-        eprintln!("claude .claude.json 쓰기 실패: {e}");
+        log::warn!("claude .claude.json 쓰기 실패: {e}");
         return;
     }
     // claude 자신이 만드는 파일과 동일하게 0600 — 로그인 후 계정 메타가 기록되는 파일.
@@ -1106,7 +1128,7 @@ pub fn cleanup_recording_audio(session_dir: &str) {
     let wav = PathBuf::from(session_dir).join("recording.wav");
     if wav.exists() {
         if let Err(e) = fs::remove_file(&wav) {
-            eprintln!("recording.wav 정리 실패(무시): {e}");
+            log::warn!("recording.wav 정리 실패(무시): {e}");
         }
     }
 }
@@ -1758,7 +1780,7 @@ fn convert_mic_only(ffmpeg: &std::path::Path, mic_path: &std::path::Path, wav_pa
 ///      tap을 섞으면 더블링/울림(comb-filter)으로 전사가 망가지므로(실측) 더블링을 원천 회피.
 ///   3. 원격 있음 + 마이크에 에코 없음(헤드폰) → 마이크+시스템 오프라인 믹스(loudnorm, capture_mode=mic+system).
 ///      tap이 유일한 원격 소스.
-pub fn convert_recording(app: &tauri::AppHandle, session_dir: &str) -> Result<(), String> {
+pub fn convert_recording(app: &tauri::AppHandle, session_dir: &str) -> Result<String, String> {
     let session_path = PathBuf::from(session_dir);
     let mic_path = mic_staging_path();
     let wav_path = session_path.join("recording.wav");
@@ -1774,7 +1796,7 @@ pub fn convert_recording(app: &tauri::AppHandle, session_dir: &str) -> Result<()
     // byte 임계로 "캡처 미전달"(거부)과 "캡처됨(무음 포함)"을 가른다 — 무음은 섞어도 무해(mic+0=mic).
     let staging_has_audio = fs::metadata(&staging).map(|m| m.len() > 4096).unwrap_or(false);
 
-    if staging_has_audio {
+    let mode = if staging_has_audio {
         // 분류: (1) 시스템에 실제 원격 발화가 있나(없으면 대면/무음 → 마이크만, 에코·믹스 로직 안 탐),
         // (2) 있으면 마이크가 그걸 에코로 담나(스피커 → 마이크만 / 헤드폰 → 믹스). 판정용 16k mono raw 추출.
         let mic_raw = session_path.join("~mic16.raw");
@@ -1857,19 +1879,17 @@ pub fn convert_recording(app: &tauri::AppHandle, session_dir: &str) -> Result<()
         let _ = fs::remove_file(&mic_path);
         let _ = fs::remove_file(&staging);
         // 원격이 결과에 포함되면 mic+system, 대면/무음이면 mic.
-        set_capture_mode(
-            &session_path,
-            if has_remote { CAPTURE_MODE_MIC_SYSTEM } else { CAPTURE_MODE_MIC },
-        );
+        if has_remote { CAPTURE_MODE_MIC_SYSTEM } else { CAPTURE_MODE_MIC }
     } else {
         // 마이크만 — 시스템 오디오 미포착(거부·무음·대면).
         convert_mic_only(&ffmpeg, &mic_path, &wav_path)?;
         let _ = fs::remove_file(&mic_path);
         let _ = fs::remove_file(&staging);
-        set_capture_mode(&session_path, CAPTURE_MODE_MIC);
-    }
-
-    Ok(())
+        CAPTURE_MODE_MIC
+    };
+    // convert가 실측으로 결정한 캡처 모드를 meeting.json에 기록하고, 호출부(사용량 이벤트)로도 반환.
+    set_capture_mode(&session_path, mode);
+    Ok(mode.to_string())
 }
 
 /// meeting.json의 capture_mode 필드만 patch (다른 필드 보존). 실패는 비치명적.

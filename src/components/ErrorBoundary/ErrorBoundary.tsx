@@ -1,5 +1,6 @@
 import { Component } from "react";
-import type { ReactNode } from "react";
+import type { ErrorInfo, ReactNode } from "react";
+import { logError } from "@/utils/logging";
 import styles from "./ErrorBoundary.module.css";
 
 interface ErrorBoundaryProps {
@@ -19,6 +20,11 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { error };
+  }
+
+  // 파일 로그에 기록 — 원격(Sentry)은 @sentry/browser가 자동 후킹하므로 별도 전송 불필요.
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    logError("ErrorBoundary", `${error.message}\n${info.componentStack ?? ""}`);
   }
 
   render() {

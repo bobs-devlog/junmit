@@ -22,6 +22,8 @@ resources/AGENTS.md
 output/
 output_backup_*/
 
+.env.*
+
 # OS
 .DS_Store
 *.log

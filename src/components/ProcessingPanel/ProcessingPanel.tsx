@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { SessionSteps } from "@/types";
 import Spinner from "@/components/Spinner";
+import { track } from "@/utils/analytics";
 import styles from "./ProcessingPanel.module.css";
 
 // ANSI 이스케이프 코드 제거
@@ -107,6 +108,7 @@ export default function ProcessingPanel({
             step: step.id,
           });
           setStepStatus((prev) => ({ ...prev, [step.id]: "done" }));
+          void track("pipeline_completed", { step: step.id });
           // 단계별 완료를 부모에 통지 — SessionContext가 setSteps 업데이트하여 사이드바 stepper ✓ 즉시 반영.
           onStepDone?.(step.id);
 
@@ -133,6 +135,7 @@ export default function ProcessingPanel({
           }
         } catch (e) {
           setStepStatus((prev) => ({ ...prev, [step.id]: "error" }));
+          void track("pipeline_failed", { step: step.id });
           onError?.(`${step.label} 실패: ${e}`);
           return;
         }

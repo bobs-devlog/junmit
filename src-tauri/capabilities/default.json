@@ -29,6 +29,9 @@
     "notification:allow-notify",
     "notification:allow-show",
     "updater:default",
-    "process:allow-restart"
+    "process:allow-restart",
+    "log:default",
+    "sentry:default",
+    "aptabase:allow-track-event"
   ]
 }
