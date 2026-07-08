@@ -1780,7 +1780,7 @@ fn convert_mic_only(ffmpeg: &std::path::Path, mic_path: &std::path::Path, wav_pa
 ///      tap을 섞으면 더블링/울림(comb-filter)으로 전사가 망가지므로(실측) 더블링을 원천 회피.
 ///   3. 원격 있음 + 마이크에 에코 없음(헤드폰) → 마이크+시스템 오프라인 믹스(loudnorm, capture_mode=mic+system).
 ///      tap이 유일한 원격 소스.
-pub fn convert_recording(app: &tauri::AppHandle, session_dir: &str) -> Result<(), String> {
+pub fn convert_recording(app: &tauri::AppHandle, session_dir: &str) -> Result<String, String> {
     let session_path = PathBuf::from(session_dir);
     let mic_path = mic_staging_path();
     let wav_path = session_path.join("recording.wav");
@@ -1796,7 +1796,7 @@ pub fn convert_recording(app: &tauri::AppHandle, session_dir: &str) -> Result<()
     // byte 임계로 "캡처 미전달"(거부)과 "캡처됨(무음 포함)"을 가른다 — 무음은 섞어도 무해(mic+0=mic).
     let staging_has_audio = fs::metadata(&staging).map(|m| m.len() > 4096).unwrap_or(false);
 
-    if staging_has_audio {
+    let mode = if staging_has_audio {
         // 분류: (1) 시스템에 실제 원격 발화가 있나(없으면 대면/무음 → 마이크만, 에코·믹스 로직 안 탐),
         // (2) 있으면 마이크가 그걸 에코로 담나(스피커 → 마이크만 / 헤드폰 → 믹스). 판정용 16k mono raw 추출.
         let mic_raw = session_path.join("~mic16.raw");
@@ -1879,19 +1879,17 @@ pub fn convert_recording(app: &tauri::AppHandle, session_dir: &str) -> Result<()
         let _ = fs::remove_file(&mic_path);
         let _ = fs::remove_file(&staging);
         // 원격이 결과에 포함되면 mic+system, 대면/무음이면 mic.
-        set_capture_mode(
-            &session_path,
-            if has_remote { CAPTURE_MODE_MIC_SYSTEM } else { CAPTURE_MODE_MIC },
-        );
+        if has_remote { CAPTURE_MODE_MIC_SYSTEM } else { CAPTURE_MODE_MIC }
     } else {
         // 마이크만 — 시스템 오디오 미포착(거부·무음·대면).
         convert_mic_only(&ffmpeg, &mic_path, &wav_path)?;
         let _ = fs::remove_file(&mic_path);
         let _ = fs::remove_file(&staging);
-        set_capture_mode(&session_path, CAPTURE_MODE_MIC);
-    }
-
-    Ok(())
+        CAPTURE_MODE_MIC
+    };
+    // convert가 실측으로 결정한 캡처 모드를 meeting.json에 기록하고, 호출부(사용량 이벤트)로도 반환.
+    set_capture_mode(&session_path, mode);
+    Ok(mode.to_string())
 }
 
 /// meeting.json의 capture_mode 필드만 patch (다른 필드 보존). 실패는 비치명적.

@@ -88,6 +88,7 @@ export default function RecordingScreen() {
     (async () => {
       try {
         await recorder.start();
+        void track("recording_started");
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
         if (cancelled) return;
@@ -123,6 +124,7 @@ export default function RecordingScreen() {
             if (retry && !cancelled) {
               try {
                 await recorder.start();
+                void track("recording_started");
                 return; // 재시도 성공 — 녹음 진행
               } catch (retryErr) {
                 logError("RecordingScreen.micRetry", retryErr);
@@ -159,10 +161,13 @@ export default function RecordingScreen() {
       return;
     }
     try {
-      const dir = await saveRecording(meeting, isCancelled, notesRef.current);
-      if (!dir || isCancelled()) return;
-      void track("recording_completed", { duration_bucket: durationBucket(elapsedSec) });
-      finishRecording(dir);
+      const saved = await saveRecording(meeting, isCancelled, notesRef.current);
+      if (!saved || isCancelled()) return;
+      void track("recording_completed", {
+        duration_bucket: durationBucket(elapsedSec),
+        capture_mode: saved.captureMode,
+      });
+      finishRecording(saved.dir);
       navigate("/session", { replace: true });
     } catch (e) {
       logError("RecordingScreen.saveRecording", e);

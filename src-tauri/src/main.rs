@@ -564,7 +564,7 @@ fn cmd_clear_staged_meeting_type() -> Result<(), String> {
 // 측정이 더해져 ~1분) 반드시 async — sync면 메인 스레드 freeze 발생. 프론트는 saving 상태로 가림.
 // 마이크·시스템 오디오 모두 녹음 중 app_data_dir 스테이징에 네이티브가 직접 기록하므로 경로 인자가 없다.
 #[tauri::command]
-async fn cmd_save_recording(app: tauri::AppHandle, session_dir: String) -> Result<(), String> {
+async fn cmd_save_recording(app: tauri::AppHandle, session_dir: String) -> Result<String, String> {
     session::convert_recording(&app, &session_dir)
 }
 
