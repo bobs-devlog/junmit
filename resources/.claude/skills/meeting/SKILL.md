@@ -376,7 +376,7 @@ bash -c 'source "$APP_DIR/lib/signal.sh" && app_phase_step_done correct'
    bash -c 'source "$APP_DIR/lib/signal.sh" && app_phase_done'
    ```
 
-   > 앱은 이 신호를 받아도 PTY는 종료하지 않습니다. 사용자가 결과 검토 중 추가 질문·개선 요청을 하면 같은 PTY에서 그대로 응답하세요.
+   > 앱은 이 신호를 받아도 PTY는 종료하지 않습니다. 사용자가 결과 검토 중 추가 질문·개선 요청을 하면 같은 PTY에서 그대로 응답하세요. **이후 요청으로 세션 파일(`meeting-notes.md` 등)을 수정했다면 [.claude/CLAUDE.md](../../CLAUDE.md)의 "세션 파일 수정 공통 규칙"을 따르세요 — 대규모 수정 전 백업 + 수정 후 매번 `app_refresh`. 신호가 없으면 앱 화면에 수정 결과가 반영되지 않습니다.**
 
 2. macOS 알림 전송 (사용자가 다른 앱에 있을 수 있으므로):
    ```bash

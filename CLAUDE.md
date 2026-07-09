@@ -26,7 +26,7 @@
     - `meeting/notes-rules.md` — 회의록 작성 공통 규칙 (자동 판단·품질 경고·sentinel·action items·결론 태그·free-form)
     - `assist/SKILL.md` — 회의록 작성 후 사용자 자유 추가 요청 (AskUserQuestion으로 의도 파악 + 회의록 직접 수정)
     - `template/SKILL.md` — 회의 유형 가이드 생성/조정 (앱 "회의 유형" 화면에서 진입. 자연어로 새 유형 생성·AI 대화로 조정. 입력은 `templates/.staging/request.json`, 결과는 `.staging/result.md`에 쓰고 `app_template_ready` 신호 → 앱 미리보기. `/assist`처럼 PTY 유지하며 대화로 다듬음)
-  - `resources/.claude/CLAUDE.md` — 스킬 실행 시 사용자 친화 출력 규칙 (PTY cwd 기준 자동 로드. release 환경에서 IDE 컨텍스트로 새지 않음)
+  - `resources/.claude/CLAUDE.md` — 스킬 실행 시 사용자 친화 출력 규칙 + 세션 파일 수정 공통 규칙(수정 후 `app_refresh`·대규모 수정 전 백업) (PTY cwd 기준 자동 로드. release 환경에서 IDE 컨텍스트로 새지 않음)
 
 ### 디렉토리 정책 (새 파일 추가 시)
 
@@ -72,7 +72,7 @@
 ## 참고
 
 - **모든 출력과 대화는 한국어로 진행**
-- **스킬 실행 시 적용되는 공통 규칙은 [resources/.claude/CLAUDE.md](resources/.claude/CLAUDE.md) 참고** — 사용자 친화 출력 규칙(영문 용어 금지·TodoWrite 진행 표시·sub-agent 묶음 등). 이 파일은 앱 번들에도 동봉되어 release 환경에서 PTY가 자동 로드함
+- **스킬 실행 시 적용되는 공통 규칙은 [resources/.claude/CLAUDE.md](resources/.claude/CLAUDE.md) 참고** — 사용자 친화 출력 규칙(영문 용어 금지·TodoWrite 진행 표시·sub-agent 묶음 등) + 세션 파일 수정 공통 규칙(phase 신호 없는 수정 후 `app_refresh` 필수·대규모 수정 전 백업). 이 파일은 앱 번들에도 동봉되어 release 환경에서 PTY가 자동 로드함
 - 전사본의 SPEAKER_XX 라벨은 자동 화자분리 결과이며 부정확할 수 있음
 - 참석자 이름은 자유 형식(영문·한글·풀네임 가능). 캘린더 참석자는 **이메일을 안정 식별자**로 삼아 표시 이름을 해결한다: ① 사용자 매핑 캐시(`~/Library/Application Support/app.junmit/attendee_names.json`, `{ "email": "name" }`) → ② EKParticipant.name(이메일꼴이 아니면) → ③ 이메일 local-part 휴리스틱(`. _ -` 분리·capitalize, 예: `bobs.kim@x.com` → `Bobs`) → ④ 이메일 그대로. MeetingSelector에서 이름을 인라인 편집하면 이메일에 귀속돼 다음 회의부터 자동 적용된다(EventKit displayName은 Google Workspace에서 이메일로 fallback되므로 신뢰하지 않음)
 - 회의 유형 가이드는 팀-중립으로 작성됩니다. 자기 팀/조직 컨텍스트(페이지 패턴, 결정사항 보고서 등)는 사용자 정의 유형을 추가해 가이드 본문에 적으세요.
