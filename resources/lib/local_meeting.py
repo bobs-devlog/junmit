@@ -218,6 +218,11 @@ def write_note_mapreduce(gen, tok, session, raw, attendees):
         user = (
             "아래 회의 전사 구간의 핵심을 간결한 항목으로 정리하세요.\n"
             "- 논의 요점·결정·할 일 중심. 출석·인사·잡담 제외.\n"
+            "- 결론만 뽑지 말고, 그 결론의 이유·근거·우려가 전사에 언급됐으면 같은 항목에 한 줄로 병기.\n"
+            "- 같은 쟁점에 대한 여러 의견은 쟁점 단위로 묶어 정리.\n"
+            "- 질문과 그에 대한 답변은 한 항목에 쌍으로 묶어 기록(질문만·답변만 따로 남기지 말 것). "
+            "쌍으로 묶을 때도 발화자가 확실하면 SPEAKER_XX 라벨을 유지.\n"
+            "- 구간 안에서 결론이 바뀌면 최종 상태를 기록하되 '당초 A → 논의 후 B로 변경'처럼 변경 사실을 남길 것.\n"
             f"{memo_line}"
             "- 명시적으로 합의된 것만 '결정:'으로, 결론 없이 미룬 것은 '보류:'로 표시.\n"
             "- 예정/진행 중/완료 상태를 전사 그대로 유지(예정을 완료로 바꾸지 말 것).\n"
@@ -235,7 +240,7 @@ def write_note_mapreduce(gen, tok, session, raw, attendees):
         return ""
     emit("   구간 요약을 모아 회의록 작성 중…")
     try:
-        note = gen(NOTE_SYS, build_note_prompt(session, merged),
+        note = gen(NOTE_SYS, build_note_prompt(session, merged, reduce=True),
                    max_tokens=NOTE_MAX_TOKENS, temp=0.25, echo=True)
     except Exception:
         return clean_output(merged)
@@ -263,13 +268,21 @@ def verify_note(gen, tok, note, transcript, vocab, memos=None):
         "- 전사에서 명시적으로 정해진 결정·할 일·담당(SPEAKER_XX)이 초안에 빠졌으면 추가하기."
         f"{m}\n"
         "- 초안의 '결정' 항목 각각에 대해: 전사에서 합의가 선언된 발화를 찾을 수 없으면 보류로 바꾸거나 삭제하기. "
-        "특히 담당 배정(누가 무엇을 맡음)은 전사에 그 배정 발화가 실제로 있을 때만 남기기.\n"
+        "특히 담당 배정(누가 무엇을 맡음)은 전사에 그 배정 발화가 실제로 있을 때만 남기기. "
+        "보류로 바꿀 때는 문장도 보류 서술로 고치기 — '~하기로 확정/합의했다'는 문장에 보류 표기를 "
+        "붙이는 모순 금지(합의 발화가 있으면 결정 유지, 없으면 문장째 보류 서술로).\n"
+        "- 같은 주제의 결론이 초안에 서로 다른 상태로 두 번 등장하면(논의 중 결론이 바뀐 경우), "
+        "전사에서 더 나중에 확정된 최종 상태만 남기고 이전 중간 결론은 삭제하기.\n"
+        "- 결정 항목은 전사에서 그 주제가 **마지막으로** 언급된 상태와 일치해야 함 — 회의 중간의 "
+        "이전 입장과만 일치하고 이후 발화에서 번복·변경됐다면 최종 상태로 교체하기.\n"
+        "- 미해소·보류 섹션 항목이 '~하기로 함' 같은 확정 서술이면 잘못 놓인 것 — 전사를 확인해 "
+        "결정 항목으로 옮기거나 실제 상태(미결)로 문장을 고치기.\n"
         "- 초안의 화자 라벨(SPEAKER_XX)이 전사의 실제 발화자와 다르면 라벨을 바로잡거나 제거하기.\n"
         "- 전사에 근거 없는 내용은 삭제하기.\n"
         "- 미해결·보류 항목은 삭제하지 말 것 — 상태 표기만 교정.\n"
         "- 초안의 섹션 구조·형식·화자 라벨(SPEAKER_XX)은 유지. 참석자 이름을 화자에 추측해 붙이지 말 것.\n"
         f"- 오타·음성인식 오인식 교정(예: '재유청'→'재요청').{v}\n"
-        "- 설명·머리말 없이 수정된 회의록 전체만 출력.\n\n"
+        "- 설명·머리말·'[회의록 초안]' 같은 대괄호 라벨 없이 수정된 회의록 본문만 출력.\n\n"
         f"[전사]\n{budget_transcript(tok, transcript)}\n\n[회의록 초안]\n{note}"
     )
     try:
@@ -360,7 +373,13 @@ NOTE_SYS = (
     "- Action Items 담당자는 `@SPEAKER_XX`만 쓰세요(이름 추측 금지). 불분명하면 담당자 없이 할 일만.\n"
     "- [회의 정보] 참석자 명단에 없는 사람 이름을 만들지 마세요.\n"
     "- 반드시 한국어로만 작성하세요(한자·외국 문자 금지). 뜻이 불분명한 단어에 '(병?)' 같은 추측 주석 금지.\n"
-    "- 가이드의 `{중괄호}` 표기는 채워 넣는 자리표시일 뿐입니다 — 출력에 `{`·`}`를 남기지 마세요.\n\n"
+    "- 가이드의 `{중괄호}` 표기는 채워 넣는 자리표시일 뿐입니다 — 출력에 `{`·`}`를 남기지 마세요.\n"
+    "- **아젠다체 금지** — 섹션 도입·요약 문장을 \"~를 논의합니다/검토합니다\" 같은 안건 소개문으로 쓰지 마세요. "
+    "이미 끝난 회의의 기록입니다 — 무엇이 논의됐고 어떤 결론이 났는지를 서술하세요.\n"
+    "- **발언 나열이 아니라 논의 정리** — 같은 쟁점의 발언들을 흩어 나열하지 말고 쟁점 단위로 묶어, "
+    "쟁점 → 주요 의견(이유·근거가 언급됐으면 포함) → 결론(결정/보류/미결)이 드러나게 정리하세요.\n"
+    "- Action Items는 '무엇을 한다'가 있는 구체적 할 일만 적으세요. 이름이나 담당만 있고 할 일 내용이 "
+    "없는 항목은 쓰지 마세요.\n\n"
     "[가이드가 정하는 것 — 가이드를 따르세요]\n"
     "- 섹션 구성·형식은 [작성 가이드]를 따릅니다.\n"
     "- 발언을 '요점 압축'할지 '원문 그대로 인용(축어록)'할지: 가이드가 원문 인용·축어록을 요구하면 그대로 옮기고, "
@@ -470,7 +489,7 @@ def user_memos(session):
     return out
 
 
-def build_note_prompt(session, transcript):
+def build_note_prompt(session, transcript, reduce=False):
     meta = json.loads((session / "meeting.json").read_text())
     mtype = _RESOLVED_TYPE or meta.get("type", "auto")
     tpl_path = TEMPLATES / f"{mtype}.md"
@@ -494,9 +513,15 @@ def build_note_prompt(session, transcript):
         f"[작성 가이드]\n{template}\n\n"
         f"[규칙]\n{load_rules()}\n\n"
         f"{memo_block}"
-        f"[전사]\n{transcript}\n\n"
+        f"[{'구간 요약' if reduce else '전사'}]\n{transcript}\n\n"
         f"위 가이드·규칙에 따라 '{meta.get('title','')}' 회의록을 작성하세요."
     )
+    if reduce:
+        # 커버리지 강제 — 실측: 통합 단계가 특정 구간(회의 초반 또는 후반)의 항목을 통째로
+        # 떨어뜨려 "정확하지만 얇은" 회의록이 된다. 압축은 중복 통합으로만.
+        user += ("\n\n[구간 요약]은 회의 전 구간의 요약 항목입니다. 주제별로 재조직하되 "
+                 "어느 구간의 항목도 통째로 빠뜨리지 마세요 — 회의 초반·중반·후반을 같은 비중으로 "
+                 "다루고, 분량 압축은 중복 항목 통합과 문장 압축으로만 하세요.")
     return user
 
 
@@ -512,8 +537,10 @@ def clean_output(text: str) -> str:
             t = t[nl + 1:]
         if t.rstrip().endswith("```"):
             t = t.rstrip()[:-3].rstrip()
-    # 모델이 습관적으로 붙이는 "[회의록]" 머리말 제거 (Gemma 실측)
-    t = re.sub(r"^\[회의록\]\s*\n", "", t)
+    # 모델이 습관적으로 붙이는 "[회의록]"·"[회의록 초안]" 류 대괄호 머리말 제거 (Gemma 실측 —
+    # 자기검증 패스가 프롬프트의 "[회의록 초안]" 스캐폴드 라벨을 에코해 본문 상단에 남긴다.
+    # "## [회의록]"처럼 헤딩으로 격상해 에코하는 변형도 실측됨 — 헤딩 접두 허용)
+    t = re.sub(r"^\s*(?:#{1,6}\s*)?\[회의록[^\]\n]*\]\s*$\n?", "", t, flags=re.M)
     t = CJK_RUN.sub("", t)
     t = re.sub(r"[ \t]{2,}", " ", t)
     t = re.sub(r"[ \t]+([,.])", r"\1", t)
@@ -542,6 +569,26 @@ def dedup_lines(text: str) -> str:
             if len(recent) > 8:
                 recent.pop(0)
     return "\n".join(out)
+
+
+def strip_title_echo(note, meta):
+    """본문 최상단의 회의 제목 에코 헤딩 제거 — H1 금지 규칙을 어기고 제목을 헤딩으로 반복하는
+    실측 사례(`## [FJG] …`) 방어. 앱이 제목을 따로 표시하므로 본문 제목은 항상 중복이다."""
+    norm = lambda s: re.sub(r"[^0-9A-Za-z가-힣]", "", s)
+    title = norm(meta.get("title", ""))
+    if not title:
+        return note
+    lines = note.split("\n")
+    for i, ln in enumerate(lines[:6]):
+        s = ln.strip()
+        if s.startswith("#"):
+            h = norm(s)
+            # h in title 방향은 최소 길이 요구 — "## 리뷰" 같은 짧은 정상 섹션 헤딩이
+            # 제목의 부분문자열이라는 이유로 지워지는 오제거 방지 (에코는 제목 대부분을 포함).
+            if h and (title in h or (h in title and len(h) >= 8)):
+                return "\n".join(lines[:i] + lines[i + 1:])
+            break
+    return note
 
 
 def ensure_header(note, meta):
@@ -709,6 +756,7 @@ def main():
 
     # 4) 결정론 후처리 + 헤더 주입
     out = post_process_note(out)
+    out = strip_title_echo(out, meta)
     out = ensure_header(out, meta)
     if len(out.strip()) < 20:
         fail("회의록이 비어 있습니다. 다시 시도해주세요.")
