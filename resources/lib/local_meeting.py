@@ -45,6 +45,9 @@ RULES_FILE = Path(__file__).parent / "local_rules.md"
 # 긴 회의 임계 — 실측(2026-07): 소형 모델은 전사가 ~10k 토큰을 넘으면 단일샷에서 요약을 포기하고
 # 축자 받아쓰기로 퇴행. 구간 요약(map)이 압축을 강제한다. 12B에서도 단일샷 확대는 기각됨
 # (전역 연결 이점은 자기검증 패스가 더 안전하게 제공, lost-in-the-middle 재발 확인).
+# 주의: 이 임계는 전사 토큰만 세고 유형 가이드 본문은 고정 오버헤드로 별도 얹힘 — 9k 실측은
+# 2026-07 시드 개정(note 가이드 +~0.5k 토큰) 이전 기준이며, 사용자 편집 가이드는 더 길 수 있음.
+# 메모리 봉투 재실측 시 가이드 오버헤드 포함해 측정할 것.
 LONG_NOTE_TOKENS = 9000
 NOTE_MAX_TOKENS = 4000
 # 자기검증 패스의 전사 입력 상한 — 초과 시 앞 3k + 뒤 8k만 사용(결정·정리는 후반에
@@ -356,7 +359,7 @@ NOTE_SYS = (
     "(예: `**SPEAKER_03**: …`; 가이드에 발표자 필드가 있으면 `발표자: SPEAKER_02`처럼 라벨로, 특정 못 하면 그 줄 생략).\n"
     "- **화자 라벨은 그 발언이 정말 그 화자의 것일 때만 붙이세요.** 여러 사람의 발언을 한 화자 라벨 아래 "
     "합치지 마세요. 누가 말했는지 불확실하면 라벨 없이 내용만 적으세요 (틀린 귀속보다 낫습니다).\n"
-    "- 상단 `- 참석자:` 줄은 [회의 정보]의 참석자 명단(실명)에 @를 붙여 씁니다 (예: `- 참석자: @Bobs, @Darin`).\n"
+    "- 상단 `- 참석자:` 줄은 [회의 정보]의 참석자 명단(실명)을 평문으로 씁니다 (예: `- 참석자: Bobs, Darin`. @ 접두 금지).\n"
     "- Action Items 담당자는 `@SPEAKER_XX`만 쓰세요(이름 추측 금지). 불분명하면 담당자 없이 할 일만.\n"
     "- [회의 정보] 참석자 명단에 없는 사람 이름을 만들지 마세요.\n"
     "- 반드시 한국어로만 작성하세요(한자·외국 문자 금지). 뜻이 불분명한 단어에 '(병?)' 같은 추측 주석 금지.\n"
@@ -525,10 +528,9 @@ def ensure_header(note, meta):
             continue
         body_lines.append(ln)
     body = "\n".join(body_lines).lstrip("\n")
-    attendees = ", ".join(f"@{a}" for a in meta.get("attendees", []) if a)
+    attendees = ", ".join(a for a in meta.get("attendees", []) if a)
     header = f"- 날짜: {meta.get('date', '')}"
-    if attendees:
-        header += f"\n- 참석자: {attendees}"
+    header += f"\n- 참석자: {attendees or '-'}"
     return f"{header}\n\n{body}"
 
 

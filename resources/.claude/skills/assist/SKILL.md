@@ -144,7 +144,7 @@ bash -c 'source "$APP_DIR/lib/signal.sh" && app_refresh'
 - **결정사항·액션 아이템 강화**
 - **톤·스타일 조정** (격식체 ↔ 구어체)
 - **회의 제목 수정**
-- **회의록 유형 변경** + 재작성 (presentation ↔ note ↔ review ↔ 사용자 정의)
+- **회의록 유형 변경** + 재작성 (presentation ↔ note ↔ review ↔ retrospective ↔ 1on1 ↔ 사용자 정의)
 - **회의 안건(agenda) 보강**
 - **화자 매핑 검토** + 회의록 호칭 반영
 - **결정사항만 별도 파일로 추출** (`decisions.md`)

@@ -125,7 +125,7 @@ speaker_mapping.json + meeting-notes.md
 
 - Sub-section은 미매핑 시 SPEAKER 라벨 박아두면 사용자가 매핑 추가했을 때 자동 치환되어 자연스럽게 채워짐
 - 발표자 줄은 LLM 추정이 틀릴 수 있어 미확정인 채로 명시적 신호(`(미확인)`)를 주는 게 안전. 사용자가 매핑 + 명확화 후 본문 보정으로 수정
-- **진행자 줄은 작성하지 않습니다** — 데일리/위클리에서 진행자는 회의 진행 자체가 정보이지 회의록 본문에 박을 정보는 아님 (호명 멘트도 회의록에서 제외). 매핑 확정 시 자연어 이름은 참석자 섹션의 `@Bobs`로 충분히 드러남
+- **진행자 줄은 작성하지 않습니다** — 데일리/위클리에서 진행자는 회의 진행 자체가 정보이지 회의록 본문에 박을 정보는 아님 (호명 멘트도 회의록에서 제외). 매핑 확정 시 자연어 이름은 참석자 섹션의 이름(`Bobs`)으로 충분히 드러남
 
 산문에 박힌 이름은 매핑이 변경돼도 자동 치환되지 않습니다 (의도된 한계). 매핑이 잘못된 채 작성된 회의록은 사용자가 별도 본문 보정(refine 스킬)으로 따로 처리.
 
@@ -177,10 +177,10 @@ speaker_mapping.json + meeting-notes.md
   ```
 - **빈 전사 가드 (필수 — 지어내기 방지)**: `transcript_corrected.txt`(있으면) 또는 `transcript.txt`를 Read해 `[SPEAKER_XX M:SS]` 시각 마커를 뺀 **실제 발화 텍스트**를 확인하세요. 발화 내용이 사실상 없으면(마커만 있고 텍스트가 비었거나 공백뿐, 또는 의미 있는 발화가 몇 글자 수준) — 무음 녹음을 사용자가 escape hatch로 강제 진행한 경우 등 — **회의록을 작성하지 말고** 다음만 수행 후 종료하세요. 전사가 비어 있으면 회의 정보(제목·참석자)만으로 가짜 회의록을 지어내게 되므로, 판단이 애매하면 **작성하지 않는 쪽**을 택합니다:
   1. `$SESSION_DIR/meeting.json`을 Read해 날짜·참석자를 확인
-  2. `$SESSION_DIR/meeting-notes.md`를 Write로 아래 플레이스홀더만 작성 (`{날짜}`는 meeting.json의 date, 참석자 줄은 attendees를 `@`접두로, 빈 배열이면 `- 참석자: -`):
+  2. `$SESSION_DIR/meeting-notes.md`를 Write로 아래 플레이스홀더만 작성 (`{날짜}`는 meeting.json의 date, 참석자 줄은 attendees를 평문으로, 빈 배열이면 `- 참석자: -`):
      ```markdown
      - 날짜: {날짜}
-     - 참석자: @{이름1}, @{이름2}, ...
+     - 참석자: {이름1}, {이름2}, ...
 
      인식된 발화가 없어 회의록을 작성하지 못했습니다. 녹음에 음성이 제대로 담겼는지 확인해주세요.
      ```
@@ -199,7 +199,7 @@ speaker_mapping.json + meeting-notes.md
 같은 `meeting.json`에서 **`type` 필드**도 확인하세요. `type`이 **`auto`이거나 비어있으면(필드 없음 포함)** 회의 유형을 LLM이 결정해야 하므로, 위 후보정 sub-agent들과 **함께** `meeting-type-classification` sub-agent를 **추가로 병렬 spawn**합니다. 후보정 *후* 직렬로 분류하던 단계를 1단계 병렬 묶음에 합류시켜 wall time(= sub-agent max)에 흡수시키기 위함입니다 (분류는 edit 방출 없는 단일 결정이라 후보정보다 가벼워 max를 넘지 않음).
 
 - **`auto` 또는 비어있음** → 분류 sub-agent **추가** (정밀이면 4개, 빠르면 3개 spawn)
-- **`free-form` 또는 명시 유형명**(presentation/note/review/커스텀) → 분류 불필요, 분류 sub-agent **spawn 안 함** (3단계에서 해당 유형을 그대로 로드). 단 명시 유형의 파일이 삭제된 edge 케이스는 3단계가 인라인 fallback 처리.
+- **`free-form` 또는 명시 유형명**(presentation/note/review/retrospective/1on1/커스텀) → 분류 불필요, 분류 sub-agent **spawn 안 함** (3단계에서 해당 유형을 그대로 로드). 단 명시 유형의 파일이 삭제된 edge 케이스는 3단계가 인라인 fallback 처리.
 
 ### 절차
 

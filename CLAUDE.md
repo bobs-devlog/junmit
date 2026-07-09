@@ -1,6 +1,6 @@
 # Junmit
 
-회의 녹음을 전사하고, 화자를 분리하고, 회의록을 작성하는 도구입니다. 회의록은 유형별 가이드(`presentation`/`note`/`review` 또는 사용자 정의)에 따라 자동 작성되며, `auto` 모드에선 회의 내용을 보고 적합한 유형을 자동 판단합니다. 기본 3유형 외에 사용자가 자기 팀/조직에 맞춰 새 유형을 추가할 수 있습니다.
+회의 녹음을 전사하고, 화자를 분리하고, 회의록을 작성하는 도구입니다. 회의록은 유형별 가이드(`presentation`/`note`/`review`/`retrospective`/`1on1` 또는 사용자 정의)에 따라 자동 작성되며, `auto` 모드에선 회의 내용을 보고 적합한 유형을 자동 판단합니다. 기본 5유형 외에 사용자가 자기 팀/조직에 맞춰 새 유형을 추가할 수 있습니다.
 
 ## 프로젝트 구조
 
@@ -76,5 +76,5 @@
 - 전사본의 SPEAKER_XX 라벨은 자동 화자분리 결과이며 부정확할 수 있음
 - 참석자 이름은 자유 형식(영문·한글·풀네임 가능). 캘린더 참석자는 **이메일을 안정 식별자**로 삼아 표시 이름을 해결한다: ① 사용자 매핑 캐시(`~/Library/Application Support/app.junmit/attendee_names.json`, `{ "email": "name" }`) → ② EKParticipant.name(이메일꼴이 아니면) → ③ 이메일 local-part 휴리스틱(`. _ -` 분리·capitalize, 예: `bobs.kim@x.com` → `Bobs`) → ④ 이메일 그대로. MeetingSelector에서 이름을 인라인 편집하면 이메일에 귀속돼 다음 회의부터 자동 적용된다(EventKit displayName은 Google Workspace에서 이메일로 fallback되므로 신뢰하지 않음)
 - 회의 유형 가이드는 팀-중립으로 작성됩니다. 자기 팀/조직 컨텍스트(페이지 패턴, 결정사항 보고서 등)는 사용자 정의 유형을 추가해 가이드 본문에 적으세요.
-- **유형 가이드 위치**: `~/Library/Application Support/app.junmit/templates/{name}.md` (단일 진실 원천). 첫 실행 시 `resources/templates/`의 시드(presentation/note/review)가 자동 복사됨. frontmatter는 `name`, `label`, `description`, `summary` 필드 사용 (`label`/`description`은 UI 버튼 표시용, `summary`는 multi-line block + auto 매칭 핵심). 본문엔 `## 예시 회의록`(샘플) 섹션 포함.
+- **유형 가이드 위치**: `~/Library/Application Support/app.junmit/templates/{name}.md` (단일 진실 원천). 매 실행 시 `resources/templates/`의 시드(presentation/note/review/retrospective/1on1) 중 사용자 위치에 **없는 파일만** 자동 복사됨 — 신규 시드는 기존 사용자에게도 전파되지만, 이미 복사된 파일은 시드가 개정돼도 갱신되지 않음. frontmatter는 `name`, `label`, `description`, `summary` 필드 사용 (`label`/`description`은 UI 버튼 표시용, `summary`는 multi-line block + auto 매칭 핵심). 본문엔 `## 예시 회의록`(샘플) 섹션 포함.
 - **유형 관리는 앱 "회의 유형" 화면**(마스터-디테일: 목록 → 상세): ① 자연어로 새 유형 **생성**(`/template` 스킬) ② 기존 유형을 AI 대화로 **조정** ③ 가이드 원문 **직접 편집** ④ 삭제. 저장 시 Rust 게이트(`cmd_commit_meeting_type`/`cmd_save_meeting_type`)가 frontmatter·예시 형식·slug·중복을 검증. 직접 파일 편집도 여전히 유효(단일 진실 원천). 삭제한 유형으로 작성됐던 과거 회의 재작성 시엔 `/meeting`이 free-form으로 graceful fallback.

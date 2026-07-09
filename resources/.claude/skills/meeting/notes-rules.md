@@ -11,7 +11,7 @@
 
 - **`auto` 또는 `type` 필드 없음** → 아래 "자동 판단" 절차로 적합 유형 결정 → **결정 결과를 `meeting.json.type`에 즉시 갱신** (한 번 판단된 결과 유지, 다음 재작성 시 자동 판단 반복 X). **`/meeting` 흐름에선 이 판단을 1단계의 `meeting-type-classification` sub-agent가 후보정과 병렬로 미리 수행**하므로, 메인은 그 보고의 `TYPE_DECISION:` 값을 적용만 하고 재분류하지 않습니다 (아래 "자동 판단"은 그 sub-agent가 따르는 동일 기준이자, 1단계를 skip한 경우(재작성·크래시 후 재시도로 `transcript_corrected.txt`가 이미 존재)나 명시 유형 파일이 삭제된 edge 케이스에서 메인이 인라인 fallback할 때의 절차)
 - **`free-form`** → 자동 판단 skip + 아래 "Free-form 작성" 절차 직접 적용 (templates 매칭 X)
-- **`presentation`, `note`, `review` 또는 사용자 정의 유형명** → `~/Library/Application Support/app.junmit/templates/{type}.md`를 Read. **그 파일이 없으면**(유형이 삭제·개명됨) → `auto`처럼 자동 판단 절차로 진행 + 결정 결과로 `type` 갱신 (작성 중단 금지)
+- **`presentation`, `note`, `review`, `retrospective`, `1on1` 또는 사용자 정의 유형명** → `~/Library/Application Support/app.junmit/templates/{type}.md`를 Read. **그 파일이 없으면**(유형이 삭제·개명됨) → `auto`처럼 자동 판단 절차로 진행 + 결정 결과로 `type` 갱신 (작성 중단 금지)
 
 ### type 갱신 절차 (auto 케이스만)
 
@@ -33,7 +33,7 @@
 ~/Library/Application Support/app.junmit/templates/
 ```
 
-앱이 첫 실행 시 기본 가이드(presentation, note, review)를 자동 시드합니다. 사용자가 이 위치의 파일을 직접 편집하거나 새 `{name}.md`를 추가하면 자동 판단 후보에 포함됩니다.
+앱이 첫 실행 시 기본 가이드(presentation, note, review, retrospective, 1on1)를 자동 시드합니다. 사용자가 이 위치의 파일을 직접 편집하거나 새 `{name}.md`를 추가하면 자동 판단 후보에 포함됩니다.
 
 ### 자동 판단
 
@@ -115,8 +115,19 @@
 
 `attendees`가 빈 배열일 때는 줄을 생략하지 말고 `- 참석자: -`로 placeholder를 남기세요. 사용자가 캘린더 매칭 또는 AttendeeEditor 입력을 깜빡한 케이스가 가장 흔하므로, 빈 표기가 "여기 채워야 함" 신호 역할을 합니다.
 
+`@` 접두는 붙이지 않습니다 — 현재 앱에 mention 변환 소비처가 없어 평문 이름이 단일 규약입니다 (Action Items의 `@assignee`는 별개 규약으로 유지).
+
 근거:
 - 미확인 SPEAKER는 **발화 헤더** (`**SPEAKER_06**: ...`)에서만 라벨 유지 — 참석자 섹션 X. 본문 작성 후 사용자가 매핑 추가하면 표시 시점에 자동 치환됨
+
+---
+
+## 빈 섹션 처리 (모든 유형 공통)
+
+메타 줄(날짜·참석자)을 제외하고, **내용이 없는 섹션은 헤더째 생략**합니다 — "(없음)"·"해당 없음"으로 채우지 않습니다. 예외 둘:
+
+- 참석자가 빈 배열일 때의 `- 참석자: -` placeholder (위 "참석자 섹션 표기")
+- 유형 가이드가 명시적으로 다른 처리를 정한 경우 (예: 리뷰의 `## 결정`은 없어도 "(없음)" 표기 — 리뷰는 결정 유무 자체가 독자의 첫 질문이라 명시가 정보값을 가짐)
 
 ---
 
@@ -154,7 +165,7 @@
 
 ## Free-form 작성
 
-자동 판단 결과 어느 유형에도 명확히 맞지 않을 때 사용합니다 (예: 1:1 양방향 대화, 비구조 토론, 인터뷰, 워크숍, 브레인스토밍).
+자동 판단 결과 어느 유형에도 명확히 맞지 않을 때 사용합니다 (예: 비구조 토론, 인터뷰, 워크숍, 브레인스토밍).
 
 ### 작성 원칙
 
@@ -167,7 +178,7 @@
 
 ```markdown
 - 날짜: {날짜}
-- 참석자: @{firstName1}, @{firstName2}, ...    ← 회사 멤버는 @firstName 접두
+- 참석자: {이름1}, {이름2}, ...    ← meeting.json attendees 기준 평문 (위 "참석자 섹션 표기")
 
 ## {회의 성격에 맞는 섹션 1}
 
