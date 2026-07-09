@@ -2,6 +2,7 @@
 name: presentation
 label: 발표/세미나
 description: 발표·공유 + 논의
+title_keywords: 발표, 세미나
 summary: |
   발표자가 주제·정보·방법을 *공유·전달*하기 위해 진행하는 회의 (발표, 세미나,
   지식 공유, 주제 논의 등). 특정 주제나 발표자가 회의를 견인하며, 발표가

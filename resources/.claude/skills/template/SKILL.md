@@ -101,6 +101,7 @@ STAGING="$TEMPLATES_DIR/.staging"
 name: <ascii slug>          # 소문자·숫자·하이픈만. 한국어 label을 짧은 영어로 (예: 회고 → retrospective). existing과 충돌 시 -2 등으로 고유하게
 label: <유형 이름>           # request.json의 name 그대로 (한국어 가능, 짧게)
 description: <한 줄 설명>     # about을 한 줄로 요약 (UI 버튼 보조 텍스트)
+title_keywords: <쉼표 구분>   # 선택 — 회의 **제목**에 들어가면 이 유형임이 명백한 단어만 (예: 회고, kpt). 자동 판별 1단계(결정론)가 사용. 명백한 단어가 없으면 이 줄 생략
 summary: |
   <이 유형이 어떤 회의인지 1~2문장 (about에서 도출)>
   의도 신호: <about에서 읽어낸 구체 신호. 시드의 "의도 신호:" 줄 형식. 기존 유형과 변별되게>
@@ -141,7 +142,7 @@ summary: |
 사용자가 바꿀 점을 말할 때마다:
 
 1. 기준 내용을 **전체 재작성**해 `$STAGING/result.md`에 Write (부분 Edit 금지 — frontmatter 형식 깨짐 방지). 기준은: 이미 result.md가 있으면 그것, **조정의 첫 변경이라 아직 없으면 조정 대상 원본(`{target}.md`)**.
-   - frontmatter 형식 엄수: `name`/`label`/`description` 한 줄, `summary: |` 블록, `## 예시 회의록` 유지.
+   - frontmatter 형식 엄수: `name`/`label`/`description` 한 줄, `summary: |` 블록, `## 예시 회의록` 유지. 원본에 `title_keywords` 줄이 있으면 **그대로 유지**(조정 요청이 명시적으로 바꾸라는 경우만 수정) — 빠뜨리면 제목 기반 자동 판별에서 이 유형이 빠진다.
    - 예전 가이드라 `summary` 블록·`## 예시 회의록`이 없으면 이때 **형식을 보강**(게이트 통과 위해, 내용 구조는 유지).
    - **조정 모드에선 `name`(slug) 절대 변경 금지** (`{target}`와 동일 유지 — 바뀌면 원본이 남음).
    - 생성 모드에서 사용자가 이름을 바꾸길 원하면 `label`만 바꾸고 `name` slug는 가급적 유지 (이미 미리보기 중).

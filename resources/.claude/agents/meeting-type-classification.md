@@ -1,6 +1,6 @@
 ---
 name: meeting-type-classification
-description: 회의 내용을 유형 가이드 summary와 매칭해 회의 유형(또는 free-form)을 결정. /meeting 1단계에서 후보정 sub-agent들과 병렬 spawn되는 sub-agent. meeting.json.type이 auto/비어있을 때만 호출.
+description: 회의 제목(title_keywords 0순위)·내용을 유형 가이드와 매칭해 회의 유형(또는 free-form)을 결정. /meeting 1단계에서 후보정 sub-agent들과 병렬 spawn되는 sub-agent. meeting.json.type이 auto/비어있을 때만 호출.
 tools: Read, Write, Bash
 model: opus
 ---
@@ -24,20 +24,22 @@ model: opus
 ### 1. 사전 로드
 
 1. `${SESSION_DIR}/meeting.json`을 Read하세요. 활용 필드:
-   - `agenda`: 캘린더에서 가져온 회의 본문 + 사용자 편집 컨텍스트. **비어있을 수 있음.** 명확한 신호("X PRD 검토" 등)가 있으면 분류 신뢰도를 크게 높이는 1순위 단서.
-   - `title`, `attendees`: 회의 맥락 파악 보조.
+   - `title`: 사용자가 붙인 회의 제목 — 유형 키워드 매칭의 0순위 입력 (아래 "매칭 판단").
+   - `agenda`: 캘린더에서 가져온 회의 본문 + 사용자 편집 컨텍스트. **비어있을 수 있음.** 명확한 신호("X PRD 검토" 등)가 있으면 분류 신뢰도를 크게 높이는 단서.
+   - `attendees`: 회의 맥락 파악 보조.
 2. `${SESSION_DIR}/transcript.txt`를 Read하세요 (전체). 회의 흐름·주제·발화 분포 파악.
-3. 사용자 회의 유형 가이드 디렉토리의 모든 `*.md` frontmatter `summary`를 수집:
+3. 사용자 회의 유형 가이드 디렉토리의 모든 `*.md` frontmatter(`title_keywords`·`summary`)를 수집:
    ```bash
    ls "$HOME/Library/Application Support/app.junmit/templates/"/*.md
    ```
-   각 파일을 Read해 frontmatter의 `name`(= 유형 id)과 `summary`(multi-line block — 회의 목적·구조·사전 자료 유무·의도 신호)를 수집하세요. 이 디렉토리에는 기본 유형(presentation/note/review) 외에 사용자가 추가한 커스텀 유형도 있을 수 있습니다.
+   각 파일을 Read해 frontmatter의 `name`(= 유형 id), `title_keywords`(쉼표 구분, 선택 필드 — 없을 수 있음), `summary`(multi-line block — 회의 목적·구조·사전 자료 유무·의도 신호)를 수집하세요. 이 디렉토리에는 기본 유형(presentation/note/review) 외에 사용자가 추가한 커스텀 유형도 있을 수 있습니다.
 
 ### 2. 매칭 판단
 
 회의 내용(`agenda` + `transcript.txt`)과 각 유형 summary를 매칭해 가장 적합한 유형을 결정합니다.
 
 **판단 우선순위** (notes-rules.md "자동 판단"과 동일 원칙):
+- **0순위 — 제목 × `title_keywords`**: `title`이 **정확히 한 유형**의 `title_keywords`와 매칭되면 그 유형으로 결정하세요 — 로컬 AI 경로의 결정론 1단계와 같은 규칙이라 백엔드가 달라도 유형이 일치합니다. 단어가 실제 그 의미로 쓰인 경우만 매칭입니다("디자인 프리뷰"는 리뷰 아님). 여러 유형이 매칭되거나, 전사 내용이 제목과 **명백히** 모순되면(예: 제목만 '리뷰'이고 실제론 순차 진행 보고) 이 순위를 건너뛰고 아래로 — 이때는 TYPE_DECISION 근거에 그 모순을 남기세요.
 - **1순위 — summary의 *의도 신호*** (회의 목적·구조·사전 자료 유무). summary의 `의도 신호:` 줄과 회의 내용을 대조하세요.
 - **보조 — 발화 분포** (누가 얼마나 말했는지). 단독 구분 신호로 쓰지 말 것. 예: "한 명 70%+ 발화"는 presentation·review 모두 정상이라 그것만으론 못 가름 — `agenda`/transcript의 호명·자기소개·주제 컨텍스트로 의도를 파악.
 - `agenda`에 명확한 신호가 있으면 신뢰도를 크게 높임. (단 agenda 내용을 회의록에 옮기는 건 메인의 작성 단계 정책이고, 여기선 *분류용 맥락*으로만 사용.)

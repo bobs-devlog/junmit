@@ -2,6 +2,7 @@
 name: note
 label: 일반 회의
 description: 정기 회의·논의 등
+title_keywords: 위클리, weekly, 스크럼, scrum, 데일리, daily, 주간
 summary: |
   다수가 정보를 *공유·조정*하기 위해 진행하는 회의 (위클리,
   Daily Scrum, 정기 미팅, 팀 논의 등).

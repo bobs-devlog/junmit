@@ -336,11 +336,11 @@ bash -c 'source "$APP_DIR/lib/signal.sh" && app_phase_step_done correct'
 
 [`.claude/skills/meeting/notes-rules.md`](notes-rules.md)의 "회의 유형 결정" 절차를 따르세요. 회의 유형 가이드는 사용자 데이터 영역의 단일 위치(`~/Library/Application Support/app.junmit/templates/`)에서 로드한다 (앱이 첫 실행 시 기본 가이드를 자동 시드). 핵심 흐름:
 
-1. `$SESSION_DIR/meeting.json`의 `type` 필드가 명시 templates 유형이면 → `~/Library/Application Support/app.junmit/templates/{type}.md`를 Read. **그 파일이 없으면**(사용자가 해당 유형을 삭제했거나 이름이 바뀐 경우) → 1단계에서 분류 sub-agent를 안 띄웠으므로 여기서 인라인 자동 판단: 위 디렉토리의 모든 `*.md`의 frontmatter `summary`를 수집해 회의 내용(`transcript_corrected.txt` + `meeting.json`의 `agenda`)과 매칭해 결정하고 `meeting.json.type` 갱신. 명시 유형이 사라졌다고 작성을 멈추지 말 것
+1. `$SESSION_DIR/meeting.json`의 `type` 필드가 명시 templates 유형이면 → `~/Library/Application Support/app.junmit/templates/{type}.md`를 Read. **그 파일이 없으면**(사용자가 해당 유형을 삭제했거나 이름이 바뀐 경우) → 1단계에서 분류 sub-agent를 안 띄웠으므로 여기서 인라인 자동 판단(`notes-rules.md` "자동 판단" 기준 — 제목 × `title_keywords` 0순위 포함): 위 디렉토리의 모든 `*.md`의 frontmatter(`title_keywords`·`summary`)를 수집해 회의 제목·내용(`transcript_corrected.txt` + `meeting.json`의 `agenda`)과 매칭해 결정하고 `meeting.json.type` 갱신. 명시 유형이 사라졌다고 작성을 멈추지 말 것
 2. `type`이 `free-form`이면 → 자동 판단 skip + `notes-rules.md`의 "Free-form 작성" 절차 직접 적용
 3. `type`이 `auto` 또는 비어있으면 →
    - **1단계를 정상 수행한 경우**(첫 작성): `meeting-type-classification` sub-agent가 이미 결정했으므로 그 보고의 `TYPE_DECISION:` 값(유형 id 또는 `free-form`)을 채택해 **`meeting.json.type`에 즉시 갱신** (재분류하지 말 것 — 이미 병렬로 끝남).
-   - **1단계를 skip한 경우**(`transcript_corrected.txt`가 이미 존재해 sub-agent를 안 띄움 — 재작성 모드 또는 크래시 후 재시도): 분류 sub-agent가 돌지 않아 `TYPE_DECISION` 보고가 **없습니다**. 이때는 여기서 **인라인 자동 판단**: 위 디렉토리의 모든 `*.md`의 frontmatter `summary`를 수집해 회의 내용(`transcript_corrected.txt` + `meeting.json`의 `agenda`)과 매칭(`notes-rules.md` "자동 판단" 기준) → 결정해 **`meeting.json.type`에 갱신**.
+   - **1단계를 skip한 경우**(`transcript_corrected.txt`가 이미 존재해 sub-agent를 안 띄움 — 재작성 모드 또는 크래시 후 재시도): 분류 sub-agent가 돌지 않아 `TYPE_DECISION` 보고가 **없습니다**. 이때는 여기서 **인라인 자동 판단**: 위 디렉토리의 모든 `*.md`의 frontmatter(`title_keywords`·`summary`)를 수집해 회의 제목·내용(`transcript_corrected.txt` + `meeting.json`의 `agenda`)과 매칭(`notes-rules.md` "자동 판단" 기준 — 제목 × `title_keywords` 0순위 포함) → 결정해 **`meeting.json.type`에 갱신**.
    - 어느 경우든 갱신 후 그 유형의 `{type}.md`를 Read (또는 `free-form`이면 free-form 절차로 진행).
 
 결정 결과를 출력:

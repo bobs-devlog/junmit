@@ -2,6 +2,7 @@
 name: review
 label: 리뷰
 description: 기획·디자인 등 산출물 검토
+title_keywords: 리뷰, review, 검토
 summary: |
   발표자가 산출물(PRD/디자인/코드/기획안 등)을 *피드백 받기 위해* 공유하는 회의.
   사전 산출물이 있고, 청중은 피드백 제공 입장 — 실제 피드백 발생 여부와

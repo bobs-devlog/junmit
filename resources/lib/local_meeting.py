@@ -370,7 +370,9 @@ NOTE_SYS = (
 
 
 # ---- 회의 유형 자동 분류 (type=auto·가이드 부재 시) ----
-# Claude 경로의 "frontmatter summary 매칭"을 짧은 생성 1회로 근사. 실패·불일치는 자유 구성 폴백.
+# 2단계 하이브리드: ① 제목 키워드 결정론 매칭(keyword_type — 가이드 frontmatter `title_keywords`)
+# ② 미매칭·복수 매칭만 LLM 분류 생성 1회(Claude 경로의 "frontmatter summary 매칭" 근사).
+# 실패·불일치는 자유 구성 폴백.
 CLASSIFY_SYS = (
     "당신은 회의 유형 분류기입니다. 전사 첫 부분을 보고 가장 맞는 유형 하나의 이름만 출력합니다."
 )
@@ -395,8 +397,46 @@ def template_candidates():
     return cands
 
 
+def keyword_type(title):
+    """제목 키워드 → 유형 (결정론 1단계). 사용자가 붙인 회의 제목이 가장 신뢰할 만한 유형 신호다 —
+    실측(10세션): 제목에 키워드가 있는 5세션 전부 정답, LLM은 그중 1세션(일감 리뷰→발표)을 오분류.
+    키워드는 각 유형 가이드 frontmatter의 `title_keywords`(쉼표 구분, 선택 필드)가 소유한다 —
+    유형별 키워드를 코드에 하드코딩하지 않으며, 사용자 정의 유형도 자기 가이드에 선언하면 참여.
+    여러 유형이 동시에 매칭되면 판단을 LLM 폴백에 넘긴다."""
+    t = (title or "").lower()
+    # 한국어 상위어 오탐 방어 — "프리뷰"는 "리뷰"를 부분문자열로 포함한다(실측). 알려진
+    # 상위어를 지우고 매칭 (한국어는 붙여쓰기 합성어가 정상이라 경계 검사를 못 쓴다).
+    t = t.replace("프리뷰", "")
+    if not t:
+        return None
+    hits = set()
+    for p in sorted(TEMPLATES.glob("*.md")):
+        try:
+            m = re.match(r"^---\n(.*?)\n---", p.read_text(), re.S)
+        except Exception:
+            continue
+        if not m:
+            continue
+        km = re.search(r"^title_keywords:\s*(.+)$", m.group(1), re.M)
+        if not km:
+            continue
+        kws = [k.strip().lower() for k in km.group(1).split(",") if k.strip()]
+        if any(_kw_in_title(t, k) for k in kws):
+            hits.add(p.stem)
+    return hits.pop() if len(hits) == 1 else None
+
+
+def _kw_in_title(t, kw):
+    """키워드 매칭 — 라틴 키워드는 단어 경계 요구("preview"가 "review"에 걸리는 오탐 방지,
+    실측). 한국어는 합성어("일감리뷰")가 정상이라 부분문자열 매칭."""
+    if re.fullmatch(r"[a-z0-9][a-z0-9 ]*", kw):
+        return re.search(rf"(?<![a-z0-9]){re.escape(kw)}(?![a-z0-9])", t) is not None
+    return kw in t
+
+
 def classify_type(gen, tok, transcript):
-    """유형 자동 판별 — 후보 이름 그대로 답할 때만 채택(그 외·none은 자유 구성)."""
+    """유형 자동 판별(LLM 폴백 — 제목 키워드 미매칭 시만) — 후보 이름 그대로 답할 때만 채택.
+    temp 0: 같은 회의가 실행마다 다른 유형이 되는 비결정성 제거(실측: 5세션 × 2회 전부 일치)."""
     cands = template_candidates()
     if not cands:
         return None
@@ -408,7 +448,7 @@ def classify_type(gen, tok, transcript):
         f"[유형 후보]\n{listing}\n\n[전사 첫 부분]\n{head}"
     )
     try:
-        out = gen(CLASSIFY_SYS, user, max_tokens=12, temp=0.1)
+        out = gen(CLASSIFY_SYS, user, max_tokens=12, temp=0.0)
     except Exception:
         return None
     ans = out.strip().split()[0].strip("`\"'.,") if out.strip() else ""
@@ -623,7 +663,7 @@ def main():
     mtype = meta.get("type", "auto")
     if mtype == "auto" or not (TEMPLATES / f"{mtype}.md").exists():
         emit("   회의 유형 파악 중…")
-        _RESOLVED_TYPE = classify_type(gen, tok, raw)
+        _RESOLVED_TYPE = keyword_type(meta.get("title", "")) or classify_type(gen, tok, raw)
         if _RESOLVED_TYPE:
             label = next((l for n, l, _ in template_candidates() if n == _RESOLVED_TYPE),
                          _RESOLVED_TYPE)
