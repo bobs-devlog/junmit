@@ -1403,8 +1403,38 @@ fn read_no_speech(session_dir: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
-/// 사용자 templates 디렉토리에 시드 가이드 복사. idempotent — 이미 있는 파일은 건너뜀.
-/// 사용자 위치는 회의 유형 가이드의 단일 진실 원천이다.
+/// 사용자가 삭제한 유형명 기록(tombstone) 위치. 점-파일이라 `list_meeting_types`의
+/// top-level `*.md` 순회에서 제외된다 (`.staging`과 같은 규약).
+fn deleted_types_path() -> PathBuf {
+    user_templates_dir().join(".deleted_types.json")
+}
+
+/// tombstone 목록 읽기. 파일 없음·파싱 실패는 빈 목록 (시드가 안 깔리는 것보다 부활이 낫다).
+fn read_deleted_types() -> Vec<String> {
+    fs::read_to_string(deleted_types_path())
+        .ok()
+        .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
+        .unwrap_or_default()
+}
+
+/// 유형명을 tombstone에 기록 — `seed_user_templates`가 해당 시드를 재복사하지 않게 한다.
+fn record_deleted_type(name: &str) -> Result<(), String> {
+    let mut list = read_deleted_types();
+    if !list.iter().any(|n| n == name) {
+        list.push(name.to_string());
+        list.sort();
+        let json = serde_json::to_string_pretty(&list).map_err(|e| e.to_string())?;
+        let path = deleted_types_path();
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        fs::write(&path, json).map_err(|e| format!("삭제 기록 쓰기 실패: {e}"))?;
+    }
+    Ok(())
+}
+
+/// 사용자 templates 디렉토리에 시드 가이드 복사. idempotent — 이미 있는 파일과
+/// 사용자가 삭제한 유형(tombstone)은 건너뜀. 사용자 위치는 회의 유형 가이드의 단일 진실 원천이다.
 pub fn seed_user_templates(app: &tauri::AppHandle) -> Result<(), String> {
     let user_dir = user_templates_dir();
     fs::create_dir_all(&user_dir)
@@ -1415,10 +1445,15 @@ pub fn seed_user_templates(app: &tauri::AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
+    let deleted = read_deleted_types();
     for entry in fs::read_dir(&seed_dir).map_err(|e| format!("시드 디렉토리 읽기 실패: {e}"))?.flatten() {
         let src = entry.path();
         if src.extension().and_then(|s| s.to_str()) != Some("md") { continue; }
         let Some(name) = src.file_name() else { continue; };
+        if let Some(stem) = src.file_stem().and_then(|s| s.to_str()) {
+            // 사용자가 삭제한 시드는 되살리지 않는다 (delete_meeting_type의 tombstone)
+            if deleted.iter().any(|n| n == stem) { continue; }
+        }
         let dest = user_dir.join(name);
         if dest.exists() { continue; }
         fs::copy(&src, &dest)
@@ -1619,9 +1654,13 @@ pub fn save_meeting_type(target: &str, content: &str) -> Result<(), String> {
     fs::write(&dest, content).map_err(|e| format!("유형 가이드 저장 실패: {e}"))
 }
 
-/// 유형 가이드 삭제. 시드 유래 유형도 삭제 가능 (seed_user_templates가 idempotent라 되살아나지 않음).
+/// 유형 가이드 삭제. 시드 유래 유형도 삭제 가능 — tombstone(.deleted_types.json)에 기록되어
+/// 다음 실행의 `seed_user_templates` 재복사에서 제외된다 (삭제는 영구).
+/// tombstone을 파일 삭제보다 먼저 기록한다 — 역순이면 기록 실패 시 시드가 부활한다.
+/// (tombstone만 남고 삭제가 실패한 경우는 파일이 존재해 목록·시딩에 영향 없음)
 pub fn delete_meeting_type(name: &str) -> Result<(), String> {
     validate_type_name(name)?;
+    record_deleted_type(name)?;
     let path = user_templates_dir().join(format!("{name}.md"));
     if path.exists() {
         fs::remove_file(&path).map_err(|e| format!("유형 가이드 삭제 실패: {e}"))?;
