@@ -45,8 +45,8 @@ export function durationBucket(seconds: number): string {
   return ">60m";
 }
 
-/** 기본 3유형만 그대로, 사용자 정의 유형명은 "custom"으로 뭉갠다(유형명 유출 방지). */
+/** 기본 시드 유형·시스템 값만 그대로, 사용자 정의 유형명은 "custom"으로 뭉갠다(유형명 유출 방지). */
 export function meetingTypeCategory(type: string | undefined): string {
-  const known = ["presentation", "note", "review", "auto"];
+  const known = ["presentation", "note", "review", "retrospective", "1on1", "free-form", "auto"];
   return type && known.includes(type) ? type : "custom";
 }

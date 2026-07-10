@@ -32,7 +32,7 @@ model: opus
    ```bash
    ls "$HOME/Library/Application Support/app.junmit/templates/"/*.md
    ```
-   각 파일을 Read해 frontmatter의 `name`(= 유형 id), `title_keywords`(쉼표 구분, 선택 필드 — 없을 수 있음), `summary`(multi-line block — 회의 목적·구조·사전 자료 유무·의도 신호)를 수집하세요. 이 디렉토리에는 기본 유형(presentation/note/review) 외에 사용자가 추가한 커스텀 유형도 있을 수 있습니다.
+   각 파일을 Read해 frontmatter의 `name`(= 유형 id), `title_keywords`(쉼표 구분, 선택 필드 — 없을 수 있음), `summary`(multi-line block — 회의 목적·구조·사전 자료 유무·의도 신호)를 수집하세요. 이 디렉토리에는 기본 유형(presentation/note/review/retrospective/1on1) 외에 사용자가 추가한 커스텀 유형도 있을 수 있습니다.
 
 ### 2. 매칭 판단
 
