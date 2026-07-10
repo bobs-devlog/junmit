@@ -2,7 +2,7 @@
 name: retrospective
 label: 회고
 description: 스프린트·프로젝트 회고
-title_keywords: 회고, kpt, retro
+title_keywords: 회고, kpt, retro, retrospective
 summary: |
   팀이 지난 기간(스프린트·프로젝트·분기 등)을 *돌아보고 개선점을 도출*하기
   위해 진행하는 회의. 잘된 점·아쉬운 점을 나누고 다음에 시도할 액션을 정한다.
