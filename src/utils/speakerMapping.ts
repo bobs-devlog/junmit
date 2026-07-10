@@ -22,6 +22,15 @@ export function speakerState(entry: SpeakerEntry | undefined | null): SpeakerSta
 }
 
 /**
+ * raw `SPEAKER_\d+` 전부를 친화 라벨 "참석자 N"으로 치환 (매핑 없이 쓰는 표시 폴백).
+ * 세션 컨텍스트(매핑)가 없는 표시 지점용 — 화자 reason 텍스트, 유형 가이드의 예시 회의록 등.
+ * 세션이 있는 곳은 substituteNames(매핑 이름 우선)를 쓸 것.
+ */
+export function fallbackSpeakerLabels(text: string): string {
+  return text.replace(/SPEAKER_(\d+)/g, (_, n) => `참석자 ${parseInt(n, 10)}`);
+}
+
+/**
  * 화자 팝오버에 보여줄 reason 텍스트 정리.
  * - raw `SPEAKER_\d+` → "참석자 N" (표시 규칙 일관 + 가독성. 이름이 아닌 번호로 — 미확정 이름을
  *   근거 안에서 단정하는 순환을 피함)
@@ -32,8 +41,7 @@ export function formatReason(reason: string | undefined | null): string {
   if (!reason) return "";
   let t = reason.trim();
   t = t.replace(/^(근거\s*[:：]\s*|미확인\s*[—\-:：]\s*)/u, "");
-  t = t.replace(/SPEAKER_(\d+)/g, (_, n) => `참석자 ${parseInt(n, 10)}`);
-  return t;
+  return fallbackSpeakerLabels(t);
 }
 
 /**

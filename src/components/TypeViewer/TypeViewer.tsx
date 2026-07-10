@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import NotesMarkdownView from "@/components/NotesMarkdownView";
 import { extractExampleSection } from "@/utils/meetingTypes";
+import { fallbackSpeakerLabels } from "@/utils/speakerMapping";
 import styles from "@/screens/MeetingTypes.module.css";
 
 interface TypeViewerProps {
@@ -52,7 +53,7 @@ export default function TypeViewer({ content, full, onSetFull, actions }: TypeVi
         <pre className={styles.mtRaw}>{content}</pre>
       ) : (
         <div className={styles.mtRendered}>
-          <NotesMarkdownView markdown={example as string} />
+          <NotesMarkdownView markdown={fallbackSpeakerLabels(example as string)} />
         </div>
       )}
     </div>
