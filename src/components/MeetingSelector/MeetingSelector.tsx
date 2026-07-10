@@ -380,7 +380,8 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
         {(micStatus === "denied" || micStatus === "restricted") && (
           <div className={clsx("error-msg", styles.msError)}>
             <span className={styles.msErrorMsg}>
-              마이크 권한이 차단되어 있습니다. 시스템 설정에서 허용한 뒤 앱을 재시작해주세요.
+              마이크 권한이 차단되어 있습니다. 시스템 설정에서 허용하고 '종료 및 다시 열기'를
+              선택해주세요.
             </span>
             <button
               type="button"
