@@ -79,3 +79,15 @@ jobs:
           # tauri.conf.json엔 두지 않는다 — 그러면 로컬·기여자의 `tauri build`가
           # 서명 키 없이도 그냥 동작(서명 단계 자체가 안 생김). CI에서만 주입.
           args: '--config {"bundle":{"createUpdaterArtifacts":true}}'
+
+      # curl 설치 스크립트를 `install.sh` 이름으로 Release에 업로드.
+      #   curl -fsSL .../releases/latest/download/install.sh | sh
+      # 이 스크립트는 위에서 tauri-action이 올린 Junmit_aarch64.app.tar.gz를 curl로 받아
+      # /Applications에 푼다. curl+tar 경로는 격리(quarantine) 속성이 안 붙어 게이트키퍼
+      # 경고 없이 바로 실행된다 — 공증($99/년) 없이 무료로 마찰을 없애는 통로.
+      - name: 설치 스크립트를 Release에 업로드
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp scripts/install-app.sh install.sh
+          gh release upload "${{ github.ref_name }}" install.sh --repo "${{ github.repository }}" --clobber
