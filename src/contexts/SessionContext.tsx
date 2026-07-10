@@ -17,6 +17,7 @@ import { updateMeetingMeta } from "@/utils/meetingMeta";
 import { killPty, sendSlashCommand } from "@/utils/pty";
 import { buildSpawnRequest } from "@/utils/spawn";
 import { track, meetingTypeCategory } from "@/utils/analytics";
+import { sendNotification } from "@/utils/notification";
 
 // 새 회의 시작·reset 시 초기 진척도. 화면이 직접 사용 가능 (예: 처리 단계 reset).
 export const EMPTY_STEPS: SessionSteps = {
@@ -215,6 +216,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             setActivity(Activity.Idle);
             setCompletedActivity(null);
             showTabBanner(`작업을 완료하지 못했어요${signal.msg ? `\n${signal.msg}` : ""}`);
+            // 배너는 5초 뒤 사라지므로 자리를 비운 사용자용 OS 알림 병행
+            // (파이프라인 실패 알림(SessionScreen)과 동일한 대칭).
+            void sendNotification(
+              "Junmit — 회의록 작성 실패",
+              signal.msg || "회의록 작성을 완료하지 못했어요. 앱에서 다시 시도해주세요."
+            );
             void track("meeting_failed", { cli: cliRef.current });
           }
         } else if (signal.type === "phase_step_done") {
@@ -382,6 +389,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setActivity(Activity.Idle);
         setCompletedActivity(null);
         showTabBanner(`회의록 작성을 완료하지 못했어요\n${e}`);
+        // phase_error 경로와 동일하게 자리 비운 사용자용 OS 알림 병행 (신호 없는 크래시라
+        // phase_error 알림과 중복될 일 없음 — 신호가 왔다면 위 가드에서 이미 Idle).
+        void sendNotification("Junmit — 회의록 작성 실패", `회의록 작성을 완료하지 못했어요. ${e}`);
       }
     }
   }, [sessionDir, showTabBanner]);
@@ -566,7 +576,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     },
     [appDir, sessionDir, signalDir, cli]
   );
-
 
   // "AI에게 추가 요청" — 사이드바·빈 상태 UI 공통 진입점. drawer expand + /assist 스킬 호출.
   // Tier 1 (살아있는 PTY): stdin write로 /assist 호출 — 회의록 작성 직후 PTY 잔류 상태에서
