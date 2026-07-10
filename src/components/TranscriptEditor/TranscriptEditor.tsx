@@ -436,6 +436,20 @@ export default function TranscriptEditor({
   // picker 제목용 순번 라벨 (항상 "참석자 N"). 이름이 있어도 식별자로 순번을 쓴다.
   const numbers = useMemo(() => buildSpeakerNumbers(speakerKeys), [speakerKeys]);
 
+  // 전사본 복사 — 화면 표시와 동일한 형태(매핑 이름·"참석자 N" 치환)의 평문.
+  // 회의록 복사와 달리 마크다운 서식이 없어 text/plain만 태운다.
+  const [copied, setCopied] = useState(false);
+  const handleCopyTranscript = async () => {
+    const text = lines
+      .map((l) =>
+        l.type === "speech" ? `[${labels[l.speaker] ?? l.speaker} ${l.time}] ${l.text}` : l.text
+      )
+      .join("\n");
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   // 이름 지정/변경 — 사용자가 직접 고른 이름이므로 확정(confirmed=true)으로 저장.
   // 빈 이름("해제")이면 미확인 복귀 — confirmed도 해제.
   const handleMap = async (speaker: string, name: string) => {
@@ -585,8 +599,8 @@ export default function TranscriptEditor({
     <div className={styles.transcriptEditor}>
       {isEditLocked && (
         <div className={styles.teLockBanner}>
-          AI가 {activity === Activity.Correcting ? "회의 내용을 다듬는" : "회의록을 작성하는"} 중입니다.
-          완료 후 화자를 수정할 수 있습니다.
+          AI가 {activity === Activity.Correcting ? "회의 내용을 다듬는" : "회의록을 작성하는"}{" "}
+          중입니다. 완료 후 화자를 수정할 수 있습니다.
         </div>
       )}
       <div className={styles.teSummary}>
@@ -679,6 +693,16 @@ export default function TranscriptEditor({
             정밀 교정
           </span>
         ) : null}
+        {lines.length > 0 && (
+          <button
+            type="button"
+            className={styles.teCopy}
+            onClick={() => void handleCopyTranscript()}
+            title="전사본을 화면에 표시된 이름 그대로 클립보드에 복사합니다"
+          >
+            {copied ? "✓ 복사됨" : "복사"}
+          </button>
+        )}
       </div>
 
       <div className={styles.teLines} ref={linesRef}>
