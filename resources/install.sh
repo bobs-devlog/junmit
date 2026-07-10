@@ -285,17 +285,18 @@ rm -f "$MODELS_DIR/ggml-large-v3-turbo.bin"
 if [[ -f "$WHISPER_MODEL" ]]; then
   ok "Whisper large-v3-turbo 모델 이미 다운로드됨"
 else
-  # 이전에 중단된 임시 파일이 있으면 삭제
-  rm -f "$WHISPER_MODEL_TMP"
   info "Whisper large-v3-turbo 모델 다운로드 중 (약 870MB)..."
   # -f: HTTP 에러(404·프록시 등) 시 실패 처리 — 에러 페이지가 모델 파일로 저장되는 것 방지.
   # --retry: 일시적 네트워크 끊김 자동 재시도. 진행 표시는 progress_du(정의부 주 참조).
-  curl -fsSL --retry 3 --retry-delay 2 \
+  # -C -: 이전에 중단된 .tmp를 이어받기 — 재실행 시 870MB를 처음부터 다시 받지 않는다.
+  #       실패해도 .tmp는 남겨 다음 실행이 이어받는다 (2026-07 실측: HF CDN Range 지원(206),
+  #       .tmp가 이미 완주된 엣지도 curl 8.x가 exit 0으로 통과 — 별도 폴백 불필요).
+  curl -fsSL --retry 3 --retry-delay 2 -C - \
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q8_0.bin" \
     -o "$WHISPER_MODEL_TMP" &
   CURL_PID=$!
   progress_du "$WHISPER_MODEL_TMP" 874 "$CURL_PID"
-  wait "$CURL_PID"   # 실패 시 비0 종료 → set -e가 여기서 중단
+  wait "$CURL_PID"   # 실패 시 비0 종료 → set -e가 여기서 중단 (.tmp 보존)
   # 다운로드 완료 후에만 최종 파일로 이동
   mv "$WHISPER_MODEL_TMP" "$WHISPER_MODEL"
   ok "Whisper large-v3-turbo 모델 다운로드 완료"
