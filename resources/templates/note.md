@@ -23,7 +23,7 @@ summary: |
 
 ```markdown
 - 날짜: {날짜}
-- 참석자: @{firstName1}, @{firstName2}, ...    ← 회사 멤버는 @firstName 접두 (publish 스킬 mention 변환). 외부 참석자는 평문, 매핑 미확정은 SPEAKER_XX
+- 참석자: {이름1}, {이름2}, ...    ← 평문 이름. 매핑 미확정은 SPEAKER_XX
 
 ## 목표
 - {goal}
@@ -101,7 +101,7 @@ summary: |
 
 ```markdown
 - 날짜: 2026-06-05
-- 참석자: @Bobs, SPEAKER_03, SPEAKER_07
+- 참석자: Bobs, SPEAKER_03, SPEAKER_07
 
 ## 목표
 - 주간 진행 상황 공유 및 일정 조정

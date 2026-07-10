@@ -29,7 +29,7 @@ summary: |
 
 ```markdown
 - 날짜: {날짜}
-- 참석자: @{firstName1}, @{firstName2}, ...    ← 회사 멤버는 @firstName 접두 (publish 스킬 mention 변환). 외부 참석자는 평문, 매핑 미확정은 SPEAKER_XX
+- 참석자: {이름1}, {이름2}, ...    ← 평문 이름. 매핑 미확정은 SPEAKER_XX
 - 발표자: {매핑 확정 시 자연어 이름, 미확정이면 "(미확인)"}    ← 발표자가 여럿이면 이 줄 대신 각 ## 주제 아래에 표기
 
 ## {발표/주제}
@@ -86,7 +86,7 @@ summary: |
 
 ```markdown
 - 날짜: 2026-06-05
-- 참석자: @Bobs, SPEAKER_01, SPEAKER_04
+- 참석자: Bobs, SPEAKER_01, SPEAKER_04
 - 발표자: Bobs
 
 ## 효과적인 회의록 작성법
