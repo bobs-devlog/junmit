@@ -106,7 +106,7 @@ struct ApplyEdits: ParsableCommand {
         let file = try JSONDecoder().decode(TextEditsFile.self, from: data)
 
         var applied: [TextEdit] = []
-        for edit in file.edits {
+        for var edit in file.edits {
             let idx = edit.line - 1
             guard idx >= 0, idx < lines.count else {
                 logSkip("text", line: edit.line, reason: "line out of range (file has \(lines.count) lines)")
@@ -116,12 +116,25 @@ struct ApplyEdits: ParsableCommand {
                 logSkip("text", line: edit.line, reason: "old not found: \"\(truncate(edit.old))\"")
                 continue
             }
+            if edit.time == nil {
+                edit.time = headerTime(of: lines[idx])
+            }
             lines[idx].replaceSubrange(range, with: edit.new)
             applied.append(edit)
         }
 
         try writeJSON(TextEditsFile(edits: applied), to: url)
         return (applied.count, file.edits.count)
+    }
+
+    /// 라인 헤더 `[SPEAKER_XX M:SS]`에서 시각 토큰을 추출 (UI fallback 매칭용 time 주입).
+    /// LLM이 time을 방출하지 않아도 UI의 라인 시프트 fallback 매칭이 유지되도록 적용 시점에 채운다.
+    private func headerTime(of line: String) -> String? {
+        guard line.hasPrefix("["), let close = line.firstIndex(of: "]") else { return nil }
+        let header = line[line.index(after: line.startIndex)..<close]
+        guard let space = header.lastIndex(of: " ") else { return nil }
+        let time = header[header.index(after: space)...]
+        return time.contains(":") ? String(time) : nil
     }
 
     private func applySpeakerEdits(url: URL, lines: inout [String]) throws -> (applied: Int, total: Int) {

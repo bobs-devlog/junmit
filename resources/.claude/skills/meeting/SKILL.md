@@ -63,7 +63,7 @@ SESSION_DIR="$APP_SESSION_DIR"
 |---|---|---|---|
 | `transcript.txt` | whisper (전사 단계) | LLM, sidecar | 원본 전사. **절대 수정 금지** |
 | `transcript_corrected.txt` | sidecar | LLM, 앱 UI | 교정 작업본. **LLM 직접 편집 금지 — sidecar로만 수정** |
-| `transcript_text_edits.json` | LLM (1단계, **정밀 경로에서만**) | sidecar, 앱 UI | 텍스트 교정 명세. sidecar가 corrected.txt에 적용한 뒤, 이 JSON을 실패 항목 제외하고 재작성. 빠른 경로(정밀 끔)에선 생성되지 않음 |
+| `transcript_text_edits.json` | LLM (1단계, **정밀 경로에서만**) | sidecar, 앱 UI | 텍스트 교정 명세. sidecar가 corrected.txt에 적용한 뒤, 이 JSON을 실패 항목 제외하고 재작성 (`time`은 sidecar가 라인 헤더에서 주입). 빠른 경로(정밀 끔)에선 생성되지 않음 |
 | `transcript_speaker_edits.json` | LLM (1단계) | sidecar, 앱 UI | 화자 라벨 재할당 명세. sidecar가 corrected.txt에 적용한 뒤, 이 JSON을 실패 항목 제외하고 재작성 |
 | `speaker_mapping.json` | LLM, 사용자 (앱 UI) | LLM, 앱 UI | 화자 → 이름 매핑의 **단일 진실 원천** |
 | `meeting-notes.md` | LLM (이 스킬), 사용자 (앱 UI) | 앱 UI, 사용자 | 회의록 본문(유일한 본문 파일). SPEAKER_XX 라벨 유지 (앱이 표시 시점에 치환) |
@@ -84,7 +84,7 @@ transcript.txt (whisper 산출물, 변경 금지)
        │
        │  ② cp transcript.txt → transcript_corrected.txt
        │  ③ sidecar speaker 적용 (corrected.txt 변경 + speaker_edits.json에서 실패 edit 자동 제외)
-       │  ④ sidecar text 적용 — 정밀에서만 (corrected.txt 변경 + text_edits.json에서 실패 edit 자동 제외)
+       │  ④ sidecar text 적용 — 정밀에서만 (corrected.txt 변경 + 실패 edit 자동 제외)
        ▼
 transcript_corrected.txt (라벨 교정 반영 + 정밀 시 텍스트 교정도) + speaker_mapping.json
        │

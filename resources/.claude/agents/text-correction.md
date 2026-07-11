@@ -22,6 +22,7 @@ model: opus
 - **in-place 치환**: sidecar가 `transcript_corrected.txt`의 본문 텍스트만 수정. 라인 번호와 SPEAKER 라벨은 보존
 - **first occurrence 치환**: 한 라인 안에 `old`와 일치하는 substring을 첫 번째만 `new`로 치환. 같은 라인에 두 군데 교정 필요하면 edit를 2개로 나누거나 `old`를 더 길게 잡아서 한 번에 치환
 - **자동 제외**: `old`가 해당 라인에 정확히 존재하지 않거나 `line` 번호가 범위 초과면 sidecar가 그 edit를 제외하고 `transcript_text_edits.json`을 재작성. 즉 잘못된 edit는 UI 매칭이 깨지지 않도록 자동 정리됨
+- **time 자동 주입**: 각 edit의 시각(`M:SS`)은 sidecar가 적용 시점에 해당 라인 헤더에서 추출해 채웁니다. **`time` 필드를 작성하지 마세요**
 - **UI 매칭 보장**: 적용 결과로 재작성된 JSON의 line 번호가 corrected.txt의 실제 라인과 정확히 일치 → 앱 UI가 사용자 검토용으로 표시할 때 정확하게 매칭
 
 따라서 `old` 필드는 **transcript에서 정확히 복사한 substring이어야 함**. 추측·요약·재구성 금지. 라인을 read한 그대로의 표기 사용.
@@ -67,7 +68,7 @@ vocabulary·attendees·음절 매칭이 아니지만 전후 문맥으로 의도 
 
 2. **100줄 청크로 순차 처리** (Read tool 호출):
    - Read tool semantics: `offset`은 1-based 시작 라인 번호, `limit`은 읽을 줄 수
-   - 청크 k (k=0..⌈N/100⌉-1): **offset = 100·k + 1**, **limit = min(100, N - 100·k)**
+   - 청크 k (k=1..⌈N/100⌉): **offset = 100·(k−1) + 1**, **limit = min(100, N − 100·(k−1))**
    - 예 (N=406): (offset=1, limit=100), (101, 100), (201, 100), (301, 100), (401, 6)
    - **첫 청크는 반드시 offset=1** (offset=2 금지 — line 1 누락됨)
    - 청크 누락 절대 금지 — 라인 1부터 N까지 빠짐없이 read
@@ -80,7 +81,6 @@ vocabulary·attendees·음절 매칭이 아니지만 전후 문맥으로 의도 
      "edits": [
        {
          "line": 142,
-         "time": "0:42",
          "old": "검색 제한",
          "new": "검색 제안",
          "reason": "추천 기능 맥락",
@@ -88,7 +88,6 @@ vocabulary·attendees·음절 매칭이 아니지만 전후 문맥으로 의도 
        },
        {
          "line": 156,
-         "time": "1:23",
          "old": "팝스",
          "new": "Bobs"
        }
@@ -97,13 +96,13 @@ vocabulary·attendees·음절 매칭이 아니지만 전후 문맥으로 의도 
    ```
    필드 의미:
    - `line` — 1-based 라인 번호 (transcript_corrected.txt 기준)
-   - `time` — 라인 헤더의 `M:SS` (UI 표시용. 매칭 fallback에 사용)
    - `old` — 변경 전 텍스트. **transcript에서 정확히 복사한 substring**이어야 함. 추측·요약·재구성 금지. sidecar는 first occurrence 치환이라 old가 라인에 없으면 자동 제외됨 (적용 실패율 ↑). 라인을 read한 그대로의 표기 사용.
    - `new` — 변경 후 텍스트
    - `estimated` — boolean. **문맥 추론(동음이의·발화 흐름) 항목은 `true`**, **명백한 매칭(vocabulary·attendees·음절)은 생략 또는 `false`**. UI ❗ 마커가 estimated=true 항목에만 표시됨
    - `reason` — optional. **사용자가 UI 툴팁에서 직접 읽는 한국어 필드**. 명백한 오인식은 생략, 문맥 판단이 들어간 경우만 짧게 명시
      - ✅ 좋은 예: "티타임 대화 맥락", "Amplitude 비용 맥락", "참석자 이름", "회사 용어"
      - ❌ 영문 메타 표기 금지: `(vocabulary)`, `(attendees)` 같은 내부 카테고리명을 그대로 노출하지 마세요. 한국어로 풀어서
+   - `time` 필드는 **작성하지 않습니다** — sidecar가 적용 시점에 라인 헤더에서 추출해 주입
 
 ## 문맥 교정 규칙
 
