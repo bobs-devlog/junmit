@@ -25,6 +25,97 @@
   color: var(--text-secondary);
 }
 
+/* 2컬럼 래퍼 — 왼쪽 메모 패널(.notes) + 오른쪽 지난 회의 액션(.briefing).
+   브리핑이 없으면 .notes 단독으로 기존과 동일. */
+.wrap {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* 지난 회의 액션 아이템 — 회의 초반 점검용 참조 패널. 메모(입력)와 분리된 우측 컬럼.
+   낮은 톤(무채색)으로 입력을 방해하지 않는다.
+   ⚠️ 스크롤은 목록(.briefing-list)이 담당 — 패널 자체에 overflow를 주면 클리핑
+   컨텍스트가 생겨 헤더의 hover 툴팁(::after)이 패널 경계에서 잘린다(실측). */
+.briefing {
+  flex-shrink: 1;
+  width: 300px;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  margin: 24px 32px 24px 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+  line-height: 1.6;
+  align-self: flex-start;
+  max-height: calc(100% - 48px);
+}
+
+.briefing-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* 설명 아이콘 — hover 시 지연 없이 뜨는 CSS 툴팁의 앵커.
+   네이티브 title은 ~1초 지연이 있어 발견성 용도에 부적합. */
+.briefing-info {
+  position: relative;
+  color: var(--text-secondary);
+  opacity: 0.7;
+  font-weight: 400;
+  cursor: help;
+}
+
+/* 툴팁 본체 — TextEditTooltip popover와 같은 시각 토큰(배경·그림자·radius).
+   패널이 창 우측 끝이라 right 정렬로 왼쪽을 향해 펼친다. */
+.briefing-info:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 6px);
+  right: -8px;
+  z-index: 100;
+  width: 240px;
+  padding: 8px 10px;
+  background: var(--bg-sidebar);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: normal;
+  pointer-events: none;
+}
+
+.briefing-date {
+  color: var(--text-secondary);
+  opacity: 0.8;
+  margin-bottom: 8px;
+}
+
+.briefing-list {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.briefing-more {
+  list-style: none;
+  opacity: 0.7;
+}
+
 /* 입력 영역 — 리스트(시간순) 아래 고정. 메신저 관례: 입력이 하단, 최신 메모가 바로 위. */
 .footer {
   flex-shrink: 0;

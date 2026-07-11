@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import RecordingSidebarControls from "@/components/Sidebar/RecordingSidebarControls";
@@ -20,6 +20,7 @@ import { MIC_PERMISSION_DENIED } from "@/hooks/useRecorder";
 import { hideReminderWindow } from "@/utils/reminderWindow";
 import { logError } from "@/utils/logging";
 import { track, durationBucket } from "@/utils/analytics";
+import { loadBriefing, type Briefing } from "@/utils/briefing";
 import { invoke } from "@tauri-apps/api/core";
 import styles from "@/App.module.css";
 
@@ -56,6 +57,24 @@ export default function RecordingScreen() {
   const { notes, notesRef, addSpeaker, addText, editText, removeNote } = useRecordingNotes(
     recorder.elapsed
   );
+
+  // 지난 회의 브리핑 — 같은 시리즈(제목 동일) 지난 회의의 액션 아이템. 반복 회의는 대개
+  // 초반에 지난 액션을 점검하므로, 그 시점에 참조할 수 있는 녹음 화면에 노출한다.
+  // 제목은 녹음 진입 시 고정이라 마운트 1회 로드로 충분. 실패·미매칭은 무해(카드 미표시).
+  const [briefing, setBriefing] = useState<Briefing | null>(null);
+  useEffect(() => {
+    const title = meeting?.title;
+    if (!title) return;
+    let cancelled = false;
+    void loadBriefing(title).then((b) => {
+      if (!cancelled) setBriefing(b);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // 마운트 1회 — meeting은 녹음 화면 진입 시 고정
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Recording/Saving 중 router back/forward(POP) 차단 — confirm 후 녹음 정리.
   // 화면 내부 명시 navigate(handleAbort/handleStop 등 PUSH/REPLACE)는 통과.
@@ -253,6 +272,7 @@ export default function RecordingScreen() {
         <RecordingNotes
           attendees={meeting?.attendees ?? NO_ATTENDEES}
           notes={notes}
+          briefing={briefing}
           onAddSpeaker={addSpeaker}
           onAddText={addText}
           onEditText={editText}

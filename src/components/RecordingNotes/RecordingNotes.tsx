@@ -1,6 +1,7 @@
 import { useState, useRef, useLayoutEffect, memo } from "react";
 import clsx from "clsx";
 import type { MeetingNote } from "@/types";
+import type { Briefing } from "@/utils/briefing";
 import styles from "./RecordingNotes.module.css";
 
 function formatTime(seconds: number): string {
@@ -14,6 +15,8 @@ interface Props {
   attendees: string[];
   // 누적 메모 (시간순). 시간순 그대로 표시 — 최신이 아래, 새 항목 추가 시 맨 아래로 추종.
   notes: MeetingNote[];
+  // 같은 시리즈 지난 회의의 액션 아이템 — 회의 초반 "지난 액션 점검"용 상기 카드 (없으면 미표시).
+  briefing?: Briefing | null;
   // 현재 발화자 = name 앵커 추가 (현재 elapsed에 기록).
   onAddSpeaker: (name: string) => void;
   // 자유 메모 한 줄 추가.
@@ -24,13 +27,14 @@ interface Props {
   onRemove: (index: number) => void;
 }
 
-// 녹음 화면 본문의 메모 패널. 회의 중 저마찰 캡처가 목적 —
-// 참석자 칩 1탭(화자 앵커), 짧은 자유 메모.
+// 녹음 화면 본문 — 왼쪽 메모 패널(회의 중 저마찰 캡처: 참석자 칩 1탭 화자 앵커 + 짧은
+// 자유 메모) + 오른쪽 지난 회의 액션 참조 패널(브리핑, 있을 때만).
 // 텍스트 메모는 추가/수정/삭제, 화자 힌트는 추가/삭제 (수정은 삭제 후 재탭).
 // 하단 memo() — 레벨 미터 60Hz 리렌더가 이 패널에 번지지 않게(부하 큰 입력 중 버벅임 방지). 떼지 말 것.
 function RecordingNotes({
   attendees,
   notes,
+  briefing,
   onAddSpeaker,
   onAddText,
   onEditText,
@@ -89,106 +93,139 @@ function RecordingNotes({
   };
 
   return (
-    <div className={styles.notes}>
-      <div className={styles.header}>
-        <span className={styles.title}>녹음 메모</span>
-        <span className={styles.hint}>
-          {hasSpeakers
-            ? "말하는 사람을 누르거나 메모를 남기면 회의록이 정확해져요"
-            : "메모를 남기면 회의록 작성에 도움이 돼요"}
-        </span>
-      </div>
-
-      <div className={styles.list} ref={listRef} onScroll={handleListScroll}>
-        {notes.length === 0 && (
-          <span className={styles.empty}>
-            {hasSpeakers ? "표시한 화자와 메모가 여기에 쌓입니다" : "입력한 메모가 여기에 쌓입니다"}
+    // 2컬럼 — 왼쪽은 입력(메모), 오른쪽은 참조(지난 회의 액션). 메모 컬럼의 max-width
+    // 우측 여백을 브리핑이 쓴다. 브리핑이 없으면 기존과 동일한 단일 컬럼.
+    <div className={styles.wrap}>
+      <div className={styles.notes}>
+        <div className={styles.header}>
+          <span className={styles.title}>녹음 메모</span>
+          <span className={styles.hint}>
+            {hasSpeakers
+              ? "말하는 사람을 누르거나 메모를 남기면 회의록이 정확해져요"
+              : "메모를 남기면 회의록 작성에 도움이 돼요"}
           </span>
-        )}
-        {notes.map((note, index) => {
-          const isText = note.kind === "text";
-          const isEditing = isText && editing === index;
-          return (
-            <div key={index} className={styles.row}>
-              <span className={styles.time}>{formatTime(note.t)}</span>
-              {isEditing ? (
-                <input
-                  className={styles.edit}
-                  value={editValue}
-                  autoFocus
-                  onChange={(e) => setEditValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") commitEdit();
-                    else if (e.key === "Escape") cancelEdit();
-                  }}
-                  onBlur={commitEdit}
-                />
-              ) : (
-                <span
-                  className={clsx(styles.content, styles[note.kind], isText && styles.editable)}
-                  title={isText ? "메모 수정 (클릭)" : undefined}
-                  onClick={isText ? () => startEdit(index, note.text ?? "") : undefined}
-                >
-                  {note.kind === "speaker" && <>🎙 {note.speaker}</>}
-                  {isText && note.text}
-                </span>
-              )}
-              {isText && !isEditing && (
+        </div>
+
+        <div className={styles.list} ref={listRef} onScroll={handleListScroll}>
+          {notes.length === 0 && (
+            <span className={styles.empty}>
+              {hasSpeakers
+                ? "표시한 화자와 메모가 여기에 쌓입니다"
+                : "입력한 메모가 여기에 쌓입니다"}
+            </span>
+          )}
+          {notes.map((note, index) => {
+            const isText = note.kind === "text";
+            const isEditing = isText && editing === index;
+            return (
+              <div key={index} className={styles.row}>
+                <span className={styles.time}>{formatTime(note.t)}</span>
+                {isEditing ? (
+                  <input
+                    className={styles.edit}
+                    value={editValue}
+                    autoFocus
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitEdit();
+                      else if (e.key === "Escape") cancelEdit();
+                    }}
+                    onBlur={commitEdit}
+                  />
+                ) : (
+                  <span
+                    className={clsx(styles.content, styles[note.kind], isText && styles.editable)}
+                    title={isText ? "메모 수정 (클릭)" : undefined}
+                    onClick={isText ? () => startEdit(index, note.text ?? "") : undefined}
+                  >
+                    {note.kind === "speaker" && <>🎙 {note.speaker}</>}
+                    {isText && note.text}
+                  </span>
+                )}
+                {isText && !isEditing && (
+                  <button
+                    type="button"
+                    className={styles.editBtn}
+                    onClick={() => startEdit(index, note.text ?? "")}
+                    title="메모 수정"
+                  >
+                    ✎
+                  </button>
+                )}
                 <button
                   type="button"
-                  className={styles.editBtn}
-                  onClick={() => startEdit(index, note.text ?? "")}
-                  title="메모 수정"
+                  className={styles.remove}
+                  onClick={() => onRemove(index)}
+                  title="삭제"
                 >
-                  ✎
+                  ✕
                 </button>
-              )}
-              <button
-                type="button"
-                className={styles.remove}
-                onClick={() => onRemove(index)}
-                title="삭제"
-              >
-                ✕
-              </button>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className={styles.footer}>
+          {hasSpeakers && (
+            <div className={styles.chipsBlock}>
+              <span className={styles.chipsLabel}>지금 말하는 사람을 누르세요</span>
+              <div className={styles.chips}>
+                {attendees.map((name, i) => (
+                  <button
+                    key={`${name}-${i}`}
+                    type="button"
+                    className={styles.chip}
+                    onClick={() => onAddSpeaker(name)}
+                    title={`${name} 발화 시점 표시`}
+                  >
+                    🎙 {name}
+                  </button>
+                ))}
+              </div>
             </div>
-          );
-        })}
+          )}
+
+          <input
+            className={styles.input}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                submitText();
+              }
+            }}
+            placeholder="메모 입력 후 Enter"
+          />
+        </div>
       </div>
 
-      <div className={styles.footer}>
-        {hasSpeakers && (
-          <div className={styles.chipsBlock}>
-            <span className={styles.chipsLabel}>지금 말하는 사람을 누르세요</span>
-            <div className={styles.chips}>
-              {attendees.map((name, i) => (
-                <button
-                  key={`${name}-${i}`}
-                  type="button"
-                  className={styles.chip}
-                  onClick={() => onAddSpeaker(name)}
-                  title={`${name} 발화 시점 표시`}
-                >
-                  🎙 {name}
-                </button>
-              ))}
-            </div>
+      {briefing && (
+        <aside className={styles.briefing}>
+          <div className={styles.briefingHeader}>
+            지난 회의 액션 아이템
+            {/* 즉시 뜨는 hover 툴팁 — 네이티브 title은 ~1초 지연이 있어 발견성 앵커로 부적합.
+                CSS ::after + data-tip으로 지연 없이 표시 (TextEditTooltip popover와 같은 시각 토큰). */}
+            <span
+              className={styles.briefingInfo}
+              data-tip="같은 제목의 지난 회의 회의록에서 가져온 액션 아이템입니다. 정기 회의에서 지난번에 하기로 한 일을 상기하는 용도예요."
+            >
+              ⓘ
+            </span>
           </div>
-        )}
-
-        <input
-          className={styles.input}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              submitText();
-            }
-          }}
-          placeholder="메모 입력 후 Enter"
-        />
-      </div>
+          <div className={styles.briefingDate}>
+            {briefing.date} · {briefing.openActions.length}개
+          </div>
+          <ul className={styles.briefingList}>
+            {briefing.openActions.slice(0, 12).map((action, i) => (
+              <li key={i}>{action}</li>
+            ))}
+            {briefing.openActions.length > 12 && (
+              <li className={styles.briefingMore}>외 {briefing.openActions.length - 12}개</li>
+            )}
+          </ul>
+        </aside>
+      )}
     </div>
   );
 }
