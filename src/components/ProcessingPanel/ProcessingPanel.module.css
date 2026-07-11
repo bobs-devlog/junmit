@@ -44,25 +44,113 @@
   font-size: 14px;
 }
 
-.pp-logs {
+/* 단계 행의 보조 문구 (예: "· 참석자 7명 기준") — 본문보다 한 단계 죽인 톤. */
+.pp-step-note {
+  color: var(--text-secondary);
+  font-weight: 400;
+  font-size: 12px;
+}
+
+/* 화자분리 하위 단계 체크리스트 — 상위 행 아이콘 열에 맞춰 들여쓰기. */
+.pp-substeps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 16px 2px 44px;
+}
+
+.pp-substep {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.pp-substep-active {
+  color: var(--accent);
+}
+
+.pp-substep-done {
+  color: var(--success);
+}
+
+.pp-substep-icon {
+  width: 16px;
+  text-align: center;
+  font-size: 12px;
+}
+
+/* 얇은 바 + 퍼센트 — 행 우측 끝. SetupScreen 다운로드 게이지와 같은 시각 어휘. */
+.pp-bar {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.pp-bar-track {
+  width: 90px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.pp-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.pp-bar-pct {
+  min-width: 34px;
+  text-align: right;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+/* 안내 라인 (참석자 미입력·GPU 불가) — 단계 목록과 미리보기 사이의 낮은 톤 한 줄. */
+.pp-hint {
+  flex-shrink: 0;
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* 실시간 전사 미리보기 — 자막이 쌓이는 화면. 터미널이 아니라 본문 서체를 쓴다. */
+.pp-preview {
   flex: 1;
   overflow-y: auto;
   background: var(--bg-terminal);
   border-radius: 8px;
   padding: 12px 16px;
-  font-family: "Geist Mono", "SF Mono", Menlo, monospace;
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: 13px;
+  line-height: 1.7;
   min-height: 0;
 }
 
-.pp-log-line {
+.pp-preview-line {
+  display: flex;
+  gap: 10px;
   color: var(--text-secondary);
-  white-space: pre-wrap;
-  word-break: break-all;
 }
 
-.pp-running {
+.pp-preview-time {
+  flex-shrink: 0;
+  min-width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.55;
+}
+
+.pp-preview-empty {
   color: var(--accent);
   animation: pulse 1.5s ease-in-out infinite;
 }

@@ -19,9 +19,13 @@ do_diarize() {
   # max_speakers 미지정 시 참석자 수로 자동 계산 (Rust가 meeting.json attendees 길이를
   # MAX_SPEAKERS로 전달). 참석자 수가 정확하면 over-merge(여러 화자가 한 SPEAKER로
   # 합쳐지는 현상) 방지에 큰 효과. 0이면 안전한 기본값 10.
+  local speaker_hint_source="attendees"
   if [[ -z "$max_speakers" || "$max_speakers" -eq 0 ]]; then
     max_speakers="${MAX_SPEAKERS:-0}"
-    [[ -z "$max_speakers" || "$max_speakers" -eq 0 ]] && max_speakers=10
+    if [[ -z "$max_speakers" || "$max_speakers" -eq 0 ]]; then
+      max_speakers=10
+      speaker_hint_source="default"
+    fi
   fi
   local wav_file="$session_dir/recording.wav"
   local segments_file="$session_dir/segments.json"
@@ -57,7 +61,9 @@ do_diarize() {
   local diarize_input="$wav_file"
 
   info "  pyannote.audio (MPS GPU 가속) 사용"
-  info "  max_speakers: ${max_speakers}명"
+  # 화자 수 탐색 기준 + 출처 — 진행 패널이 파싱해 "참석자 N명 기준" / 기본값 안내로 표시
+  # (형식 변경 시 ProcessingPanel의 파서와 함께 수정).
+  echo "[speaker-hint] ${speaker_hint_source} ${max_speakers}"
 
   if ! "$VENV_DIR/bin/python3" "$pyannote_script" \
       "$diarize_input" "$diarize_file" "$pyannote_model_dir" "$max_speakers"; then

@@ -38,6 +38,11 @@ do_transcribe() {
     prompt_args=(--prompt "$prompt_text")
   fi
 
+  # 진행 표시 — -pp가 stderr로 디코드 진행률("progress = N%", 30초 창마다)을, stdout이
+  # 전사 세그먼트를 실시간으로 낸다. stderr는 모델 초기화 노이즈가 많아 진행률 라인만
+  # 통과시키고(BSD grep --line-buffered), stdout은 그대로 흘린다 — Rust stream_pipeline이
+  # 줄 단위로 진행 패널에 전달하고, 패널은 진행률 라인을 게이지로(로그 미표시), 세그먼트를
+  # 로그로 보여준다(형식 변경 시 ProcessingPanel의 파서와 함께 수정).
   DYLD_LIBRARY_PATH="$SCRIPT_DIR/bin" "$whisper_cli" \
     -m "$whisper_model" \
     -f "$wav_file" \
@@ -46,8 +51,8 @@ do_transcribe() {
     -ojf \
     -of "$session_dir/recording_whisper" \
     ${prompt_args[@]+"${prompt_args[@]}"} \
-    --no-prints \
-    >/dev/null 2>&1
+    -pp \
+    2> >(grep --line-buffered -oE 'progress = *[0-9]+%' || true)
 
   if [[ ! -f "$json_file" ]] || [[ ! -s "$json_file" ]]; then
     err "음성 인식에 실패했습니다."

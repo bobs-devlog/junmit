@@ -103,8 +103,29 @@ diarize_params = {"max_speakers": max_speakers}
 print(f"pyannote.audio: 화자 수 자동 감지 (max_speakers={max_speakers})", file=sys.stderr)
 
 print("pyannote.audio: 화자 분리 시작...", file=sys.stderr)
+
+
+# 진행률 hook — 파이프라인이 배치마다 (step_name, completed/total)을 콜백한다.
+# 무거운 두 단계만 퍼센트로 노출하고(같은 값 반복 억제), 앱 진행 패널이 이 라인을
+# 파싱해 게이지로 표시한다(형식 변경 시 ProcessingPanel의 파서와 함께 수정).
+# completed가 total을 넘는 경우가 있어(배치 경계, 실측 128/114) 100으로 클램프.
+_PROGRESS_LABELS = {"segmentation": "구간 분석", "embeddings": "화자 특징 추출"}
+_progress_last: dict[str, int] = {}
+
+
+def _progress_hook(step_name, step_artifact, file=None, total=None, completed=None):
+    label = _PROGRESS_LABELS.get(step_name)
+    if label is None or not total or completed is None:
+        return
+    pct = min(100, completed * 100 // total)
+    if _progress_last.get(step_name) == pct:
+        return
+    _progress_last[step_name] = pct
+    print(f"pyannote.audio: {label} {pct}%", file=sys.stderr, flush=True)
+
+
 start = time.time()
-result = pipeline(audio_input, **diarize_params)
+result = pipeline(audio_input, hook=_progress_hook, **diarize_params)
 elapsed = time.time() - start
 print(f"pyannote.audio: 화자 분리 완료 ({elapsed:.1f}초)", file=sys.stderr)
 

@@ -18,6 +18,57 @@ const PROCESSING_STEPS = STEPS.filter((s) => s.id === Step.Transcribe || s.id ==
 
 type StepState = "running" | "done" | "error";
 
+// ─── 스크립트 출력 파서 ─────────────────────────────────────
+// 파이프라인 출력 원문은 pipeline.log에 전부 기록되고(진단용 — 설정 > 로그 폴더 열기),
+// 화면엔 아래 파서가 인식한 정보만 사용자 언어로 노출한다(내부 경로·도구명·기술 로그 숨김).
+// 형식 변경 시 transcribe.sh·pyannote_diarize.py·diarize.sh와 함께 수정.
+
+// 전사 진행률 — transcribe.sh가 whisper -pp stderr를 필터한 라인 (디코드 위치, 30초 창마다)
+const WHISPER_PROGRESS_RE = /^progress\s*=\s*(\d{1,3})%$/;
+// 화자분리 진행률 — pyannote_diarize.py hook. 단계별로 각각 0→100.
+const PYANNOTE_PROGRESS_RE = /^pyannote\.audio: (구간 분석|화자 특징 추출) (\d{1,3})%$/;
+// 전사 세그먼트 — whisper stdout. 발화 속 "N%" 같은 텍스트를 진행률로 오인하지 않도록
+// 모든 파서가 라인 전체 형식을 매칭한다.
+const SEGMENT_RE = /^\[(\d{2}):(\d{2}):(\d{2})\.\d{3} --> \d{2}:\d{2}:\d{2}\.\d{3}\]\s+(.+)$/;
+// 화자 수 탐색 기준 — diarize.sh. attendees=참석자 수 기반 / default=참석자 미입력 폴백.
+const SPEAKER_HINT_RE = /^\[speaker-hint\] (attendees|default) (\d+)$/;
+// GPU 가속 불가 폴백 — pyannote_diarize.py가 MPS 미지원 시 출력.
+const CPU_FALLBACK_PREFIX = "pyannote.audio: CPU 모드";
+
+// 화자분리 하위 단계. 전이는 진행률 라인 도착으로 유도된다 — "준비"(모델·오디오 로딩)는
+// 첫 "구간 분석" 라인이 오면 완료로 간주. "마무리"는 특징 추출 100% 이후의 꼬리 작업
+// (클러스터링·합치기 제안 후보 계산·전사 병합 — 화자 수에 따라 수 초~수십 초)로,
+// 진행률 신호가 없어 스피너만 표시한다. 이 단계가 없으면 "100%에서 멈춤"으로 보인다.
+const DIARIZE_STAGES = [
+  { id: "prep", label: "준비" },
+  { id: "seg", label: "구간 분석" },
+  { id: "emb", label: "화자 특징 추출" },
+  { id: "finish", label: "마무리" },
+] as const;
+type DiarizeStageId = (typeof DIARIZE_STAGES)[number]["id"];
+
+interface TranscriptEntry {
+  time: string;
+  text: string;
+}
+
+function formatTime(h: number, m: number, s: number): string {
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+// 얇은 바 + 퍼센트 — SetupScreen 다운로드 게이지와 같은 시각 어휘.
+function ProgressBar({ pct }: { pct: number }) {
+  return (
+    <span className={styles.ppBar}>
+      <span className={styles.ppBarTrack}>
+        <span className={styles.ppBarFill} style={{ width: `${pct}%` }} />
+      </span>
+      <span className={styles.ppBarPct}>{pct}%</span>
+    </span>
+  );
+}
+
 interface ProcessingPanelProps {
   sessionDir: string | null;
   completedSteps: SessionSteps | null;
@@ -42,20 +93,33 @@ export default function ProcessingPanel({
 }: ProcessingPanelProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [stepStatus, setStepStatus] = useState<Record<string, StepState>>({});
-  const [logs, setLogs] = useState<string[]>([]);
-  const logRef = useRef<HTMLDivElement | null>(null);
+  // 전사 진행률 (null = 전사 단계 미시작). 시작 시 0으로 초기화해 바를 즉시 노출한다 —
+  // whisper 첫 콜백은 첫 30초 창 디코드 후에야 오고, 그 값도 회의 길이에 따라
+  // 1~수십 %라(창 1개 ÷ 전체 창 수) 첫 콜백까지 바가 없으면 "멈춤"으로 보인다.
+  const [transcribePct, setTranscribePct] = useState<number | null>(null);
+  // 화자분리 하위 단계 + 해당 단계 진행률
+  const [diarizeStage, setDiarizeStage] = useState<DiarizeStageId>("prep");
+  const [diarizePct, setDiarizePct] = useState(0);
+  // 실시간 전사 미리보기 — 단계가 넘어가도 유지 (화자분리 중엔 완성된 전사가 남아 있는 게 자연스러움)
+  const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  const [speakerHint, setSpeakerHint] = useState<{
+    source: "attendees" | "default";
+    count: number;
+  } | null>(null);
+  const [cpuFallback, setCpuFallback] = useState(false);
+  const previewRef = useRef<HTMLDivElement | null>(null);
   // StrictMode 안전: 같은 sessionDir로 두 번 invoke되지 않도록 가드.
   // (cancelled 플래그는 await 안에 묶여서 invoke 시작을 못 막음.)
   const startedRef = useRef<string | null>(null);
 
-  // 로그 자동 스크롤
+  // 미리보기 자동 스크롤
   useEffect(() => {
-    if (logRef.current) {
-      logRef.current.scrollTop = logRef.current.scrollHeight;
+    if (previewRef.current) {
+      previewRef.current.scrollTop = previewRef.current.scrollHeight;
     }
-  }, [logs]);
+  }, [transcript]);
 
-  // pipeline:output 이벤트 수신.
+  // pipeline:output 이벤트 수신 → 파서가 인식한 정보만 화면 상태로 반영.
   // StrictMode 안전: cleanup이 Promise resolve 전에 호출되면 cancelled 플래그로 표시,
   // resolve 후 즉시 unlisten해서 listener 누수 방지 (이중 emit 원인이 됨).
   useEffect(() => {
@@ -64,10 +128,41 @@ export default function ProcessingPanel({
     listen<string>("pipeline:output", (event) => {
       try {
         const data = JSON.parse(event.payload) as { line: string };
-        const clean = stripAnsi(data.line);
-        if (clean.trim()) {
-          setLogs((prev) => [...prev, clean]);
+        const line = stripAnsi(data.line).trim();
+        if (!line) return;
+
+        const w = line.match(WHISPER_PROGRESS_RE);
+        if (w) {
+          setTranscribePct(Math.min(100, Number(w[1])));
+          return;
         }
+        const p = line.match(PYANNOTE_PROGRESS_RE);
+        if (p) {
+          setDiarizeStage(p[1] === "구간 분석" ? "seg" : "emb");
+          setDiarizePct(Math.min(100, Number(p[2])));
+          return;
+        }
+        const seg = line.match(SEGMENT_RE);
+        if (seg) {
+          setTranscript((prev) => [
+            ...prev,
+            {
+              time: formatTime(Number(seg[1]), Number(seg[2]), Number(seg[3])),
+              text: seg[4].trim(),
+            },
+          ]);
+          return;
+        }
+        const hint = line.match(SPEAKER_HINT_RE);
+        if (hint) {
+          setSpeakerHint({ source: hint[1] as "attendees" | "default", count: Number(hint[2]) });
+          return;
+        }
+        if (line.startsWith(CPU_FALLBACK_PREFIX)) {
+          setCpuFallback(true);
+          return;
+        }
+        // 그 외(도구 초기화·경로 등 기술 로그)는 화면 미표시 — pipeline.log에만 남는다.
       } catch {}
     }).then((fn) => {
       if (cancelled) fn();
@@ -99,7 +194,11 @@ export default function ProcessingPanel({
         }
 
         setStepStatus((prev) => ({ ...prev, [step.id]: "running" }));
-        setLogs([]);
+        if (step.id === Step.Transcribe) setTranscribePct(0);
+        if (step.id === Step.Diarize) {
+          setDiarizeStage("prep");
+          setDiarizePct(0);
+        }
         onStepChange?.(step.id);
 
         try {
@@ -147,49 +246,114 @@ export default function ProcessingPanel({
     runSteps();
   }, [sessionDir]);
 
+  // 현재 파싱된 단계가 100%에 닿으면 활성 표시를 다음 단계로 넘긴다 — 단계 사이의
+  // 무신호 구간(구간 분석→특징 추출 준비, 특징 추출→마무리 꼬리 작업)이 "100%에서
+  // 멈춤"으로 보이지 않게. 바는 파싱된 단계(진행률 신호가 실제로 오는 단계)에만 붙는다.
+  const parsedStageIdx = DIARIZE_STAGES.findIndex((s) => s.id === diarizeStage);
+  const activeStageIdx = Math.min(
+    diarizePct >= 100 ? parsedStageIdx + 1 : parsedStageIdx,
+    DIARIZE_STAGES.length - 1
+  );
+  const transcribeRunning = stepStatus[Step.Transcribe] === "running";
+  const diarizeRunning = stepStatus[Step.Diarize] === "running";
+
   return (
     <div className={styles.processingPanel}>
       <div className={styles.ppSteps}>
         {PROCESSING_STEPS.map((step, i) => {
           const status = stepStatus[step.id];
           const isCurrent = i === currentStep && status === "running";
+          const isDiarize = step.id === Step.Diarize;
           return (
-            <div
-              key={step.id}
-              className={clsx(
-                styles.ppStep,
-                status === "done" && styles.done,
-                isCurrent && styles.current,
-                status === "error" && styles.error
-              )}
-            >
-              <span className={styles.ppStepIcon}>
-                {status === "done" ? (
-                  "✓"
-                ) : status === "error" ? (
-                  "✕"
-                ) : isCurrent ? (
-                  <Spinner size={13} />
-                ) : (
-                  "·"
+            <div key={step.id}>
+              <div
+                className={clsx(
+                  styles.ppStep,
+                  status === "done" && styles.done,
+                  isCurrent && styles.current,
+                  status === "error" && styles.error
                 )}
-              </span>
-              <span>
-                {step.icon} {step.description}
-              </span>
+              >
+                <span className={styles.ppStepIcon}>
+                  {status === "done" ? (
+                    "✓"
+                  ) : status === "error" ? (
+                    "✕"
+                  ) : isCurrent ? (
+                    <Spinner size={13} />
+                  ) : (
+                    "·"
+                  )}
+                </span>
+                <span>
+                  {step.icon} {step.description}
+                  {isDiarize && speakerHint?.source === "attendees" && (
+                    <span className={styles.ppStepNote}> · 참석자 {speakerHint.count}명 기준</span>
+                  )}
+                </span>
+                {isCurrent && !isDiarize && transcribePct != null && (
+                  <ProgressBar pct={transcribePct} />
+                )}
+              </div>
+              {/* 화자분리 하위 단계 체크리스트 — 단계별 속도가 크게 달라(특징 추출이 대부분)
+                  단일 게이지로 합치면 정체·역행처럼 보인다. 진행 중일 때만 펼친다. */}
+              {isDiarize && isCurrent && (
+                <div className={styles.ppSubsteps}>
+                  {DIARIZE_STAGES.map((stage, si) => {
+                    const stageDone = si < activeStageIdx;
+                    const stageActive = si === activeStageIdx;
+                    return (
+                      <div
+                        key={stage.id}
+                        className={clsx(
+                          styles.ppSubstep,
+                          stageDone && styles.ppSubstepDone,
+                          stageActive && styles.ppSubstepActive
+                        )}
+                      >
+                        <span className={styles.ppSubstepIcon}>
+                          {stageDone ? "✓" : stageActive ? <Spinner size={11} /> : "·"}
+                        </span>
+                        <span>{stage.label}</span>
+                        {stageActive && stage.id === diarizeStage && stage.id !== "prep" && (
+                          <ProgressBar pct={diarizePct} />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           );
         })}
       </div>
 
-      <div className={styles.ppLogs} ref={logRef}>
-        {logs.map((line, i) => (
-          <div key={i} className={styles.ppLogLine}>
-            {line}
+      {speakerHint?.source === "default" && (
+        <div className={styles.ppHint}>
+          참석자 정보가 없어 최대 {speakerHint.count}명까지 화자를 탐색합니다. 회의 시작 시 참석자를
+          입력하면 화자 구분이 더 정확해져요.
+        </div>
+      )}
+      {cpuFallback && (
+        <div className={styles.ppHint}>
+          이 Mac에서는 GPU 가속을 쓸 수 없어 처리가 평소보다 오래 걸릴 수 있어요.
+        </div>
+      )}
+
+      {/* 실시간 전사 미리보기 — 받아적힌 문장이 자막처럼 쌓인다. 화자분리 중엔 완성본 유지. */}
+      <div className={styles.ppPreview} ref={previewRef}>
+        {transcript.map((entry, i) => (
+          <div key={i} className={styles.ppPreviewLine}>
+            <span className={styles.ppPreviewTime}>{entry.time}</span>
+            <span>{entry.text}</span>
           </div>
         ))}
-        {stepStatus[PROCESSING_STEPS[currentStep]?.id] === "running" && (
-          <div className={clsx(styles.ppLogLine, styles.ppRunning)}>처리 중...</div>
+        {transcript.length === 0 && transcribeRunning && (
+          <div className={styles.ppPreviewEmpty}>음성 인식을 준비하는 중...</div>
+        )}
+        {/* 재개 케이스(전사는 이전 실행에서 완료 — 스트리밍된 미리보기 없음) */}
+        {transcript.length === 0 && diarizeRunning && (
+          <div className={styles.ppPreviewEmpty}>화자를 구분하는 중...</div>
         )}
       </div>
     </div>
