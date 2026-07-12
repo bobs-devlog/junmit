@@ -35,6 +35,7 @@ NEUTRALIZE=(
   -e '/^allowed-tools:/d'
   # 도구명: Codex 대응 도구로 직접 매핑 (조사 동반 케이스를 먼저 — 받침 차이 보정)
   -e 's/`TodoWrite`로/`update_plan`으로/g'
+  -e 's/`TodoWrite`가/`update_plan`이/g'
   -e 's/TodoWrite로/update_plan으로/g'
   -e 's/TodoWrite는/update_plan은/g'
   -e 's/TodoWrite가/update_plan이/g'
