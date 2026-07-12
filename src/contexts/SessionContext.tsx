@@ -85,6 +85,14 @@ interface SessionContextValue {
   transcriptFocusLine: number | null;
   requestTranscriptLine: (line: number) => void;
   clearTranscriptFocusLine: () => void;
+  // 회의록 자동 작성 preflight(completeProcessing, 전사·화자분리 후 **자동** 전이 지점)가 로그인
+  // 만료를 감지하면 이 CLI로 set — 스폰하지 않고 Idle로 되돌린 뒤 사이드바 재로그인 안내 + macOS
+  // 알림으로 복귀를 유도한다(자리 비운 사용자용). 수동 "회의록 작성"은 preflight 없이 즉시 진행하므로
+  // 이 값을 set하지 않고 clear만 한다(만료면 터미널 raw 노출로 복구). persistent(복귀해도 유지 —
+  // 토스트 아님). clear 지점: 수동 작성 시작·자동 작성 성공·세션 전환, 그리고 clearLoginExpired
+  // (SessionScreen이 세션 재진입 시 현재 인증을 재확인해 유효하면 걷음 — 재로그인 후 stale 방지).
+  loginExpiredCli: Cli | null;
+  clearLoginExpired: () => void;
   // 자동 탭 전환 직후 SessionViewer에 띄울 안내 배너. show 1회 호출 → 5초 자동 dismiss.
   // SessionViewer가 refreshKey 변경으로 remount되어도 표시 상태 유지하기 위해 Context가 소유 (인스턴스 state X).
   tabBanner: string | null;
@@ -103,7 +111,7 @@ interface SessionContextValue {
   enterProcessing: () => void;
   resetSessionToRecording: () => Promise<void>;
   resetSessionToDiarized: () => Promise<void>;
-  completeProcessing: () => void;
+  completeProcessing: () => Promise<void>;
   // 전사 단계에서 무음("발화 없음") 감지 → diarize·회의록 건너뛰고 Idle로. PTY spawn 안 함.
   markNoSpeech: () => void;
   // "그래도 회의록 작성하기" — 무음 판정을 무효화하고 보존된 전사로 파이프라인 재개.
@@ -155,6 +163,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [focusSubtab, setFocusSubtab] = useState<string | null>(null);
   // 전사본 라인 이동 요청(1-based) — 검증 영수증 근거 클릭이 set, TranscriptEditor가 소비 후 clear.
   const [transcriptFocusLine, setTranscriptFocusLine] = useState<number | null>(null);
+  // 자동 작성 preflight(completeProcessing)가 감지한 로그인 만료 CLI (persistent — 복귀해도 유지).
+  const [loginExpiredCli, setLoginExpiredCli] = useState<Cli | null>(null);
   // 자동 탭 전환 안내 배너 — Context가 소유해서 SessionViewer remount(refresh 신호 등)에도 표시 상태 유지.
   const [tabBanner, setTabBanner] = useState<string | null>(null);
   const tabBannerTimerRef = useRef<number | null>(null);
@@ -182,6 +192,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // app:signal 리스너(빈 deps)에서 사용량 이벤트에 붙일 cli·회의유형을 stale 없이 읽기 위한 ref.
   const cliRef = useRef<Cli>(cli);
   const meetingRef = useRef<Meeting | null>(meeting);
+  // 회의록 작성 로그인 preflight를 파이프라인(전사·화자분리)과 **병렬로 미리** 던져두는 캐시.
+  // Processing 진입 시 발사 → completeProcessing이 결과만 읽어(대개 이미 resolve) 스폰 직전 대기·
+  // stall이 사라진다. 전사·화자분리는 auth가 불필요해 병렬이 안전하고, 특히 antigravity(~수초 서버
+  // 왕복)의 지연이 화자분리 로딩 뒤에 숨는다. ref가 비어있으면 completeProcessing이 즉석 체크로 폴백.
+  const authCheckRef = useRef<Promise<boolean> | null>(null);
 
   useEffect(() => {
     activityRef.current = activity;
@@ -195,6 +210,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     meetingRef.current = meeting;
   });
+
+  // Processing(전사·화자분리) 진입 시 로그인 유효성 체크를 병렬 발사 — completeProcessing이 파이프라인
+  // 완료 후 이 결과만 await하므로 스폰 직전 대기가 없다. mlx는 auth 불필요라 제외.
+  useEffect(() => {
+    if (activity === Activity.Processing && cli !== "mlx") {
+      authCheckRef.current = invoke<boolean>("cmd_is_cli_authed", { cli }).catch(() => true);
+    }
+  }, [activity, cli]);
 
   // Rust 녹음 상태 동기화 (window close 시 prevent_close 결정)
   useEffect(() => {
@@ -311,6 +334,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setCompletedActivity(null);
     setFocusSubtab(null);
     setTranscriptFocusLine(null);
+    setLoginExpiredCli(null);
   }, []);
 
   const openExistingMeeting = useCallback(
@@ -328,6 +352,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setFocusSubtab(null);
       // 미소비 라인 이동 요청이 새 세션으로 새지 않게 (1회성 요청의 세션 스코프 정리).
       setTranscriptFocusLine(null);
+      setLoginExpiredCli(null);
     },
     []
   );
@@ -345,6 +370,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setCompletedActivity(null);
     setFocusSubtab(null);
     setTranscriptFocusLine(null);
+    setLoginExpiredCli(null);
   }, []);
 
   // ─── 녹음 (RecordingScreen) ──────────────────────────────
@@ -415,7 +441,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // 전사·화자분리 모두 끝남 → Phase 1(후보정)로 진입. setSteps는 markStepDone이 단계별로 처리.
   // drawer 자동 expand — 사용자가 panel을 직접 열지 않아도 LLM 작업 시작 시 자연스럽게 노출 (Section 10).
   // 새 작업 시작이므로 옛 완료 띠 정리.
-  const completeProcessing = useCallback(() => {
+  const completeProcessing = useCallback(async () => {
     // 로컬 LLM은 교정 단계가 없고 PTY도 안 쓴다 — 바로 Composing + 서브프로세스 실행.
     if (cli === "mlx") {
       setActivity(Activity.Composing);
@@ -424,6 +450,28 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       void runLocalMeeting();
       return;
     }
+    // 로그인 유효성 판정 — AI 다듬기(/meeting)가 **자동으로** 이어지는 지점. 이 몇 분간 사용자는
+    // 자리를 비웠을 확률이 높아, 만료면 파이프라인 도중 raw "Login expired"로 조용히 깨진다. 스폰하지
+    // 않고 Idle로 되돌린 뒤 재로그인 안내 + macOS 알림으로 복귀를 유도한다(자리 비운 사용자용 —
+    // 완료/실패 알림과 같은 레일). 복귀하면 사이드바 안내 + "회의록 작성" 버튼으로 재시도.
+    // 값은 Processing 진입 시 **병렬로 미리 던진** authCheckRef에서 읽어(대개 이미 resolve) 여기서
+    // 대기가 없다(특히 antigravity 서버 왕복이 화자분리 뒤에 숨음). ref가 비면(예외 경로) 즉석 폴백.
+    // IPC 실패는 true로 열어둔다(오탐으로 막느니 통과 — 만료면 터미널 raw 노출로 여전히 복구 가능).
+    const authed = await (authCheckRef.current ??
+      invoke<boolean>("cmd_is_cli_authed", { cli }).catch(() => true));
+    authCheckRef.current = null;
+    if (!authed) {
+      setActivity(Activity.Idle);
+      setDrawerOpen(false);
+      setCompletedActivity(null);
+      setLoginExpiredCli(cli);
+      void sendNotification(
+        "Junmit — 로그인이 만료됐어요",
+        "회의록 작성을 시작하지 못했어요. 앱을 열어 'AI 도구 설정'에서 다시 로그인하면 이어서 작성할 수 있어요."
+      );
+      return;
+    }
+    setLoginExpiredCli(null);
     setActivity(Activity.Correcting);
     setSpawnRequest(buildSpawnRequest(appDir, `/meeting`, sessionDir, signalDir ?? "", cli));
     setDrawerOpen(true);
@@ -485,6 +533,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       void runLocalMeeting();
       return;
     }
+    // 수동 시작은 로그인 preflight 없이 즉시 진행 — 사용자가 present하고 터미널이 보이므로, 만료면
+    // 터미널에 로그인 안내가 그대로 노출돼 바로 복구 가능하다(자리 비운 자동 경로와 달리 사전 차단
+    // 불필요). preflight를 넣으면 스폰 전 인증 체크가 버튼 반응·터미널 노출을 지연시킨다.
+    // 재시도로 여기 왔다면(loginExpiredCli 안내 노출 중) 진행하며 안내를 걷는다 — 재로그인을 안
+    // 했다면 터미널이 그 사실을 알리고, 재로그인했다면 정상 진행된다.
+    setLoginExpiredCli(null);
     setActivity(stepsRef.current.corrected ? Activity.Composing : Activity.Correcting);
     setDrawerOpen(true);
     setCompletedActivity(null);
@@ -626,6 +680,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setTranscriptFocusLine(line);
   }, []);
   const clearTranscriptFocusLine = useCallback(() => setTranscriptFocusLine(null), []);
+  const clearLoginExpired = useCallback(() => setLoginExpiredCli(null), []);
 
   const value = useMemo<SessionContextValue>(
     () => ({
@@ -659,6 +714,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       transcriptFocusLine,
       requestTranscriptLine,
       clearTranscriptFocusLine,
+      loginExpiredCli,
+      clearLoginExpired,
       tabBanner,
       dismissTabBanner,
       startNewMeeting,
@@ -711,6 +768,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       transcriptFocusLine,
       requestTranscriptLine,
       clearTranscriptFocusLine,
+      loginExpiredCli,
+      clearLoginExpired,
       tabBanner,
       dismissTabBanner,
       startNewMeeting,

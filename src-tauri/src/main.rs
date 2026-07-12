@@ -334,6 +334,19 @@ async fn cmd_detect_clis(app: tauri::AppHandle) -> Result<session::CliAvailabili
         .map_err(|e| format!("CLI 감지 작업 실패: {e}"))
 }
 
+/// 활성 CLI 하나의 로그인 유효성 preflight — 회의록 작성(`/meeting`) 스폰 여부를 가르려고 프론트가
+/// 호출한다(전사·화자분리와 병렬로 미리 던져두고 스폰 직전 결과만 읽는 식). 온보딩 이후 토큰이
+/// 만료되면 스폰이 파이프라인 도중 raw 에러("Login expired")로 깨지므로, 스폰 전에 잡아
+/// 재로그인으로 유도하기 위함. detect_clis(전 CLI×설치+인증)와 달리 **활성 CLI 인증만** 확인해
+/// 가볍다. 그래도 서버 왕복(agy 최대 10초) 가능성이 있어 blocking pool에서 실행. 실패(패닉·IPC)는
+/// true로 열어둔다 — preflight가 오탐으로 작성을 막느니, 통과시키고 터미널 raw 노출로 복구.
+#[tauri::command]
+async fn cmd_is_cli_authed(cli: String) -> bool {
+    tauri::async_runtime::spawn_blocking(move || session::cli_authed(&cli))
+        .await
+        .unwrap_or(true)
+}
+
 /// 현재 앱 인스턴스의 신호 디렉토리 — frontend가 PTY spawn 시 APP_SIGNAL_DIR env로 전달.
 /// 인스턴스별 PID 분리로 dev+prod 동시 실행 시 신호 빼앗김 방지.
 #[tauri::command]
@@ -1456,6 +1469,7 @@ fn main() {
             cmd_delete_local_model,
             cmd_check_local_capable,
             cmd_detect_clis,
+            cmd_is_cli_authed,
             cmd_get_signal_dir,
             cmd_fetch_calendar,
             cmd_read_attendee_names,

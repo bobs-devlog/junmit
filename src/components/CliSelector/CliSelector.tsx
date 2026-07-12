@@ -298,9 +298,16 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
     async (id: Cli) => {
       if (busy) return;
       const name = OPTIONS.find((o) => o.id === id)?.name ?? id;
-      // 설정에서 같은 도구 재선택 — 변경이 아니므로 알림만 하고 머무른다(말없는 홈 이탈 방지).
+      // 이미 활성인 CLI 재선택 — 변경이 아니므로 스폰/전환은 하지 않는다. 단 로그인 만료로
+      // 여기 온 재로그인 흐름(loginExpiredCli, 진행 중 세션 존재)이면 "이미 사용 중" 토스트로
+      // 끝내면 막다른 화면이 된다 → 그 세션으로 돌려보내 "회의록 작성"으로 잇게 한다.
+      // 그 외(설정 브라우징)는 기존대로 알림만 하고 머무른다(말없는 홈 이탈 방지).
       if (chosen && id === session.cli) {
-        toast.info(`이미 ${name}를 사용 중입니다.`);
+        if (session.loginExpiredCli && session.sessionDir) {
+          navigate("/session", { replace: true });
+        } else {
+          toast.info(`이미 ${name}를 사용 중입니다.`);
+        }
         return;
       }
       setBusy(true);

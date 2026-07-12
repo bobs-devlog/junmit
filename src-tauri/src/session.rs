@@ -850,6 +850,18 @@ fn claude_logged_in() -> bool {
         .unwrap_or(false)
 }
 
+/// 에이전트 CLI 한 종의 로그인 유효성 — 회의록 작성 preflight(cmd_is_cli_authed)에서 호출.
+/// detect_clis가 쓰는 것과 **동일한 프로브**(claude auth status / codex login status / agy models)라
+/// 온보딩 게이트와 판정이 일관된다. mlx(로컬)·알 수 없는 값은 auth가 없으므로 true(막지 않음).
+pub fn cli_authed(cli: &str) -> bool {
+    match cli {
+        "claude" => claude_logged_in(),
+        "codex" => codex_logged_in(),
+        "antigravity" => antigravity_logged_in(),
+        _ => true,
+    }
+}
+
 pub fn detect_clis(app: &tauri::AppHandle) -> CliAvailability {
     let claude = cli_installed("claude");
     let codex = cli_installed("codex");

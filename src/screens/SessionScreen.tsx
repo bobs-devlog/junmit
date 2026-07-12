@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import ProcessingPanel from "@/components/ProcessingPanel";
@@ -52,6 +52,8 @@ export default function SessionScreen() {
     focusSubtab,
     clearFocusSubtab,
     requestAi,
+    loginExpiredCli,
+    clearLoginExpired,
   } = session;
 
   // attendees 참조 안정화 — 자식의 useEffect 의존성 배열이 매 렌더 무효화되는 것 방지.
@@ -87,8 +89,20 @@ export default function SessionScreen() {
 
   // ProcessingPanel 완료 → Composing 진입 + PTY spawn (Context가 처리)
   const handlePipelineComplete = useCallback(() => {
-    completeProcessing();
+    void completeProcessing();
   }, [completeProcessing]);
+
+  // 재로그인 후 세션 재진입 시 stale한 "로그인 만료" 안내를 걷는다 — 안내가 떠 있으면 현재 인증을
+  // 재확인해 유효하면 clear(백그라운드·논블로킹). 만료로 설정 화면에 갔다 로그인하고 /session으로
+  // 돌아오면 SessionScreen이 remount되며 이 검사가 돌아 안내가 자동으로 사라진다.
+  useEffect(() => {
+    if (!loginExpiredCli) return;
+    void invoke<boolean>("cmd_is_cli_authed", { cli: loginExpiredCli })
+      .then((authed) => {
+        if (authed) clearLoginExpired();
+      })
+      .catch(() => {});
+  }, [loginExpiredCli, clearLoginExpired]);
 
   // 전사 단계에서 무음("발화 없음") 감지 → diarize·회의록 건너뛰고 Idle로. 자리 비운
   // 사용자 대비 알림 전송 (정상 흐름의 /meeting 완료 알림 자리를 대체).
@@ -236,6 +250,8 @@ export default function SessionScreen() {
             onForceCompose={handleForceCompose}
             onResetSession={handleResetSession}
             onResetToDiarized={handleResetToDiarized}
+            loginExpiredCli={loginExpiredCli}
+            onGoLogin={() => navigate("/settings/ai-tool")}
           />,
           sidebarTarget
         )}

@@ -32,6 +32,9 @@ interface Props {
   onForceCompose: () => void; // idle + no_speech (escape hatch — 무음 판정 무효화 후 재개)
   onResetSession: () => void; // dev 전용: 녹음 끝난 시점으로 초기화 (처리 산출물 삭제)
   onResetToDiarized: () => void; // dev 전용: 화자분리 시점으로 초기화 (/meeting 산출물만 삭제)
+  // 자동 작성 preflight가 로그인 만료를 감지하면 set된 CLI — 작성 버튼 위에 재로그인 안내 노출.
+  loginExpiredCli: Cli | null;
+  onGoLogin: () => void; // 재로그인 화면(/settings/ai-tool)으로 이동 — 검증된 로그인 흐름 재사용.
 }
 
 // Session 화면(녹음 외 단계)의 사이드바 콘텐츠. SessionScreen이 portal로 주입.
@@ -48,6 +51,8 @@ export default function SessionSidebarControls({
   onForceCompose,
   onResetSession,
   onResetToDiarized,
+  loginExpiredCli,
+  onGoLogin,
 }: Props) {
   const meta = activityMeta(activity);
   const activeStep = activeStepFor(activity, currentStepId, steps);
@@ -109,6 +114,8 @@ export default function SessionSidebarControls({
               onComposeNotes={onComposeNotes}
               onRequestAi={onRequestAi}
               onForceCompose={onForceCompose}
+              loginExpiredCli={loginExpiredCli}
+              onGoLogin={onGoLogin}
             />
             {/* dev 전용: 처리된 세션을 녹음 끝난 시점으로 되돌려 전사·화자분리 재실행.
                 import.meta.env.DEV는 app-dev(Vite dev)에서만 true → release/app-build 미노출. */}
@@ -138,6 +145,8 @@ interface IdleProps {
   onComposeNotes: () => void;
   onRequestAi: () => void;
   onForceCompose: () => void;
+  loginExpiredCli: Cli | null;
+  onGoLogin: () => void;
 }
 
 // idle 상태에서 진척도별 다음 단계 액션. 분기 로직을 별도 컴포넌트로 분리해 가독성 ↑.
@@ -151,6 +160,8 @@ function IdleActions({
   onComposeNotes,
   onRequestAi,
   onForceCompose,
+  loginExpiredCli,
+  onGoLogin,
 }: IdleProps) {
   const agent = cliHasAgent(cli);
   if (steps.notes_written) {
@@ -187,10 +198,27 @@ function IdleActions({
     );
   }
   // diarized=true && notes_written=false
+  // 자동 작성 preflight가 로그인 만료를 감지하면(loginExpiredCli) 안내를 작성 버튼 **위에** 함께
+  // 보인다(대체 X). persistent — 자리 비웠다 복귀해도 유지. 재로그인 후 세션 재진입 시 SessionScreen
+  // 재검증이 안내를 걷고, 그 전에 "회의록 작성"을 눌러도 진행하며 안내가 clear된다(막다른 화면 없음).
   const label = steps.corrected ? "회의록 작성 (이어서)" : "회의록 작성";
   return (
-    <button className="btn btn-primary btn-large" onClick={onComposeNotes}>
-      {label}
-    </button>
+    <>
+      {loginExpiredCli && (
+        <div className={styles.loginExpired}>
+          <div className={styles.loginExpiredTitle}>⚠ 로그인이 만료됐어요</div>
+          <p className={styles.loginExpiredDesc}>
+            회의록 작성에 쓰는 AI 도구의 로그인이 만료됐어요. 아래 버튼을 누르면 <b>AI 도구 설정</b>
+            이 열립니다. 거기서 다시 로그인한 뒤 돌아와 <b>회의록 작성</b>으로 이어가주세요.
+          </p>
+          <button className="btn btn-secondary" onClick={onGoLogin}>
+            AI 도구 설정에서 로그인
+          </button>
+        </div>
+      )}
+      <button className="btn btn-primary btn-large" onClick={onComposeNotes}>
+        {label}
+      </button>
+    </>
   );
 }

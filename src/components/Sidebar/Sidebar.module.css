@@ -217,3 +217,28 @@ button.nav-item-active {
   width: 14px;
   text-align: center;
 }
+
+/* 회의록 작성 preflight의 로그인 만료 안내 — 작성 버튼 자리. persistent(토스트 아님)라
+   자리 비웠다 복귀해도 남아있다. warning 톤으로 액션 필요를 알린다. */
+.login-expired {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid var(--warning, #f59e0b);
+}
+
+.login-expired-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--warning, #f59e0b);
+}
+
+.login-expired-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary, #9ca3af);
+}
