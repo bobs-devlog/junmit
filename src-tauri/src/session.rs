@@ -2299,6 +2299,9 @@ fn chrono_timestamp() -> String {
 /// 원본이 없으면 Ok(None) — 호출자가 새로 작성될 거라 가정.
 pub fn backup_meeting_notes(session_dir: &str) -> Result<Option<String>, String> {
     let dir = std::path::PathBuf::from(session_dir);
+    // 본문이 교체되는 시점이므로 이전 검증 영수증도 함께 제거 — 남기면 새 본문 위에
+    // 옛 "검증 N건" 칩이 그대로 떠서 무관한 내역을 주장한다(agent·mlx 재작성 공통 경로).
+    let _ = fs::remove_file(dir.join("notes_verification_report.json"));
     let src = dir.join("meeting-notes.md");
     if !src.exists() {
         return Ok(None);

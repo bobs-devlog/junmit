@@ -587,7 +587,6 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
                   회의록과 별도로, 전사본의 음성 인식 오류를 교정해 읽기 편하게 만들어요. 회의록은
                   이 설정과 무관하게 같은 품질로 작성돼요
                 </span>
-                <span className={styles.msDetailedHint}>이 설정은 다음 회의에도 유지돼요</span>
               </span>
               <span className={styles.msDetailedSwitch} aria-hidden="true">
                 <span className={styles.msDetailedKnob} />
@@ -609,7 +608,8 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
                   작성된 회의록을 전사와 대조해 잘못 들어간 이름·날짜·누락을 걸러내요. 끄면 2~4분
                   빨라지지만 이 검증을 건너뛰어요
                 </span>
-                <span className={styles.msDetailedHint}>이 설정은 다음 회의에도 유지돼요</span>
+                {/* 두 토글(전사본 교정·회의록 검증) 공통 안내 — 마지막 토글에 한 번만 표시. */}
+                <span className={styles.msDetailedHint}>이 설정들은 다음 회의에도 유지돼요</span>
               </span>
               <span className={styles.msDetailedSwitch} aria-hidden="true">
                 <span className={styles.msDetailedKnob} />

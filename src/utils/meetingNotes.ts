@@ -31,6 +31,25 @@ export async function saveMeetingNotesMd(sessionPath: string, content: string) {
   });
 }
 
+/**
+ * 주어진 내용을 타임스탬프 백업(meeting-notes.bak.{ts}.md)으로 저장.
+ * 편집 저장 시 디스크가 편집 시작 시점과 달라졌을 때(그 사이 AI가 씀) 그 버전을 보존하는 용도.
+ * 파일명은 assist "대규모 수정 전 백업"과 같은 규약 — 스킬의 재작성 감지 glob과도 호환.
+ */
+export async function backupMeetingNotesMd(sessionPath: string, content: string) {
+  if (!invoke) throw new Error("Tauri invoke unavailable");
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const ts =
+    `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}` +
+    `_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  await invoke<void>("cmd_write_session_file", {
+    sessionPath,
+    filename: `meeting-notes.bak.${ts}.md`,
+    content,
+  });
+}
+
 // ─── 표시 라벨 ──────────────────────────────────────────
 
 const SPEAKER_KEY_RE = /^SPEAKER_\d+$/;

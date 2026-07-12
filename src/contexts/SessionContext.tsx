@@ -7,17 +7,21 @@ import {
   useCallback,
   useMemo,
 } from "react";
-import type { ReactNode, RefObject } from "react";
-import { Activity, Step, STEPS } from "@/constants";
+import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
+import { Activity, Step, STEPS, cliHasAgent } from "@/constants";
 import type { StepId } from "@/constants";
 import type { Cli, Meeting, SessionSteps, SpawnRequest } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { updateMeetingMeta } from "@/utils/meetingMeta";
+import { loadMeetingMeta, updateMeetingMeta } from "@/utils/meetingMeta";
 import { killPty, sendSlashCommand } from "@/utils/pty";
 import { buildSpawnRequest } from "@/utils/spawn";
 import { track, meetingTypeCategory } from "@/utils/analytics";
 import { sendNotification } from "@/utils/notification";
+
+// 검증 잠금 고착 회수 타임아웃 — verify 신호가 유실(스킬 크래시·PTY 사망)돼도 이 시간이 지나면
+// 편집 잠금을 푼다. 검증 wall time 실측 2~4분이라 정상 경로를 방해하지 않는 여유값.
+const VERIFY_LOCK_TIMEOUT_MS = 10 * 60_000;
 
 // 새 회의 시작·reset 시 초기 진척도. 화면이 직접 사용 가능 (예: 처리 단계 reset).
 export const EMPTY_STEPS: SessionSteps = {
@@ -85,6 +89,21 @@ interface SessionContextValue {
   transcriptFocusLine: number | null;
   requestTranscriptLine: (line: number) => void;
   clearTranscriptFocusLine: () => void;
+  // 회의록 자기검증(6단계)이 도는 동안 true — 회의록 본문 편집·유형 변경을 잠근다(검증 적용과
+  // 사용자 편집의 동시 쓰기 충돌 원천 차단). phase_done 시 meeting.json의 notes_verification으로
+  // 판정해 set, 스킬이 검증 종료 시 항상 보내는 phase_step_done "verify"로 clear. 신호 유실
+  // (PTY 사망 등)엔 타임아웃·PTY 종료·에러·세션 전환이 clear — 잠금 고착 방지.
+  isVerifying: boolean;
+  // 회의록 탭 전용 스코프 재로드 키 — 검증 완료(verify 신호)가 bump. refreshKey(전체 remount)와
+  // 달리 전사본 탭을 건드리지 않아, 공개 직후 사용자의 화자 매핑 작업(스크롤·팝오버)이 끊기지 않는다.
+  notesRefreshKey: number;
+  // SessionViewer 활성 탭 — Context가 소유해 refresh 신호의 전체 remount에도 사용자가 보던 탭을
+  // 유지한다(tabBanner와 같은 이유). focusSubtab(자동 이동 요청)과 별개인 "현재 선택"의 단일 출처.
+  viewerTab: string | null;
+  setViewerTab: Dispatch<SetStateAction<string | null>>;
+  // 회의록 편집 모드 진입/이탈 보고(Notes가 호출) — 편집 중 도착한 범용 refresh(전체 remount)를
+  // 보류했다가 편집 종료 시 반영해, 미저장 편집이 remount로 소실되는 것을 막는다.
+  setNotesEditing: (editing: boolean) => void;
   // 회의록 자동 작성 preflight(completeProcessing, 전사·화자분리 후 **자동** 전이 지점)가 로그인
   // 만료를 감지하면 이 CLI로 set — 스폰하지 않고 Idle로 되돌린 뒤 사이드바 재로그인 안내 + macOS
   // 알림으로 복귀를 유도한다(자리 비운 사용자용). 수동 "회의록 작성"은 preflight 없이 즉시 진행하므로
@@ -163,6 +182,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [focusSubtab, setFocusSubtab] = useState<string | null>(null);
   // 전사본 라인 이동 요청(1-based) — 검증 영수증 근거 클릭이 set, TranscriptEditor가 소비 후 clear.
   const [transcriptFocusLine, setTranscriptFocusLine] = useState<number | null>(null);
+  // 자기검증 진행 중 — 회의록 편집·유형 변경 잠금의 단일 출처.
+  const [isVerifying, setIsVerifying] = useState(false);
+  // 회의록 탭 스코프 재로드 키 — verify 신호가 bump (전체 remount인 refreshKey와 분리).
+  const [notesRefreshKey, setNotesRefreshKey] = useState(0);
+  // SessionViewer 활성 탭 — refresh remount에도 사용자가 보던 탭 유지 (tabBanner와 같은 소유 이유).
+  const [viewerTab, setViewerTab] = useState<string | null>(null);
+  const verifyTimerRef = useRef<number | null>(null);
+  // 회의록 편집 중 여부 + 그동안 보류된 범용 refresh — 편집 종료 시 반영.
+  const notesEditingRef = useRef(false);
+  const pendingRefreshRef = useRef(false);
   // 자동 작성 preflight(completeProcessing)가 감지한 로그인 만료 CLI (persistent — 복귀해도 유지).
   const [loginExpiredCli, setLoginExpiredCli] = useState<Cli | null>(null);
   // 자동 탭 전환 안내 배너 — Context가 소유해서 SessionViewer remount(refresh 신호 등)에도 표시 상태 유지.
@@ -192,6 +221,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // app:signal 리스너(빈 deps)에서 사용량 이벤트에 붙일 cli·회의유형을 stale 없이 읽기 위한 ref.
   const cliRef = useRef<Cli>(cli);
   const meetingRef = useRef<Meeting | null>(meeting);
+  // phase_done 핸들러(빈 deps 리스너)가 meeting.json 경로를 stale 없이 읽기 위한 ref.
+  const sessionDirRef = useRef<string | null>(sessionDir);
   // 회의록 작성 로그인 preflight를 파이프라인(전사·화자분리)과 **병렬로 미리** 던져두는 캐시.
   // Processing 진입 시 발사 → completeProcessing이 결과만 읽어(대개 이미 resolve) 스폰 직전 대기·
   // stall이 사라진다. 전사·화자분리는 auth가 불필요해 병렬이 안전하고, 특히 antigravity(~수초 서버
@@ -210,6 +241,35 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     meetingRef.current = meeting;
   });
+  useEffect(() => {
+    sessionDirRef.current = sessionDir;
+  });
+
+  // 검증 잠금 시작/해제 — 신호 유실(스킬 크래시·PTY 사망) 대비 타임아웃 안전망 포함.
+  const endVerifying = useCallback(() => {
+    if (verifyTimerRef.current != null) {
+      clearTimeout(verifyTimerRef.current);
+      verifyTimerRef.current = null;
+    }
+    setIsVerifying(false);
+  }, []);
+  const beginVerifying = useCallback(() => {
+    if (verifyTimerRef.current != null) clearTimeout(verifyTimerRef.current);
+    setIsVerifying(true);
+    verifyTimerRef.current = window.setTimeout(() => {
+      verifyTimerRef.current = null;
+      setIsVerifying(false);
+    }, VERIFY_LOCK_TIMEOUT_MS);
+  }, []);
+
+  // Notes(회의록 탭)의 편집 모드 보고 — 편집 중 보류된 범용 refresh를 종료 시점에 반영.
+  const setNotesEditing = useCallback((editing: boolean) => {
+    notesEditingRef.current = editing;
+    if (!editing && pendingRefreshRef.current) {
+      pendingRefreshRef.current = false;
+      setRefreshKey((k) => k + 1);
+    }
+  }, []);
 
   // Processing(전사·화자분리) 진입 시 로그인 유효성 체크를 병렬 발사 — completeProcessing이 파이프라인
   // 완료 후 이 결과만 await하므로 스폰 직전 대기가 없다. mlx는 auth 불필요라 제외.
@@ -240,12 +300,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       try {
         const signal = JSON.parse(event.payload) as { type: string; step?: string; msg?: string };
         if (signal.type === "refresh") {
-          setRefreshKey((k) => k + 1);
+          // 회의록 편집 중의 전체 remount는 미저장 편집을 날리므로 보류 — 편집 종료 시 반영.
+          if (notesEditingRef.current) pendingRefreshRef.current = true;
+          else setRefreshKey((k) => k + 1);
         } else if (signal.type === "phase_error") {
           // 로컬 LLM(mlx) 등이 작업 중 실패 신호. 진행 상태를 해제해 UI가 멈추지 않게 하고 알림.
           // 배너도 가드 안 — 이미 Idle(사용자 중단·다른 경로가 선처리)이면 늦게 온 신호에
           // 배너만 또 띄우지 않는다 (상태 전환과 알림을 항상 함께).
           const prev = activityRef.current;
+          endVerifying(); // 검증 중 에러 신호 — 잠금이 고착되지 않게 함께 해제.
           if (prev === Activity.Correcting || prev === Activity.Composing) {
             setActivity(Activity.Idle);
             setCompletedActivity(null);
@@ -270,6 +333,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             setRefreshKey((k) => k + 1);
             setFocusSubtab("transcript");
             showTabBanner("전사 교정 완료\n전사본에서 화자 이름을 확인하고 수정할 수 있어요");
+          } else if (signal.step === "verify") {
+            // 자기검증 종료(스킬이 결과 무관 항상 전송, phase_done 이후 Idle에서 도착) —
+            // 편집 잠금 해제 + 회의록 탭(본문·영수증 칩)만 재로드. 전사본은 검증이 안 건드리므로
+            // 전체 remount(refreshKey) 대신 스코프 키로 사용자의 매핑 작업을 보존한다.
+            endVerifying();
+            setNotesRefreshKey((k) => k + 1);
           }
         } else if (signal.type === "phase_done") {
           // 활동성이 Correcting/Composing이 아닐 땐 신호 무시 — 의도치 않은 도착 방어.
@@ -288,6 +357,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
               cli: cliRef.current,
               meeting_type: meetingTypeCategory(meetingRef.current?.meetingType),
             });
+            // 에이전트 경로는 공개 직후 자기검증(6단계)이 이어진다 — verify 신호까지 회의록 본문
+            // 편집·유형 변경을 잠가 검증 적용과의 동시 쓰기를 차단. 판정은 meeting.json이 진실
+            // (컨텍스트 Meeting은 옛 세션 재작성에서 notesVerification 부재). false만 검증 생략.
+            const dir = sessionDirRef.current;
+            if (dir && cliHasAgent(cliRef.current)) {
+              void loadMeetingMeta(dir).then((meta) => {
+                if (sessionDirRef.current === dir && meta?.notes_verification !== false) {
+                  beginVerifying();
+                }
+              });
+            }
           }
         }
       } catch {}
@@ -318,24 +398,32 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // PTY는 전역 싱글톤 + spawn 시점 APP_SESSION_DIR 박혀있음. 회의 컨텍스트 바뀔 때 옛 회의의
   // PTY가 잔존하면 새 회의 사이드바 액션(Tier 1 stdin write)이 옛 디렉토리에 적용되는 버그.
   // 새 회의 진입 후의 액션은 *새 PTY를 trigger*하므로 자동 안전. kill은 idempotent — 무해.
-  const startNewMeeting = useCallback((m: Meeting) => {
-    cancelledRef.current = false;
-    void killPty();
-    // PTY kill과 대칭 — 로컬(mlx) 회의록 프로세스도 옛 회의 잔존 시 새 컨텍스트의 신호를
-    // 오염시키므로(phase_done/notify에 세션 식별 없음) 함께 중단한다. 없으면 no-op.
-    void invoke("cmd_cancel_local_meeting").catch(() => {});
-    setMeeting(m);
-    setSessionDir(null);
-    setSteps(EMPTY_STEPS);
-    setSpawnRequest(null);
-    setCurrentStepId(null);
-    setActivity(Activity.Recording);
-    setDrawerOpen(false);
-    setCompletedActivity(null);
-    setFocusSubtab(null);
-    setTranscriptFocusLine(null);
-    setLoginExpiredCli(null);
-  }, []);
+  const startNewMeeting = useCallback(
+    (m: Meeting) => {
+      cancelledRef.current = false;
+      void killPty();
+      // PTY kill과 대칭 — 로컬(mlx) 회의록 프로세스도 옛 회의 잔존 시 새 컨텍스트의 신호를
+      // 오염시키므로(phase_done/notify에 세션 식별 없음) 함께 중단한다. 없으면 no-op.
+      void invoke("cmd_cancel_local_meeting").catch(() => {});
+      setMeeting(m);
+      setSessionDir(null);
+      setSteps(EMPTY_STEPS);
+      setSpawnRequest(null);
+      setCurrentStepId(null);
+      setActivity(Activity.Recording);
+      setDrawerOpen(false);
+      setCompletedActivity(null);
+      setFocusSubtab(null);
+      setTranscriptFocusLine(null);
+      setLoginExpiredCli(null);
+      // 검증·탭·편집 보류는 세션 스코프 상태 — 새 회의로 새지 않게 정리 (PTY kill로 검증도 죽음).
+      endVerifying();
+      setViewerTab(null);
+      notesEditingRef.current = false;
+      pendingRefreshRef.current = false;
+    },
+    [endVerifying]
+  );
 
   const openExistingMeeting = useCallback(
     (s: { title: string; path: string; steps: SessionSteps }) => {
@@ -353,8 +441,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       // 미소비 라인 이동 요청이 새 세션으로 새지 않게 (1회성 요청의 세션 스코프 정리).
       setTranscriptFocusLine(null);
       setLoginExpiredCli(null);
+      endVerifying();
+      setViewerTab(null);
+      notesEditingRef.current = false;
+      pendingRefreshRef.current = false;
     },
-    []
+    [endVerifying]
   );
 
   const resetSession = useCallback(() => {
@@ -371,7 +463,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setFocusSubtab(null);
     setTranscriptFocusLine(null);
     setLoginExpiredCli(null);
-  }, []);
+    endVerifying();
+    setViewerTab(null);
+    notesEditingRef.current = false;
+    pendingRefreshRef.current = false;
+  }, [endVerifying]);
 
   // ─── 녹음 (RecordingScreen) ──────────────────────────────
   const markSavingStarted = useCallback(() => {
@@ -610,10 +706,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   // PTY 명시 종료 (사용자 exit) — 정상 phase 완료는 phase_done 신호가 처리. 미완료 종료는 idle 복귀.
   const notifyPtyExit = useCallback(() => {
+    endVerifying(); // 검증 주체가 죽었으므로 verify 신호는 오지 않는다 — 잠금 즉시 해제.
     setActivity((prev) =>
       prev === Activity.Correcting || prev === Activity.Composing ? Activity.Idle : prev
     );
-  }, []);
+  }, [endVerifying]);
 
   // LLM 작업 전면 중단 — PTY(claude/codex)와 로컬(mlx) 프로세스를 함께 죽이고 진행 상태·
   // 잔존 spawn 요청을 정리한다. CLI 전환처럼 "돌던 작업이 더는 유효하지 않은" 지점 공용.
@@ -623,10 +720,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setSpawnRequest(null);
     setCurrentStepId(null);
     setCompletedActivity(null);
+    endVerifying(); // PTY와 함께 검증도 죽음 — 잠금 해제.
     setActivity((prev) =>
       prev === Activity.Correcting || prev === Activity.Composing ? Activity.Idle : prev
     );
-  }, []);
+  }, [endVerifying]);
 
   // PTY 직접 조작 — Rust PtyManager.is_active를 진실 원천으로 invoke.
   // 호출자가 살아있는 PTY 활용(Tier 1 stdin write) vs 새 spawn(Tier 2) 분기에 사용.
@@ -714,6 +812,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       transcriptFocusLine,
       requestTranscriptLine,
       clearTranscriptFocusLine,
+      isVerifying,
+      notesRefreshKey,
+      viewerTab,
+      setViewerTab,
+      setNotesEditing,
       loginExpiredCli,
       clearLoginExpired,
       tabBanner,
@@ -768,6 +871,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       transcriptFocusLine,
       requestTranscriptLine,
       clearTranscriptFocusLine,
+      isVerifying,
+      notesRefreshKey,
+      viewerTab,
+      setViewerTab,
+      setNotesEditing,
       loginExpiredCli,
       clearLoginExpired,
       tabBanner,

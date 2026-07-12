@@ -20,7 +20,7 @@ export const Activity = {
   Saving: "saving", // 스테이징 wav → 16k wav 변환·믹스
   Processing: "processing", // 전사 + 화자분리
   Correcting: "correcting", // LLM 후보정 (화자 라벨 교정·이름 매칭 + 전사본 교정 켬 시 텍스트 교정)
-  Composing: "composing", // LLM 회의록 작성 + 검증 (검증은 별도 스텝 아님 — 진행 문구는 터미널 todos, 결과 가시성은 검증 영수증 칩)
+  Composing: "composing", // LLM 회의록 작성 (자기검증은 phase_done 후 Idle에서 진행 — isVerifying이 별도 추적, 결과는 검증 영수증 칩)
 } as const;
 
 export type Activity = (typeof Activity)[keyof typeof Activity];

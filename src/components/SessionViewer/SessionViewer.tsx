@@ -41,13 +41,20 @@ export default function SessionViewer({
   noSpeech = false,
   onForceCompose,
 }: SessionViewerProps) {
-  const [activeTab, setActiveTab] = useState<string | null>(null);
   const [available, setAvailable] = useState<Record<string, boolean>>({});
   // 합치기 후 활성 탭을 remount해 매핑 표시를 갱신하기 위한 카운터(자식 key에 포함).
   const [mergeBump, setMergeBump] = useState(0);
   // 자동 탭 전환 안내 배너 — Context가 표시 상태 소유. refresh 신호로 인한 remount에도 유지.
   // isEditLocked: AI 분석 중 편집 잠금(Correcting||Composing 파생) — Context 단일 출처.
-  const { tabBanner, dismissTabBanner, isEditLocked } = useSession();
+  // 활성 탭(viewerTab)도 Context 소유 — refresh 신호의 전체 remount가 사용자가 보던 탭을
+  // 첫 가용 탭으로 되돌리지 않게 한다(예: 전사본에서 화자 매핑 중 assist 수정 반영).
+  const {
+    tabBanner,
+    dismissTabBanner,
+    isEditLocked,
+    viewerTab: activeTab,
+    setViewerTab: setActiveTab,
+  } = useSession();
 
   // 어떤 파일이 있는지 확인
   useEffect(() => {
@@ -70,13 +77,14 @@ export default function SessionViewer({
       // focusSubtab이 없을 때: 이미 선택된(가용한) 탭이 있으면 보존한다. 사용자가 탭을 클릭하면
       // onUserTabChange가 focusSubtab을 clear하는데, 그 clear가 이 effect를 재실행시켜 방금 클릭한
       // 탭을 "첫 가용 탭" fallback이 덮어쓰던 버그(한 번에 안 넘어감)를 막는다. prev가 없거나
-      // 더 이상 가용하지 않을 때만(초기 마운트·remount) 첫 가용 탭으로 떨어진다.
+      // 더 이상 가용하지 않을 때만(초기 마운트·remount) 첫 가용 탭으로 떨어진다. viewerTab이
+      // Context 소유라 refresh remount에도 prev가 살아남아 사용자가 보던 탭이 유지된다.
       setActiveTab((prev) =>
         prev && result[prev] ? prev : (TABS.find((t) => result[t.id])?.id ?? null)
       );
     };
     check();
-  }, [sessionPath, focusSubtab]);
+  }, [sessionPath, focusSubtab, setActiveTab]);
 
   const hasAnyFile = Object.values(available).some(Boolean);
 

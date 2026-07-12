@@ -71,8 +71,11 @@ export default function NotesPreview({
 
   // 재작성 중에는 select 잠금 — restartCompose 시작~phase_done 신호 도착까지 분 단위 진행 중.
   // restartCompose await는 PTY spawn까지만 의미하므로 시스템 진실 상태(activity)로 잠가야 완료까지 보장.
-  const { activity } = useSession();
+  // 검증 중(isVerifying, phase_done 후 verify 신호까지)에도 동일 잠금 — 편집은 검증 적용(Edit)과의
+  // 동시 쓰기, 재작성·유형 변경은 본문 백업(rename)으로 검증이 사라진 파일을 상대하게 되는 충돌.
+  const { activity, isVerifying } = useSession();
   const isComposing = activity === Activity.Composing;
+  const actionLocked = isComposing || isVerifying;
 
   const [currentType, setCurrentType] = useState<string>("free-form");
   const [typeOptions, setTypeOptions] = useState<MeetingTypeOption[]>([FREE_FORM_OPTION]);
@@ -99,7 +102,7 @@ export default function NotesPreview({
 
   const handleTypeChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     // aria-disabled 가드 — native disabled가 아니라 JS에서 차단해야 글리프 깜빡임 회피.
-    if (!loaded || isComposing) return;
+    if (!loaded || actionLocked) return;
     const next = e.target.value;
     if (next === currentType) return;
     if (!onRetypeNotes) return;
@@ -114,16 +117,16 @@ export default function NotesPreview({
   };
 
   const handleEditClick = () => {
-    // 다른 액션(다시 쓰기·유형 변경)과 동일하게 AI 작성 중에는 편집 진입을 막는다.
+    // 다른 액션(다시 쓰기·유형 변경)과 동일하게 AI 작성·검증 중에는 편집 진입을 막는다.
     // 작성 중 편집하면 완료 시 화면이 새로고침되며 입력이 사라질 수 있음(소실 방지).
-    if (!loaded || isComposing) return;
+    if (!loaded || actionLocked) return;
     onEdit();
   };
 
   // 현재 유형 그대로 재작성 — 화자 교정(라벨 재할당)을 회의록 본문에 반영하는 경로.
   // 유형 select는 next===currentType이면 무시하므로, 같은 유형 재작성은 이 버튼이 담당.
   const handleRewriteClick = () => {
-    if (!loaded || isComposing || !onRetypeNotes) return;
+    if (!loaded || actionLocked || !onRetypeNotes) return;
     void onRetypeNotes(currentType);
   };
 
@@ -178,13 +181,15 @@ export default function NotesPreview({
         <button
           className="sv-action-btn"
           onClick={handleEditClick}
-          aria-disabled={!loaded || isComposing}
+          aria-disabled={!loaded || actionLocked}
           title={
             isComposing
               ? "AI가 회의록을 작성하는 중입니다. 완료 후 편집할 수 있어요."
-              : loaded
-                ? "회의록 원본 편집 (SPEAKER_XX 라벨 유지 필수)"
-                : "로딩 중..."
+              : isVerifying
+                ? "AI가 회의록을 검증하는 중이에요. 잠시 후 편집할 수 있어요."
+                : loaded
+                  ? "회의록 원본 편집 (SPEAKER_XX 라벨 유지 필수)"
+                  : "로딩 중..."
           }
         >
           ✏️ 편집
@@ -195,11 +200,13 @@ export default function NotesPreview({
             <button
               className="sv-action-btn"
               onClick={handleRewriteClick}
-              aria-disabled={!loaded || isComposing}
+              aria-disabled={!loaded || actionLocked}
               title={
                 isComposing
                   ? "재작성 중에는 다시 쓸 수 없습니다"
-                  : "화자 교정을 반영해 현재 유형 그대로 회의록을 다시 작성합니다 (현재 본문은 자동 백업)"
+                  : isVerifying
+                    ? "AI가 회의록을 검증하는 중이에요. 잠시 후 다시 쓸 수 있어요."
+                    : "화자 교정을 반영해 현재 유형 그대로 회의록을 다시 작성합니다 (현재 본문은 자동 백업)"
               }
             >
               🔄 다시 쓰기
@@ -208,11 +215,13 @@ export default function NotesPreview({
               className="sv-action-btn"
               value={currentType}
               onChange={handleTypeChange}
-              aria-disabled={!loaded || isComposing}
+              aria-disabled={!loaded || actionLocked}
               title={
                 isComposing
                   ? "재작성 중에는 유형을 변경할 수 없습니다"
-                  : "유형을 바꾸면 회의록을 다시 작성합니다 (현재 본문은 자동 백업)"
+                  : isVerifying
+                    ? "AI가 회의록을 검증하는 중이에요. 잠시 후 변경할 수 있어요."
+                    : "유형을 바꾸면 회의록을 다시 작성합니다 (현재 본문은 자동 백업)"
               }
             >
               {typeOptions.map((opt) => (

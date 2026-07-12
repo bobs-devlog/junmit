@@ -35,7 +35,9 @@ export default function VerificationReceipt({
 }: VerificationReceiptProps) {
   const [report, setReport] = useState<VerificationReport | null>(null);
   const { isOpen, open, close, popoverStyle, popoverRef } = usePopover();
-  const { requestTranscriptLine } = useSession();
+  // notesRefreshKey — 검증 완료(verify 신호)의 회의록 탭 스코프 재로드. phase_done 시점엔
+  // report가 아직 없으므로(검증이 그 뒤에 씀) 이 키가 칩을 뒤늦게 나타나게 하는 유일한 경로.
+  const { requestTranscriptLine, notesRefreshKey } = useSession();
 
   useEffect(() => {
     let cancelled = false;
@@ -45,7 +47,7 @@ export default function VerificationReceipt({
     return () => {
       cancelled = true;
     };
-  }, [sessionPath]);
+  }, [sessionPath, notesRefreshKey]);
 
   if (!report) return null;
 

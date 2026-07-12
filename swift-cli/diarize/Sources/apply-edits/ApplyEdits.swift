@@ -168,6 +168,12 @@ struct ApplyEdits: ParsableCommand {
             applied.append(edit)
         }
 
+        // 재실행 가드 (text와 동일): 라벨이 이미 재할당된 파일에 다시 돌면 전건 mismatch로
+        // 0건 적용이 되는데, 이때 JSON을 재작성하면 유효한 교정 마커가 통째로 지워진다.
+        if applied.isEmpty && !file.edits.isEmpty {
+            logSkip("speaker", line: 0, reason: "0/\(file.edits.count) applied — 기존 JSON 보존 (재실행 추정)")
+            return (0, file.edits.count)
+        }
         try writeJSON(SpeakerEditsFile(edits: applied), to: url)
         return (applied.count, file.edits.count)
     }

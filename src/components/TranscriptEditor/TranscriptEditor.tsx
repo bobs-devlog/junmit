@@ -313,9 +313,16 @@ export default function TranscriptEditor({
   // AI가 화자 매핑·transcript_corrected.txt를 쓰는 동안(1단계 화자 작업까지) 화자 선택을 잠근다 —
   // 줄 재할당이 sidecar 동시 쓰기와 충돌하면 라인 매칭이 깨지고, 이름 매핑은 speaker-mapping
   // 재생성과 race가 난다. 1단계 완료(corrected) 후엔 회의록 작성 중에도 편집 가능(Context 파생).
+  // isVerifying: 자기검증 중 — 화자 수정은 허용하되 "회의록 다시 쓰기"(재작성 트리거)만 막는다.
   // transcriptFocusLine: 검증 영수증 근거(L{n}) 클릭의 라인 이동 요청 — 소비 후 clear.
-  const { activity, updateAttendees, isEditLocked, transcriptFocusLine, clearTranscriptFocusLine } =
-    useSession();
+  const {
+    activity,
+    updateAttendees,
+    isEditLocked,
+    isVerifying,
+    transcriptFocusLine,
+    clearTranscriptFocusLine,
+  } = useSession();
 
   // picker에서 입력한 새 이름을 명단에 추가(이름 지정 중 단발 추가). context+파일 동기.
   const handleAddAttendee = (name: string) => {
@@ -820,8 +827,10 @@ export default function TranscriptEditor({
         </div>
       )}
 
-      {/* 화자 재할당 직후 — 회의록 본문에 반영하려면 현재 유형으로 재작성이 필요(이름 매핑과 달리 자동 반영 X) */}
-      {onRetypeNotes && lastUndo && !isEditLocked && selected.size === 0 && (
+      {/* 화자 재할당 직후 — 회의록 본문에 반영하려면 현재 유형으로 재작성이 필요(이름 매핑과 달리 자동 반영 X).
+          검증 중(isVerifying)엔 숨김 — 재작성은 본문 백업(rename)으로 검증 적용과 충돌한다. lastUndo가
+          남아 있어 검증이 끝나면(정확히 실행 가능해지는 시점) 배너가 다시 나타난다. */}
+      {onRetypeNotes && lastUndo && !isEditLocked && !isVerifying && selected.size === 0 && (
         <div className={styles.teReflectBar}>
           <span className={styles.teReflectMsg}>
             화자를 바꿨어요 — 회의록 본문에 반영하려면 다시 작성이 필요해요.
