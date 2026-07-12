@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import NotesMarkdownView from "../NotesMarkdownView";
+import VerificationReceipt from "../VerificationReceipt";
 import { substituteNames } from "@/utils/meetingNotes";
 import { loadMeetingMeta } from "@/utils/meetingMeta";
 import { copyMarkdownRich } from "@/utils/clipboard";
@@ -126,6 +127,51 @@ export default function NotesPreview({
     void onRetypeNotes(currentType);
   };
 
+  // 검증 영수증 항목 클릭 → 본문에서 수정 문장(after)을 찾아 스크롤 + 잠깐 하이라이트.
+  // **best-effort**: 사용자가 본문을 편집해 문장이 사라졌으면 조용히 no-op (에러·토스트 없음).
+  // 본문은 SPEAKER_XX가 이름 치환된 상태로 렌더되므로 검색어도 동일 치환 후 비교하고,
+  // 마크다운 강조 문자(**·`)는 렌더 시 사라지므로 검색어에서 제거한다. 공백은 collapse 비교.
+  const notesBodyRef = useRef<HTMLDivElement | null>(null);
+  const highlightedElRef = useRef<HTMLElement | null>(null);
+  const highlightTimerRef = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
+    },
+    []
+  );
+  const navigateToText = useCallback(
+    (text: string) => {
+      const root = notesBodyRef.current;
+      if (!root) return;
+      const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
+      const target = collapse(substituteNames(text, mapping).replace(/[*_`]/g, ""));
+      if (!target) return;
+      // 블록 요소 단위 탐색 — 문장은 보통 한 블록(p/li/헤딩/셀) 안에 있다. 첫 매치 사용.
+      const blocks = root.querySelectorAll<HTMLElement>(
+        "p, li, h1, h2, h3, h4, h5, h6, td, blockquote"
+      );
+      for (const el of blocks) {
+        if (!collapse(el.textContent ?? "").includes(target)) continue;
+        // 이전 하이라이트 정리 + 같은 요소 재클릭 시 애니메이션 재발동(reflow 강제).
+        if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
+        highlightedElRef.current?.classList.remove(styles.npFlash);
+        void el.offsetWidth;
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+        el.classList.add(styles.npFlash);
+        highlightedElRef.current = el;
+        highlightTimerRef.current = window.setTimeout(() => {
+          el.classList.remove(styles.npFlash);
+          highlightedElRef.current = null;
+          highlightTimerRef.current = null;
+        }, 2000);
+        return;
+      }
+      // 못 찾음 — 조용히 no-op (best-effort).
+    },
+    [mapping]
+  );
+
   return (
     <>
       <div className="notes-pane-actions">
@@ -177,9 +223,11 @@ export default function NotesPreview({
             </select>
           </>
         )}
+        {/* 검증 영수증 칩 — 액션이 아닌 정보성이라 우측 끝(margin-left:auto). 파일 없으면 자체 숨김. */}
+        <VerificationReceipt sessionPath={sessionPath} onNavigateToText={navigateToText} />
       </div>
 
-      <div className="notes-pane-body">
+      <div className="notes-pane-body" ref={notesBodyRef}>
         <NotesMarkdownView markdown={displayMd} />
       </div>
     </>

@@ -291,7 +291,7 @@ export default function TranscriptEditor({
   // 교정본을 표시 중인지 여부. 교정본이 있으면 우선 사용하고, 없으면 원본을 사용한다.
   // 인라인 교정 마커/하이라이트는 교정본일 때만 의미가 있다.
   const [isCorrected, setIsCorrected] = useState(false);
-  // 정밀 교정 여부 — "정밀 교정" 배지 표기 결정. 빠른 경로(정밀 끔)면 텍스트가 원문이라 미표기.
+  // 전사본 교정(내부명 detailed_correction) 여부 — "전사본 교정" 배지 표기 결정. 빠른 경로(교정 끔)면 텍스트가 원문이라 미표기.
   const [isDetailed, setIsDetailed] = useState(false);
   const [speakerEdits, setSpeakerEdits] = useState<SpeakerEdit[]>([]);
   const [textEdits, setTextEdits] = useState<TextEdit[]>([]);
@@ -310,9 +310,12 @@ export default function TranscriptEditor({
   const [flashLine, setFlashLine] = useState<number | null>(null);
   const flashTimer = useRef<number | null>(null);
   const toast = useToast();
-  // 교정/작성 진행 중에는 화자 선택을 잠근다 — 줄 재할당이 sidecar의 transcript_corrected.txt
-  // 동시 쓰기와 충돌하면 라인 매칭이 깨지고, 이름 매핑은 speaker-mapping 재생성과 race가 난다.
-  const { activity, updateAttendees, isEditLocked } = useSession();
+  // AI가 화자 매핑·transcript_corrected.txt를 쓰는 동안(1단계 화자 작업까지) 화자 선택을 잠근다 —
+  // 줄 재할당이 sidecar 동시 쓰기와 충돌하면 라인 매칭이 깨지고, 이름 매핑은 speaker-mapping
+  // 재생성과 race가 난다. 1단계 완료(corrected) 후엔 회의록 작성 중에도 편집 가능(Context 파생).
+  // transcriptFocusLine: 검증 영수증 근거(L{n}) 클릭의 라인 이동 요청 — 소비 후 clear.
+  const { activity, updateAttendees, isEditLocked, transcriptFocusLine, clearTranscriptFocusLine } =
+    useSession();
 
   // picker에서 입력한 새 이름을 명단에 추가(이름 지정 중 단발 추가). context+파일 동기.
   const handleAddAttendee = (name: string) => {
@@ -555,6 +558,29 @@ export default function TranscriptEditor({
   const SUMMARY_COLLAPSE_THRESHOLD = 6;
   const summaryCollapsed = targetSpeakers.length > SUMMARY_COLLAPSE_THRESHOLD && !summaryExpanded;
 
+  // 대상 줄(0-based index)로 스크롤 + 잠깐 하이라이트 — jumpToTime(타임스탬프)과
+  // 라인 이동 요청(검증 영수증 근거 클릭)이 공유하는 공통 동작.
+  const flashLineAt = useCallback((idx: number) => {
+    const el = linesRef.current?.querySelector<HTMLElement>(`[data-li="${idx}"]`);
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+    setFlashLine(idx);
+    if (flashTimer.current) window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(() => setFlashLine(null), 1300);
+  }, []);
+
+  // 검증 영수증 근거(L{n}) 클릭 → 해당 라인으로 이동. 요청은 1-based(전사본 파일 라인 번호).
+  // lines 로드 완료 후 1회 소비하고 clear (탭 전환 직후 mount → 로드 완료 시점에 발동).
+  // 범위 밖 라인 번호는 no-op — 요청만 clear (사용자 라인 편집 등으로 어긋난 경우 안전).
+  // Context의 외부 요청을 소비하는 패턴이라 effect 안 setState(flash)가 본질 — 규칙 예외 처리.
+  useEffect(() => {
+    if (transcriptFocusLine == null || lines.length === 0) return;
+    const idx = transcriptFocusLine - 1;
+    clearTranscriptFocusLine();
+    if (idx < 0 || idx >= lines.length) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    flashLineAt(idx);
+  }, [transcriptFocusLine, lines, clearTranscriptFocusLine, flashLineAt]);
+
   // 근거의 타임스탬프(M:SS) → 전사본 해당 줄로 점프. 정확히 일치하는 줄(보통 sub-agent가 전사본
   // 타임스탬프를 그대로 인용)을 우선, 없으면 그 이전 가장 가까운 줄로 fallback. 잠깐 하이라이트.
   const toSec = (ts: string): number | null => {
@@ -581,11 +607,7 @@ export default function TranscriptEditor({
     });
     const idx = exact !== -1 ? exact : prevIdx !== -1 ? prevIdx : firstIdx;
     if (idx === -1) return;
-    const el = linesRef.current?.querySelector<HTMLElement>(`[data-li="${idx}"]`);
-    el?.scrollIntoView({ block: "center", behavior: "smooth" });
-    setFlashLine(idx);
-    if (flashTimer.current) window.clearTimeout(flashTimer.current);
-    flashTimer.current = window.setTimeout(() => setFlashLine(null), 1300);
+    flashLineAt(idx);
   };
   // 언마운트 시 타이머 정리.
   useEffect(
@@ -677,7 +699,7 @@ export default function TranscriptEditor({
             ↩ {lastUndo.label} · 실행 취소
           </button>
         )}
-        {/* 배지 3-state: 처리 전=원본 / 정밀=정밀 교정 / 빠른 경로=무표기(텍스트 원문이라 "교정" 미표기). */}
+        {/* 배지 3-state: 처리 전=원본 / 교정 완료=전사본 교정 / 빠른 경로=무표기(텍스트 원문이라 "교정" 미표기). */}
         {!isCorrected ? (
           <span
             className={clsx(styles.teBadge, styles.teBadgeRaw)}
@@ -688,9 +710,9 @@ export default function TranscriptEditor({
         ) : isDetailed ? (
           <span
             className={clsx(styles.teBadge, styles.teBadgeCorrected)}
-            title="받아쓰기 오류까지 교정한 정밀 교정 전사본"
+            title="음성 인식 오류까지 교정한 전사본"
           >
-            정밀 교정
+            전사본 교정
           </span>
         ) : null}
         {lines.length > 0 && (

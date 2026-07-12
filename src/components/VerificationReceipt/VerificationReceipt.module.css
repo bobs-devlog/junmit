@@ -1,0 +1,236 @@
+/* 검증 영수증 칩 — 회의록 탭 툴바 우측 끝(전사본 탭 teBadge와 대칭). 정보성이라 액션
+   버튼들과 분리해 margin-left:auto로 민다. 색은 완료 배지(teBadgeCorrected)와 같은 green 계열. */
+.vr-chip {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  border-radius: 10px;
+  background: rgba(52, 211, 153, 0.1);
+  color: #34d399;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.vr-chip:hover {
+  background: rgba(52, 211, 153, 0.18);
+}
+
+/* 팝오버 — MeetingInfoPopover(mi-popover)와 같은 fixed 포지셔닝 idiom */
+.vr-popover {
+  position: fixed;
+  z-index: 100;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 300px;
+  max-width: 360px;
+  max-height: 460px;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vr-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.vr-header-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.vr-close {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.vr-close:hover {
+  color: var(--text-primary);
+}
+
+.vr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vr-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.vr-item:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.vr-item-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 유형 뱃지 — 전사본 배지(te-badge)와 같은 tinted 칩 idiom. 유형별 색 분리는 과함(5종
+   전부 교정이라는 같은 결) — 단일 accent 계열. */
+.vr-type {
+  padding: 1px 7px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(76, 201, 240, 0.1);
+  border: 1px solid rgba(76, 201, 240, 0.3);
+  flex-shrink: 0;
+}
+
+.vr-evidence {
+  font-size: 11px;
+  font-family: "D2Coding", "SF Mono", Menlo, Monaco, monospace;
+  color: var(--text-secondary);
+  cursor: help;
+}
+
+/* 근거 라인 버튼 — 클릭 시 전사본 해당 라인으로 이동. 링크 어포던스(점선 밑줄 + hover accent). */
+.vr-evidence-btn {
+  font-size: 11px;
+  font-family: "D2Coding", "SF Mono", Menlo, Monaco, monospace;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.vr-evidence-btn:hover {
+  color: var(--accent);
+}
+
+.vr-evidence-btn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* 항목 본문 버튼 — 클릭 시 회의록 내 수정 문장으로 스크롤. 텍스트 블록 전체가 클릭 영역.
+   음수 마진으로 hover 배경이 살짝 넓게 깔리되 텍스트 정렬은 유지. */
+.vr-change-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: calc(100% + 12px);
+  min-width: 0;
+  padding: 3px 6px;
+  margin: 0 -6px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.vr-change-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.vr-change-btn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* before → after 한 줄 — 길면 각 텍스트 말줄임 (전체 텍스트는 title 툴팁). */
+.vr-change {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.vr-before {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.vr-arrow {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.vr-after {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.vr-note {
+  display: block;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  text-align: left;
+}
+
+/* 화자 매핑 의심 경고 — 하단 ⚠ 섹션. 진행/주의 계열 앰버 솔리드(opacity 페이드 금지 관례). */
+.vr-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.vr-warnings-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #fbbf24;
+}
+
+.vr-warning {
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+/* 이동 안내 푸터 — 작은 muted 힌트 텍스트 관례 (msDetailedHint와 같은 결). */
+.vr-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}

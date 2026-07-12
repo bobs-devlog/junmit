@@ -39,7 +39,10 @@ interface SessionContextValue {
   sessionDir: string | null;
   steps: SessionSteps;
   activity: Activity;
-  // AI 분석(후보정/작성) 중이라 사용자 편집을 잠가야 하는 상태 — Correcting||Composing 파생.
+  // AI가 화자 매핑 파일을 쓰는 동안 사용자 편집을 잠가야 하는 상태.
+  // 매핑을 쓰는 마지막 주체는 1단계 화자 작업(phase_step_done "correct"까지)이므로, 그 뒤
+  // (Composing = 회의록 작성·검증, 매핑은 읽기만)엔 잠그지 않는다. mlx(로컬)는 correct 단계
+  // 없이 Composing 안에서 매핑을 준비하므로 corrected=false인 Composing은 여전히 잠금.
   // 화자매칭·전사본·합치기 제안이 공통으로 쓴다(각자 activity 조합을 재계산하지 않도록 단일 출처).
   isEditLocked: boolean;
   currentStepId: StepId | null;
@@ -76,6 +79,12 @@ interface SessionContextValue {
   // OSC 신호 핸들러가 set, 사용자 탭 클릭 시 clear → 다음 단계 완료까지는 사용자 선택 유지.
   focusSubtab: string | null;
   clearFocusSubtab: () => void;
+  // 전사본 특정 라인으로 이동 요청(1-based) — 검증 영수증의 근거(L{n}) 클릭이 set.
+  // focusSubtab("transcript")과 함께 걸어 탭 전환을 트리거하고, TranscriptEditor가 스크롤
+  // 적용 후 clear하는 1회성 요청 (focusSubtab과 같은 "요청 → 소비 후 clear" 관례).
+  transcriptFocusLine: number | null;
+  requestTranscriptLine: (line: number) => void;
+  clearTranscriptFocusLine: () => void;
   // 자동 탭 전환 직후 SessionViewer에 띄울 안내 배너. show 1회 호출 → 5초 자동 dismiss.
   // SessionViewer가 refreshKey 변경으로 remount되어도 표시 상태 유지하기 위해 Context가 소유 (인스턴스 state X).
   tabBanner: string | null;
@@ -144,6 +153,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [completedActivity, setCompletedActivity] = useState<Activity | null>(null);
   // 단계 완료 시 SessionViewer를 자동 이동시킬 sub-tab. OSC 신호 핸들러가 set, 사용자가 탭 클릭하면 clear.
   const [focusSubtab, setFocusSubtab] = useState<string | null>(null);
+  // 전사본 라인 이동 요청(1-based) — 검증 영수증 근거 클릭이 set, TranscriptEditor가 소비 후 clear.
+  const [transcriptFocusLine, setTranscriptFocusLine] = useState<number | null>(null);
   // 자동 탭 전환 안내 배너 — Context가 소유해서 SessionViewer remount(refresh 신호 등)에도 표시 상태 유지.
   const [tabBanner, setTabBanner] = useState<string | null>(null);
   const tabBannerTimerRef = useRef<number | null>(null);
@@ -225,16 +236,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             void track("meeting_failed", { cli: cliRef.current });
           }
         } else if (signal.type === "phase_step_done") {
-          // Phase 내 sub-step 종료. 현재는 phase1의 "correct"만 처리 (후보정 → 회의록 작성 전이).
-          // SessionViewer가 새 파일(transcript_corrected.txt) 가용성 재체크하도록 refreshKey++ +
-          // 사용자에게 교정 결과를 즉시 보여주도록 전사본 탭으로 자동 이동.
+          // Phase 내 sub-step 종료. 현재는 phase1의 "correct"만 — 1단계(화자 라벨 교정·이름
+          // 매칭·전사 텍스트 교정) 완료 → 회의록 작성 전이. 이 시점부터 매핑 파일을 쓰는 주체가
+          // 없으므로 화자 편집 잠금도 풀린다(isEditLocked). SessionViewer가 새 파일
+          // (transcript_corrected.txt) 가용성 재체크하도록 refreshKey++ + 전사본 탭 자동 이동.
           const prev = activityRef.current;
           if (signal.step === "correct" && prev === Activity.Correcting) {
             setSteps((s) => ({ ...s, corrected: true }));
             setActivity(Activity.Composing);
             setRefreshKey((k) => k + 1);
             setFocusSubtab("transcript");
-            showTabBanner("전사 교정 완료\n교정된 전사본을 확인할 수 있어요");
+            showTabBanner("전사 교정 완료\n전사본에서 화자 이름을 확인하고 수정할 수 있어요");
           }
         } else if (signal.type === "phase_done") {
           // 활동성이 Correcting/Composing이 아닐 땐 신호 무시 — 의도치 않은 도착 방어.
@@ -298,6 +310,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setDrawerOpen(false);
     setCompletedActivity(null);
     setFocusSubtab(null);
+    setTranscriptFocusLine(null);
   }, []);
 
   const openExistingMeeting = useCallback(
@@ -313,6 +326,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setDrawerOpen(false);
       setCompletedActivity(null);
       setFocusSubtab(null);
+      // 미소비 라인 이동 요청이 새 세션으로 새지 않게 (1회성 요청의 세션 스코프 정리).
+      setTranscriptFocusLine(null);
     },
     []
   );
@@ -329,6 +344,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setDrawerOpen(false);
     setCompletedActivity(null);
     setFocusSubtab(null);
+    setTranscriptFocusLine(null);
   }, []);
 
   // ─── 녹음 (RecordingScreen) ──────────────────────────────
@@ -604,13 +620,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // 사용자가 SessionViewer 탭을 직접 클릭한 경우 — 다음 단계 완료 전까지 사용자 선택 유지.
   const clearFocusSubtab = useCallback(() => setFocusSubtab(null), []);
 
+  // 검증 영수증 근거(L{n}) 클릭 → 전사본 탭 전환 + 해당 라인 스크롤 요청.
+  const requestTranscriptLine = useCallback((line: number) => {
+    setFocusSubtab("transcript");
+    setTranscriptFocusLine(line);
+  }, []);
+  const clearTranscriptFocusLine = useCallback(() => setTranscriptFocusLine(null), []);
+
   const value = useMemo<SessionContextValue>(
     () => ({
       meeting,
       sessionDir,
       steps,
       activity,
-      isEditLocked: activity === Activity.Correcting || activity === Activity.Composing,
+      // 화자 매핑을 쓰는 마지막 주체는 1단계 화자 작업 — corrected(phase_step_done "correct")부터
+      // 편집 허용. mlx는 correct 단계가 없어 corrected=false인 Composing 내내 잠금 유지(의도).
+      isEditLocked:
+        (activity === Activity.Correcting || activity === Activity.Composing) && !steps.corrected,
       currentStepId,
       spawnRequest,
       appDir,
@@ -630,6 +656,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       completedActivity,
       focusSubtab,
       clearFocusSubtab,
+      transcriptFocusLine,
+      requestTranscriptLine,
+      clearTranscriptFocusLine,
       tabBanner,
       dismissTabBanner,
       startNewMeeting,
@@ -679,6 +708,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       completedActivity,
       focusSubtab,
       clearFocusSubtab,
+      transcriptFocusLine,
+      requestTranscriptLine,
+      clearTranscriptFocusLine,
       tabBanner,
       dismissTabBanner,
       startNewMeeting,

@@ -259,6 +259,29 @@ pub fn write_detailed_default(on: bool) -> Result<(), String> {
         .map_err(|e| format!("detailed_correction 기본값 쓰기 실패: {e}"))
 }
 
+/// 회의록 검증 토글의 sticky 기본값 — 전사본 교정(detailed_correction)과 동일 패턴.
+/// per-meeting 실제 값은 meeting.json의 notes_verification에 기록되고, 이 파일은 UI 기본값일 뿐.
+/// **"0"=OFF(빠름, 사용자가 끔), 그 외/부재=ON(검증, 기본 opt-out).**
+fn notes_verification_default_path() -> PathBuf {
+    app_data_dir().join("notes_verification")
+}
+
+pub fn read_verify_default() -> bool {
+    // 기본값 = 검증(true, opt-out). 사용자가 명시적으로 끈 경우("0")만 false. 부재(신규)·그 외는 검증.
+    fs::read_to_string(notes_verification_default_path())
+        .map(|s| s.trim() != "0")
+        .unwrap_or(true)
+}
+
+pub fn write_verify_default(on: bool) -> Result<(), String> {
+    let path = notes_verification_default_path();
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    fs::write(&path, if on { "1" } else { "0" })
+        .map_err(|e| format!("notes_verification 기본값 쓰기 실패: {e}"))
+}
+
 /// 진단·사용 통계(텔레메트리) 수집 동의 — 익명 에러/사용 이벤트를 원격 전송할지.
 /// **기본 ON**(부재/그 외=ON, "0"일 때만 OFF). 로컬 파일 로그는 이 토글과 무관하게 항상 남는다.
 /// 회의 내용(전사·회의록·제목)은 이 값이 ON이어도 절대 전송하지 않는다.
@@ -1330,11 +1353,16 @@ pub struct MeetingMeta {
     pub attendees: Vec<String>,
     pub agenda: String,
     pub source: String,
-    /// 정밀 교정(text-correction) 여부 — 녹음 시작 설정의 토글값(**기본 ON=정밀, opt-out**). true면
-    /// `/meeting` Phase-1이 text-correction 포함(전사본까지 교정), false면 생략(빠름). 신규 세션은
-    /// 항상 명시 기록. 옛 meeting.json엔 없으며, 스킬은 "없음=정밀(기본)"으로 해석.
+    /// 전사본 교정(text-correction) 여부 — 녹음 시작 설정의 토글값(**기본 ON, opt-out**). true면
+    /// `/meeting` 1단계가 text-correction까지 병렬 수행해 전사본을 교정(회의록 품질과는 무관 — 실측),
+    /// false면 생략. 신규 세션은 항상 명시 기록. 옛 meeting.json엔 없으며, 스킬은 "없음=ON(기본)"으로 해석.
     #[serde(default)]
     pub detailed_correction: bool,
+    /// 회의록 검증(자기검증) 여부 — 녹음 시작 설정의 토글값(**기본 ON, opt-out**). false면 `/meeting`이
+    /// 검증 단계를 건너뛰고 곧장 완료(2~4분 빠름·토큰 절약). 신규 세션은 항상 명시 기록.
+    /// 옛 meeting.json엔 없으며, 스킬은 "없음=검증(기본)"으로 해석.
+    #[serde(default)]
+    pub notes_verification: bool,
     /// 녹음 캡처 모드 — "mic"(마이크만) 또는 "mic+system"(원격회의 시스템 오디오 포함).
     /// create_session은 사용자 의도(토글)를 기록하고, convert_recording이 실제 캡처 결과로 교정한다
     /// (권한 거부·무음이면 "mic"). 옛 세션엔 없으며, 부재=마이크만으로 해석.

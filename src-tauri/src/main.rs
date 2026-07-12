@@ -400,6 +400,7 @@ fn cmd_create_session(
     agenda: Option<String>,
     source: Option<String>,
     detailed_correction: Option<bool>,
+    notes_verification: Option<bool>,
 ) -> Result<String, String> {
     let meta = session::MeetingMeta {
         title,
@@ -410,6 +411,7 @@ fn cmd_create_session(
         agenda: agenda.unwrap_or_default(),
         source: source.unwrap_or_else(|| "manual".to_string()),
         detailed_correction: detailed_correction.unwrap_or(true),
+        notes_verification: notes_verification.unwrap_or(true),
         // 시스템 오디오는 항상 캡처를 시도하므로 의도를 따로 받지 않는다. 실제 캡처 결과(mic/mic+system)는
         // convert_recording이 meeting.json에 기록한다.
         capture_mode: None,
@@ -480,6 +482,18 @@ fn cmd_get_detailed_default() -> bool {
 #[tauri::command]
 fn cmd_set_detailed_default(on: bool) -> Result<(), String> {
     session::write_detailed_default(on)
+}
+
+/// 회의록 검증 토글의 sticky 기본값 조회 — MeetingSelector 마운트 시 초기 토글 상태 결정.
+#[tauri::command]
+fn cmd_get_verify_default() -> bool {
+    session::read_verify_default()
+}
+
+/// 회의록 검증 토글 변경 시 sticky 기본값 저장 — 다음 회의에 동일 기본값 적용.
+#[tauri::command]
+fn cmd_set_verify_default(on: bool) -> Result<(), String> {
+    session::write_verify_default(on)
 }
 
 /// 진단·사용 통계 수집 동의 조회 — 설정 화면 토글 초기값.
@@ -1462,6 +1476,8 @@ fn main() {
             cmd_create_session,
             cmd_get_detailed_default,
             cmd_set_detailed_default,
+            cmd_get_verify_default,
+            cmd_set_verify_default,
             cmd_get_telemetry_enabled,
             cmd_set_telemetry_enabled,
             cmd_analytics_active,

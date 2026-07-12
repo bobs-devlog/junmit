@@ -52,7 +52,7 @@
 | `diarize.json` | 화자분리 결과 |
 | `transcript.txt` | 원본 전사본 ([SPEAKER_XX M:SS] text 형식) |
 | `transcript_corrected.txt` | 교정된 전사본 (LLM 문맥 교정) |
-| `meeting.json` | 회의 메타데이터 단일 진실 원천 — `title`, `date`, `time?`, `type`, `attendees`, `agenda`, `source`, `detailed_correction`(정밀 교정 토글. **기본 ON=정밀**, 녹음 시작 설정에서 opt-out 가능. true/없음=Phase-1이 전사 텍스트 교정까지, false=생략), `capture_mode`(`mic`/`mic+system`. 시스템 오디오는 항상 캡처를 시도(OS 권한이 게이트)하고, convert가 실제 캡처 결과를 기록. 부재=옛 세션·마이크만) |
+| `meeting.json` | 회의 메타데이터 단일 진실 원천 — `title`, `date`, `time?`, `type`, `attendees`, `agenda`, `source`, `detailed_correction`(전사본 교정 토글 — UI 표시명 "전사본 교정", 내부 필드명은 호환 유지. **기본 ON**, 녹음 시작 설정에서 opt-out 가능. true/없음=1단계가 전사 텍스트 교정까지, false=생략. 회의록 품질과 무관 — 실측 확정), `notes_verification`(회의록 검증 토글 — UI "회의록 검증", **기본 ON**. false=자기검증 단계 생략, 속도/토큰 우선 사용자용. 에이전트 경로 전용), `capture_mode`(`mic`/`mic+system`. 시스템 오디오는 항상 캡처를 시도(OS 권한이 게이트)하고, convert가 실제 캡처 결과를 기록. 부재=옛 세션·마이크만) |
 | `notes.json` | 녹음 중 사용자 메모 (없을 수 있음). `notes` 배열 — `{ t(경과 초), kind }`. `kind`: `speaker`(+`speaker` 이름, 화자 힌트) / `text`(+`text`, 자유 메모). `/meeting`이 화자 매핑·회의록 작성에 활용 |
 | `meeting-notes.md` | 회의록 본문 (SPEAKER_XX 라벨 포함, LLM·사용자 공통 편집. 앱이 표시 시점에만 이름 치환) |
 | `speaker_mapping.json` | 화자 이름 매핑 (사용자 수정 가능, 단일 진실 원천) |
@@ -60,11 +60,14 @@
 ## 워크플로우
 
 ### 1. `/meeting {session_dir}` — 회의록 작성
-1. 화자 라벨 교정 + 화자 매핑 (transcript.txt → transcript_corrected.txt). **정밀 교정(기본; `detailed_correction`이 false가 아니면)이면 전사 텍스트 교정(text-correction)도 병렬 수행** — 사용자가 끈 빠른 경로(`false`)는 생략하고 회의록 작성자가 vocab·attendees로 자체 교정
+1. 화자 라벨 교정 + 화자 매핑 (transcript.txt → transcript_corrected.txt). **전사본 교정(기본; `detailed_correction`이 false가 아니면)이 켜져 있으면 전사 텍스트 교정(text-correction)도 병렬 수행** — 모든 sub-agent를 기다려 교정 완성본을 만든 뒤 진행. 완료 시점부터 앱이 화자 매핑 편집 허용
 2. 화자 식별 + 회의 내용 파악
-3. 회의 유형 결정 (`meeting.json`의 `type` 필드. `auto`이면 사용자 templates 디렉토리의 frontmatter `summary` 매칭, 어디에도 안 맞으면 free-form)
+3. 회의 유형 결정 (`meeting.json`의 `type` 필드. `auto`이면 1단계에서 분류 sub-agent가 병렬로 결정, 어디에도 안 맞으면 free-form)
 4. 회의록 작성 (`~/Library/Application Support/app.junmit/templates/{type}.md` + `notes-rules.md` 적용)
-5. 완료 신호 (`app_phase_done`) — 앱 review 화면 전환, PTY 살림 (사용자 추가 요청 가능)
+5. 완료 신호 (`app_phase_done`) — 회의록 **즉시 공개**(검증 대기 안 함). 앱 review 화면 전환, PTY 살림 (사용자 추가 요청 가능)
+6. 회의록 자기검증 (`notes-verification` sub-agent 2개 병렬 — 귀속·수치 / 블록 누락 분담, 전사 대조 보고 → 메인 적용 → `app_refresh` + `notes_verification_report.json`). 공개 후 사후 다듬기 — 바뀐 내역은 회의록 탭 "검증 N건" 칩으로 노출. `meeting.json.notes_verification: false`(UI "회의록 검증" 토글, 기본 ON)면 생략(로컬 파이프라인의 내장 자기검증과 무관, 에이전트 경로 전용). 끝나면 macOS 알림(검증 ON/OFF 공통)
+
+> **실측 기록 (2026-07-11~12, 재논의 방지):** 전사 텍스트 교정은 회의록 품질에 기여하지 않음(5세션 A/B — 오타 유입 0·내용 정확도 무관, 가치는 전사본 열람·화자 매칭). 화자 매핑은 대화형 회의 품질에 실질 기여(매핑 없는 작성은 귀속 왜곡). 교정 background 분리를 구현·검증까지 했으나 **단순한 선형 서사(유지보수·사용자 이해) 우선으로 동기 회귀** — 비동기 재제안은 그 비용을 뒤집는 새 근거가 있을 때만.
 
 ### 2. 사용자 검토
 - 회의록 탭에서 본문 검토 + 화자 매핑 검증. 필요 시 탭 툴바 "복사"로 클립보드 복사(리치텍스트).

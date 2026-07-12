@@ -19,8 +19,8 @@ export const Activity = {
   Recording: "recording", // 녹음 중
   Saving: "saving", // 스테이징 wav → 16k wav 변환·믹스
   Processing: "processing", // 전사 + 화자분리
-  Correcting: "correcting", // LLM 후보정 (Phase 1 1·2단계: 화자 라벨 교정·이름 매칭, 정밀 시 전사 교정)
-  Composing: "composing", // LLM 회의록 작성 (Phase 1 3·4단계)
+  Correcting: "correcting", // LLM 후보정 (화자 라벨 교정·이름 매칭 + 전사본 교정 켬 시 텍스트 교정)
+  Composing: "composing", // LLM 회의록 작성 + 검증 (검증은 별도 스텝 아님 — 진행 문구는 터미널 todos, 결과 가시성은 검증 영수증 칩)
 } as const;
 
 export type Activity = (typeof Activity)[keyof typeof Activity];
@@ -80,14 +80,15 @@ export const STEPS: ReadonlyArray<StepInfo> = [
   {
     id: Step.Correct,
     label: "AI 다듬기",
-    description: "화자 정리 + 정밀 시 전사 교정",
+    description: "화자 라벨 정리 + 이름 매칭 + 교정 ON시 전사 교정",
     icon: "✏️",
     field: "corrected",
   },
   {
     id: Step.Notes,
     label: "회의록",
-    description: "회의록 작성",
+    // 검증(자기검증)은 이 단계에 흡수 — 별도 스텝 없이 결과는 검증 영수증 칩이 보여준다.
+    description: "회의록 작성 + 검증",
     icon: "📋",
     field: "notes_written",
   },

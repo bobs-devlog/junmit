@@ -13,9 +13,9 @@ import ArgumentParser
 // 한 호출당 한 종류만 처리하므로 멱등성 분기 불필요. 매칭 실패 항목은
 // JSON에서 자동 제외 → UI 매칭 정확성 보장.
 //
-// SKILL.md 흐름:
-//   Phase 1 1단계 끝: apply-edits <session> --kind text
-//   Phase 1 2단계 화자 라벨 교정 끝: apply-edits <session> --kind speaker
+// SKILL.md 흐름 (1단계 sub-agent 종료 후, apply-corrections.sh 경유):
+//   apply-edits <session> --kind speaker  (화자 라벨 재할당 — 항상)
+//   apply-edits <session> --kind text     (텍스트 교정 — 전사본 교정 ON일 때만, "full" 인자)
 //
 // 라인 수는 변하지 않음 — 텍스트는 라인 내부 first-occurrence 치환,
 // 라벨은 라인 시작 prefix 치환만 수행.
@@ -123,6 +123,13 @@ struct ApplyEdits: ParsableCommand {
             applied.append(edit)
         }
 
+        // 재실행 가드: 이미 적용된 뒤 다시 호출되면 old가 전부 사라져 0건 적용이 된다.
+        // 이때 JSON을 재작성하면 이전 실행이 기록한 유효한 교정 마커가 통째로 지워지므로 보존.
+        // (진짜 전건 실패 배치를 남겨도 UI는 new-포함 검증으로 조용히 스킵해 무해)
+        if applied.isEmpty && !file.edits.isEmpty {
+            logSkip("text", line: 0, reason: "0/\(file.edits.count) applied — 기존 JSON 보존 (재실행 추정)")
+            return (0, file.edits.count)
+        }
         try writeJSON(TextEditsFile(edits: applied), to: url)
         return (applied.count, file.edits.count)
     }

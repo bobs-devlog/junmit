@@ -17,8 +17,7 @@
 
   | 내부 지침 용어 (출력 금지) | 사용자 출력 |
   |---|---|
-  | `정밀 경로` / `detailed_correction` | "꼼꼼히 다듬기" — 굳이 안 내는 게 기본 |
-  | `빠른 경로` | "빠르게 진행" — 굳이 안 내는 게 기본 |
+  | `교정 포함/미포함` / `detailed_correction` | "전사본 교정" — 굳이 안 내는 게 기본 |
   | `Phase` / `Phase-1` / `1단계`·`1·2단계`·`3·4단계` 등 **단계 번호** | **출력 금지** — 진행은 `TodoWrite`로만 |
   | `transcript.txt`·`transcript_corrected.txt`·`meeting.json`·`speaker_mapping.json` 등 **모든 파일명** | 노출 금지 ("전사본"·"교정본"·"회의 정보" 등 일반어) |
   | `type=note`·`type` 필드·`auto`·`free-form` | 노출 금지 (유형은 한국어 표시 이름 "일반 회의"·"리뷰" 등으로) |

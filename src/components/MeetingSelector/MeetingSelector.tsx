@@ -58,8 +58,10 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
   const [manualTitle, setManualTitle] = useState("");
   const [isManualMode, setIsManualMode] = useState(false);
   const [meetingType, setMeetingType] = useState("auto");
-  // 정밀 교정 토글 — 기본 ON(opt-out), sticky 기억. 초기값 true로 마운트 로드 전 깜빡임 회피.
+  // 전사본 교정 토글 — 기본 ON(opt-out), sticky 기억. 초기값 true로 마운트 로드 전 깜빡임 회피.
   const [detailedCorrection, setDetailedCorrection] = useState(true);
+  // 회의록 검증 토글 — 전사본 교정과 동일 패턴(기본 ON·opt-out·sticky).
+  const [notesVerification, setNotesVerification] = useState(true);
   // 사용자 templates 디렉토리에서 동적으로 로드. auto는 항상 첫 옵션으로 prepend.
   const [typeOptions, setTypeOptions] = useState<MeetingTypeOption[]>([AUTO_OPTION]);
   const [duration, setDuration] = useState<number | string>(DEFAULT_DURATION_MIN);
@@ -147,10 +149,13 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
       .catch(() => {});
   }, []);
 
-  // 정밀 교정 토글의 sticky 기본값 로드 — 마지막 선택을 초기 상태로.
+  // 전사본 교정·회의록 검증 토글의 sticky 기본값 로드 — 마지막 선택을 초기 상태로.
   useEffect(() => {
     invoke<boolean>("cmd_get_detailed_default")
       .then(setDetailedCorrection)
+      .catch(() => {});
+    invoke<boolean>("cmd_get_verify_default")
+      .then(setNotesVerification)
       .catch(() => {});
   }, []);
 
@@ -159,6 +164,12 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
     const next = !detailedCorrection;
     setDetailedCorrection(next);
     void invoke("cmd_set_detailed_default", { on: next }).catch(() => {});
+  };
+
+  const toggleNotesVerification = () => {
+    const next = !notesVerification;
+    setNotesVerification(next);
+    void invoke("cmd_set_verify_default", { on: next }).catch(() => {});
   };
 
   // 시스템 오디오 권한 선제 요청 — 캡처는 항상 시도하므로(설정 토글 없음), 마이크 권한 요청과 같은 시점
@@ -356,6 +367,7 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
       time,
       source,
       detailedCorrection,
+      notesVerification,
     });
   };
 
@@ -558,11 +570,11 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
           </>
         )}
 
-        {/* 정밀 교정 — 설정 토글(라벨 + 스위치 행). 로컬 AI(mlx)는 교정 단계가 없어
-            효과 없는 설정이므로 숨긴다(값은 저장돼도 local_meeting.py가 안 읽음). */}
+        {/* 전사본 교정(내부 필드명은 detailed_correction 유지) — 설정 토글(라벨 + 스위치 행).
+            로컬 AI(mlx)는 교정 단계가 없어 효과 없는 설정이므로 숨긴다(값은 저장돼도 local_meeting.py가 안 읽음). */}
         {hasSelection && cliHasAgent(cli) && (
           <>
-            <div className={styles.msSectionLabel}>정밀 교정</div>
+            <div className={styles.msSectionLabel}>전사본 교정</div>
             <button
               type="button"
               className={clsx(styles.msDetailed, detailedCorrection && styles.active)}
@@ -572,7 +584,30 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
             >
               <span className={styles.msDetailedText}>
                 <span className={styles.msDetailedDesc}>
-                  시간이 조금 더 걸리지만, 전사본이 깔끔해지고 회의록도 약간 더 정확해져요
+                  회의록과 별도로, 전사본의 음성 인식 오류를 교정해 읽기 편하게 만들어요. 회의록은
+                  이 설정과 무관하게 같은 품질로 작성돼요
+                </span>
+                <span className={styles.msDetailedHint}>이 설정은 다음 회의에도 유지돼요</span>
+              </span>
+              <span className={styles.msDetailedSwitch} aria-hidden="true">
+                <span className={styles.msDetailedKnob} />
+              </span>
+            </button>
+
+            {/* 회의록 검증(내부 필드명은 notes_verification) — 전사본 교정과 동일 패턴의 설정 토글.
+                mlx는 검증 단계가 없어 함께 숨긴다(같은 cliHasAgent 게이트 안). */}
+            <div className={styles.msSectionLabel}>회의록 검증</div>
+            <button
+              type="button"
+              className={clsx(styles.msDetailed, notesVerification && styles.active)}
+              role="switch"
+              aria-checked={notesVerification}
+              onClick={toggleNotesVerification}
+            >
+              <span className={styles.msDetailedText}>
+                <span className={styles.msDetailedDesc}>
+                  작성된 회의록을 전사와 대조해 잘못 들어간 이름·날짜·누락을 걸러내요. 끄면 2~4분
+                  빨라지지만 이 검증을 건너뛰어요
                 </span>
                 <span className={styles.msDetailedHint}>이 설정은 다음 회의에도 유지돼요</span>
               </span>

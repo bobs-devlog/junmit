@@ -110,9 +110,12 @@ export interface Meeting {
   agenda?: string;
   // "calendar" | "manual" — 회의 정보 출처.
   source?: "calendar" | "manual";
-  // 정밀 교정(text-correction) 여부 — 녹음 시작 설정의 토글. true면 /meeting Phase-1이 전사
-  // 텍스트 교정까지 수행(느리지만 전사본이 깔끔). 기본 true(정밀, opt-out — 끄면 빠른 경로).
+  // 전사본 교정(내부명 detailed_correction) 여부 — 녹음 시작 설정의 토글. true면 /meeting Phase-1이
+  // 전사 텍스트 교정까지 수행(느리지만 전사본이 깔끔). 기본 true(opt-out — 끄면 빠른 경로).
   detailedCorrection?: boolean;
+  // 회의록 검증(notes_verification) 여부 — 녹음 시작 설정의 토글. false면 /meeting이 검증 단계를
+  // 건너뛰고 곧장 완료(2~4분 빠름·토큰 절약). 기본 true(opt-out).
+  notesVerification?: boolean;
 }
 
 // ── 녹음 중 메모 ─────────────────────────────────
@@ -150,8 +153,10 @@ export interface MeetingMeta {
   attendees: string[];
   agenda: string;
   source: "calendar" | "manual";
-  // 정밀 교정 여부 — true면 전사 텍스트까지 교정됨(전사본 탭 "정밀 교정" 배지 분기에 사용).
+  // 전사본 교정(detailed_correction) 여부 — true면 전사 텍스트까지 교정됨(전사본 탭 "전사본 교정" 배지 분기에 사용).
   detailed_correction?: boolean;
+  // 회의록 검증 여부 — false면 /meeting이 검증 단계를 건너뜀. 옛 세션엔 없으며 부재=검증(기본 ON).
+  notes_verification?: boolean;
   // 녹음 캡처 모드 — "mic"(마이크만) | "mic+system"(시스템 오디오 포함). 부재=마이크만.
   // create 시 의도로 기록되고 convert가 실제 캡처 결과로 교정한다.
   capture_mode?: "mic" | "mic+system";

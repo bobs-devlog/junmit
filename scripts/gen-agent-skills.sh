@@ -90,13 +90,14 @@ Codex 도구명 표기입니다 — 자신이 어느 CLI인지에 따라 아래 
 - **병렬 spawn 지시**: 서로 다른 출력 파일만 쓰는 독립 작업은 같은 응답에서
   하위 에이전트를 모두 생성하고, 모두 끝날 때까지 기다린 뒤 결과를 종합하세요. `/meeting`
   1단계의 하위 에이전트 수는 **meeting.json의 detailed_correction + type에 따라** 갈립니다 —
-  `detailed_correction: false`(사용자가 정밀 끔)면 speaker-label-correction·speaker-mapping
-  **기본 2개**, 그 외(`true` 또는 없음, **기본=정밀**)면 text-correction까지 **기본 3개**를
-  반드시 병렬로 시작합니다 (SKILL.md "정밀 교정 여부 확인" 참고). **추가로 `type`이
+  `detailed_correction: false`(전사본 교정 끔)면 speaker-label-correction·speaker-mapping
+  **기본 2개**, 그 외(`true` 또는 없음, **기본=교정 포함**)면 text-correction까지 **기본 3개**를
+  반드시 병렬로 시작합니다 (SKILL.md "전사본 교정 여부 확인" 참고). **추가로 `type`이
   `auto`이거나 비어있으면** meeting-type-classification 하위 에이전트도 **함께 병렬 spawn**해
-  회의 유형을 후보정과 동시에 결정합니다(따라서 빠르면 3개·정밀이면 4개). 이 에이전트는 파일을
-  쓰지 않고 결정을 `TYPE_DECISION:` 형식으로 보고하며, 메인이 1단계 종료 후 meeting.json.type에
-  반영합니다 (SKILL.md "유형 분류 필요 여부 확인" 참고).
+  회의 유형을 후보정과 동시에 결정합니다. 이 에이전트는 파일을 쓰지 않고 결정을
+  `TYPE_DECISION:` 형식으로 보고하며, 메인이 1단계 종료 후 meeting.json.type에
+  반영합니다 (SKILL.md "유형 분류 필요 여부 확인" 참고). 5단계 자기검증의
+  notes-verification 2개도 같은 방식(병렬 생성 → 모두 대기 → 보고 종합)입니다.
   각 하위 에이전트에는 세션 디렉토리 절대 경로와 담당 출력 파일을 명시하고,
   transcript 원본과 다른 하위 에이전트 출력은 수정하지 말라, sidecar는 호출하지 말라, 지정된
   JSON 파일 하나만 작성하라고 지시합니다. 전체 대화 히스토리 fork는 피하고 필요한 경로와
@@ -125,7 +126,8 @@ Codex 도구명 표기입니다 — 자신이 어느 CLI인지에 따라 아래 
   선택지를 평문 번호 목록으로 출력하고 사용자 입력을 기다리세요.
 - **sub-agent / Agent tool / 병렬 spawn 지시**: 네이티브 하위 에이전트(subagent) 기능으로
   위임하세요. 하위 에이전트 수와 병렬 시작 조건은 위 Codex 절 "병렬 spawn 지시" 규칙을
-  그대로 따릅니다(detailed_correction·type 분기, 빠르면 2개·정밀 3개·auto면 +1 포함).
+  그대로 따릅니다 — `invoke_subagent`는 background 실행이므로 spawn한 하위 에이전트
+  **전원의 완료를 확인한 뒤** 다음 단계로 진행합니다 (`manage_subagents` list로 상태 확인 가능).
   각 하위 에이전트에는 세션 디렉토리 절대 경로와 담당 출력 파일을 명시하고, 작업 정의
   `.claude/agents/<이름>.md`를 먼저 읽어 그대로 따르라고 지시하며, transcript 원본과 다른
   하위 에이전트의 출력은 수정하지 말 것·sidecar는 호출하지 말 것·지정된 파일 하나만 작성할

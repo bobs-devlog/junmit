@@ -9,8 +9,8 @@
 #   `bash lib/apply-corrections.sh`(확장 없음)로 만들고 $APP_SESSION_DIR 확장을 이 파일 안에
 #   가두면, 발행 명령이 정적 분석 가능해져 자동허용된다. → 프롬프트 없이 실행.
 #
-# 인자: $1 == "full" 이면 정밀 경로(text-correction 산출물 존재)라 텍스트 교정까지 적용.
-#       없으면 빠른 경로 — 화자 라벨 교정만.
+# 인자: $1 == "full" 이면 교정 포함(text-correction 산출물 존재)이라 텍스트 교정까지 적용.
+#       없으면 교정 OFF — 화자 라벨 교정만.
 set -euo pipefail
 
 SESSION_DIR="${APP_SESSION_DIR:?APP_SESSION_DIR 미설정}"
@@ -19,7 +19,7 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)" # resource_dir (lib의 부모)
 cp "$SESSION_DIR/transcript.txt" "$SESSION_DIR/transcript_corrected.txt"
 "$HERE/bin/apply-edits" "$SESSION_DIR" --kind speaker
 
-# 정밀 경로에서만 (빠른 경로는 text_edits.json이 없음)
+# 교정 포함에서만 (교정 OFF는 text_edits.json이 없음)
 if [ "${1:-}" = "full" ]; then
   "$HERE/bin/apply-edits" "$SESSION_DIR" --kind text
 fi

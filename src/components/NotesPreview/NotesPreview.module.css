@@ -14,3 +14,19 @@
   background: rgba(255, 255, 255, 0.08);
   color: var(--text-primary);
 }
+
+/* 검증 영수증 항목 클릭 시 본문 수정 문장 잠깐 강조 — 전사본 te-flash와 같은 idiom (2s). */
+.np-flash {
+  border-radius: 4px;
+  animation: np-flash 2s ease;
+}
+
+@keyframes np-flash {
+  0%,
+  35% {
+    background: rgba(76, 201, 240, 0.24);
+  }
+  100% {
+    background: transparent;
+  }
+}

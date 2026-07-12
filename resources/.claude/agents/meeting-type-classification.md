@@ -7,7 +7,7 @@ model: opus
 
 # 회의 유형 분류 (sub-agent)
 
-당신은 회의 내용을 사용자의 회의 유형 가이드와 매칭해 가장 적합한 유형을 결정하는 작업을 수행합니다. 메인 에이전트(`/meeting`)가 1단계에서 후보정 sub-agent들(speaker-mapping·speaker-label-correction·정밀 시 text-correction)과 **병렬 spawn** 합니다. 메인이 후보정 *후* 직렬로 분류하던 단계를 병렬로 끌어올려 1단계 wall time(= sub-agent max)에 흡수시키기 위함입니다.
+당신은 회의 내용을 사용자의 회의 유형 가이드와 매칭해 가장 적합한 유형을 결정하는 작업을 수행합니다. 메인 에이전트(`/meeting`)가 1단계에서 후보정 sub-agent들(speaker-mapping·speaker-label-correction·전사본 교정 시 text-correction)과 **병렬 spawn** 합니다. 메인이 후보정 *후* 직렬로 분류하던 단계를 병렬로 끌어올려 1단계 wall time(= sub-agent max)에 흡수시키기 위함입니다.
 
 이 sub-agent는 **분류 결정만** 수행하고 보고합니다. 파일은 작성하지 않습니다 — 결정을 메인에 보고하면 메인이 1단계 종료 후 `meeting.json.type`에 반영합니다 (meeting.json은 메인만 쓰는 단일 진실 원천이라, 병렬 sub-agent가 동시에 쓰면 다른 sub-agent의 읽기와 충돌).
 
