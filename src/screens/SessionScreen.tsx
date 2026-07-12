@@ -49,6 +49,7 @@ export default function SessionScreen() {
     drawerOpen,
     toggleDrawer,
     completedActivity,
+    isVerifying,
     focusSubtab,
     clearFocusSubtab,
     requestAi,
@@ -241,6 +242,7 @@ export default function SessionScreen() {
             activity={activity}
             steps={steps}
             currentStepId={currentStepId}
+            isVerifying={isVerifying}
             cli={cli}
             onAbort={handleAbort}
             onStartProcessing={handleStartProcessing}
@@ -282,6 +284,7 @@ export default function SessionScreen() {
             refreshKey={refreshKey}
             drawerOpen={drawerOpen}
             completedActivity={completedActivity}
+            isVerifying={isVerifying}
             focusSubtab={focusSubtab}
             onUserTabChange={clearFocusSubtab}
             onToggleDrawer={toggleDrawer}

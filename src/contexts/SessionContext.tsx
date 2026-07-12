@@ -14,6 +14,7 @@ import type { Cli, Meeting, SessionSteps, SpawnRequest } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { loadMeetingMeta, updateMeetingMeta } from "@/utils/meetingMeta";
+import { loadMeetingNotesMd } from "@/utils/meetingNotes";
 import { killPty, sendSlashCommand } from "@/utils/pty";
 import { buildSpawnRequest } from "@/utils/spawn";
 import { track, meetingTypeCategory } from "@/utils/analytics";
@@ -335,10 +336,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             showTabBanner("전사 교정 완료\n전사본에서 화자 이름을 확인하고 수정할 수 있어요");
           } else if (signal.step === "verify") {
             // 자기검증 종료(스킬이 결과 무관 항상 전송, phase_done 이후 Idle에서 도착) —
-            // 편집 잠금 해제 + 회의록 탭(본문·영수증 칩)만 재로드. 전사본은 검증이 안 건드리므로
-            // 전체 remount(refreshKey) 대신 스코프 키로 사용자의 매핑 작업을 보존한다.
+            // 편집 잠금 해제 + 회의록 탭(본문·영수증 칩)만 재로드. 전체 remount(refreshKey) 대신
+            // 스코프 키를 쓰지만, 이 시점이 진짜 완료이므로 회의록 탭 자동 이동 + 완성 배너는
+            // 여기서 낸다(phase_done의 이동을 미룬 것 — 검증 중 매핑 작업을 끊지 않기 위함).
             endVerifying();
             setNotesRefreshKey((k) => k + 1);
+            setFocusSubtab("notes");
+            showTabBanner("회의록 완성\n검증까지 마쳤어요. 내용을 검토해주세요");
           }
         } else if (signal.type === "phase_done") {
           // 활동성이 Correcting/Composing이 아닐 땐 신호 무시 — 의도치 않은 도착 방어.
@@ -351,22 +355,47 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             setActivity(Activity.Idle);
             setCompletedActivity(prev);
             setRefreshKey((k) => k + 1);
-            setFocusSubtab("notes");
-            showTabBanner("회의록 초안 완성\n내용을 검토하고 화자 매핑을 진행해주세요");
             void track("meeting_generated", {
               cli: cliRef.current,
               meeting_type: meetingTypeCategory(meetingRef.current?.meetingType),
             });
             // 에이전트 경로는 공개 직후 자기검증(6단계)이 이어진다 — verify 신호까지 회의록 본문
-            // 편집·유형 변경을 잠가 검증 적용과의 동시 쓰기를 차단. 판정은 meeting.json이 진실
-            // (컨텍스트 Meeting은 옛 세션 재작성에서 notesVerification 부재). false만 검증 생략.
+            // 편집·유형 변경을 잠그고 헤더·사이드바를 "검증 중"으로 표시. phase_done 시점에
+            // **낙관적으로 시작**해("완료" 표기가 한 프레임 새는 것 방지) meeting.json·회의록 존재를
+            // 읽어 비대상이면 즉시 해제 — 검증 OFF(notes_verification false)·무발화 조기 종료(회의록
+            // 없음, 검증도 안 돎). 판정은 meeting.json이 진실(컨텍스트 Meeting은 옛 세션 재작성에서
+            // notesVerification 부재).
+            //
+            // 회의록 탭 자동 이동·완성 배너도 검증 여부에 따라 갈린다 — 검증이 이어지면 이동을
+            // verify 신호(진짜 완료)로 미루고, 사용자가 교정 완료 때 이동된 전사본 탭에서 화자
+            // 매핑을 이어가게 둔다(탭은 열려 있어 원하면 초안 열람 가능). 알림·완료 띠와 동일 원칙:
+            // "완료 신호는 전부 검증 종료 시점에".
             const dir = sessionDirRef.current;
             if (dir && cliHasAgent(cliRef.current)) {
-              void loadMeetingMeta(dir).then((meta) => {
-                if (sessionDirRef.current === dir && meta?.notes_verification !== false) {
-                  beginVerifying();
+              beginVerifying();
+              void Promise.all([loadMeetingMeta(dir), loadMeetingNotesMd(dir)]).then(
+                ([meta, notes]) => {
+                  if (sessionDirRef.current !== dir) return;
+                  if (notes == null) {
+                    // 무발화 조기 종료 — 회의록이 없으니 이동·배너 없이 잠금만 해제.
+                    endVerifying();
+                    return;
+                  }
+                  if (meta?.notes_verification === false) {
+                    endVerifying();
+                    setFocusSubtab("notes");
+                    showTabBanner("회의록 초안 완성\n내용을 검토하고 화자 매핑을 진행해주세요");
+                  } else {
+                    showTabBanner(
+                      "회의록 초안 준비 완료\nAI가 검증하는 동안 화자 이름을 확인해주세요"
+                    );
+                  }
                 }
-              });
+              );
+            } else {
+              // mlx(로컬) — 검증 단계가 없어 이 시점이 곧 완료.
+              setFocusSubtab("notes");
+              showTabBanner("회의록 초안 완성\n내용을 검토하고 화자 매핑을 진행해주세요");
             }
           }
         }

@@ -40,6 +40,9 @@ interface WorkAreaProps {
   drawerOpen: boolean;
   // phase_done OSC로 정상 완료한 직전 Activity. null이면 일반 라벨. SessionContext 관리.
   completedActivity: Activity | null;
+  // 회의록 자기검증 진행 중 — 공개(phase_done) 후에도 완료 띠 대신 "검증 중"을 표시해
+  // 아직 작업이 이어지고 있음을 알린다 (verify 신호로 해제 → 그때 완료 띠).
+  isVerifying?: boolean;
   // activity 기반 라벨 대신 표시할 임시 라벨 (도우미 프로세스 진행 중 등).
   labelOverride?: string | null;
   // 단계 완료 시 SessionViewer가 자동 이동할 sub-tab id. 사용자 탭 클릭 시 onUserTabChange로 clear.
@@ -72,6 +75,7 @@ export default function WorkArea({
   refreshKey = 0,
   drawerOpen,
   completedActivity,
+  isVerifying = false,
   labelOverride = null,
   focusSubtab,
   onUserTabChange,
@@ -86,10 +90,16 @@ export default function WorkArea({
   onEscape,
   onRetypeNotes,
 }: WorkAreaProps) {
+  // 검증 중에는 완료 띠보다 우선 — phase_done으로 completedActivity가 이미 set돼 있어도
+  // 아직 자기검증이 돌고 있으므로 "완료"로 보이면 안 된다 (검증 종료 시 완료 띠로 전환).
   const headerLabel =
     labelOverride ??
-    (completedActivity !== null ? doneLabelFor(completedActivity) : panelLabelFor(activity));
-  const headerDone = labelOverride == null && completedActivity !== null;
+    (isVerifying
+      ? "AI가 회의록을 검증하는 중입니다"
+      : completedActivity !== null
+        ? doneLabelFor(completedActivity)
+        : panelLabelFor(activity));
+  const headerDone = labelOverride == null && !isVerifying && completedActivity !== null;
 
   const emptyState = (
     <EmptyState

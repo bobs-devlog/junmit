@@ -21,6 +21,9 @@ interface Props {
   activity: Activity; // Idle / Saving / Processing / Correcting / Composing (Recording은 RecordingSidebarControls)
   steps: SessionSteps;
   currentStepId: StepId | null;
+  // 회의록 자기검증 진행 중 (phase_done 후 Idle에서 진행) — 상태 라벨·회의록 step을
+  // 완료(✓)가 아닌 진행(스피너)으로 표시해 아직 작업이 이어지고 있음을 알린다.
+  isVerifying?: boolean;
   // 활성 백엔드 — mlx(로컬 LLM)는 에이전트·MCP가 없어 stepper 단계와 추가 요청 버튼을 게이팅.
   cli: Cli;
   // 핸들러 — 화면이 직접 closure로 작성. 사용 안 하는 것은 noop으로 받지 말고 화면이 책임지고 전달.
@@ -42,6 +45,7 @@ export default function SessionSidebarControls({
   activity,
   steps,
   currentStepId,
+  isVerifying = false,
   cli,
   onAbort,
   onStartProcessing,
@@ -54,7 +58,10 @@ export default function SessionSidebarControls({
   loginExpiredCli,
   onGoLogin,
 }: Props) {
-  const meta = activityMeta(activity);
+  // 검증 중에는 Idle의 "대기" 대신 진행 상태로 — phase_done 후에도 작업이 이어지는 중.
+  const meta = isVerifying
+    ? ({ label: "회의록 검증 중", tone: "processing" } as const)
+    : activityMeta(activity);
   const activeStep = activeStepFor(activity, currentStepId, steps);
 
   // 자동 진행 중 (Saving/Processing/Correcting/Composing) — 중단만 노출.
@@ -76,8 +83,10 @@ export default function SessionSidebarControls({
         {/* Stepper — 모든 활동성에서 노출 (Recording 제외, 이건 별도 화면) */}
         <div className={styles.processSteps}>
           {stepsForCli(cli).map((step) => {
-            const isDone = steps[step.field];
-            const isCurrent = step.id === activeStep;
+            // 회의록 step은 "작성 + 검증" — 검증 중에는 notes_written이어도 ✓ 대신 스피너.
+            const verifyingThis = isVerifying && step.id === Step.Notes;
+            const isDone = steps[step.field] && !verifyingThis;
+            const isCurrent = step.id === activeStep || verifyingThis;
             return (
               <div
                 key={step.id}
