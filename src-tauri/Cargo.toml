@@ -1,6 +1,6 @@
 [package]
 name = "junmit-app"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
 publish = false  # 애플리케이션 crate — crates.io 발행 대상 아님 (cargo-about도 자기 자신 제외)
