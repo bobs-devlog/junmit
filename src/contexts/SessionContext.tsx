@@ -387,7 +387,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
                     showTabBanner("회의록 초안 완성\n내용을 검토하고 화자 매핑을 진행해주세요");
                   } else {
                     showTabBanner(
-                      "회의록 초안 준비 완료\nAI가 검증하는 동안 화자 이름을 확인해주세요"
+                      "AI가 회의록을 검증하고 있어요\n그동안 전사본에서 화자 이름을 확인해주세요"
                     );
                   }
                 }
