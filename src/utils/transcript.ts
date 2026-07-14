@@ -5,6 +5,19 @@
 // 그룹1=라벨(SPEAKER_\d+ | UNKNOWN), 그룹2=타임스탬프(M:SS), 그룹3=본문.
 export const TRANSCRIPT_LINE_RE = /^\[(SPEAKER_\d+|UNKNOWN)\s+(\d+:\d+)\]\s*(.*)/;
 
+/** "M:SS"(전사 줄 타임스탬프) → 초. 형식이 아니면 null. */
+export function timestampToSec(ts: string): number | null {
+  const m = /^(\d{1,3}):(\d{2})$/.exec(ts);
+  return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null;
+}
+
+/** 초 → 전사 줄과 같은 "M:SS" 표기 (분 zero-pad 없음 — 녹음 화면 시계의 MM:SS와 다른 표면). */
+export function secToTimestamp(t: number): string {
+  const m = Math.floor(t / 60);
+  const s = Math.floor(t % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 // 라인 prefix `[<라벨> ` 만 매칭 (라벨만 교체할 때 사용. 시간·본문 불변).
 const SPEAKER_PREFIX_RE = /^\[[^\s\]]+ /;
 

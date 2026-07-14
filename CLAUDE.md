@@ -53,7 +53,7 @@
 | `transcript.txt` | 원본 전사본 ([SPEAKER_XX M:SS] text 형식) |
 | `transcript_corrected.txt` | 교정된 전사본 (LLM 문맥 교정) |
 | `meeting.json` | 회의 메타데이터 단일 진실 원천 — `title`, `date`, `time?`, `type`, `attendees`, `agenda`, `source`, `detailed_correction`(전사본 교정 토글 — UI 표시명 "전사본 교정", 내부 필드명은 호환 유지. **기본 ON**, 녹음 시작 설정에서 opt-out 가능. true/없음=1단계가 전사 텍스트 교정까지, false=생략. 회의록 품질과 무관 — 실측 확정), `notes_verification`(회의록 검증 토글 — UI "회의록 검증", **기본 ON**. false=자기검증 단계 생략, 속도/토큰 우선 사용자용. 에이전트 경로 전용), `capture_mode`(`mic`/`mic+system`. 시스템 오디오는 항상 캡처를 시도(OS 권한이 게이트)하고, convert가 실제 캡처 결과를 기록. 부재=옛 세션·마이크만) |
-| `notes.json` | 녹음 중 사용자 메모 (없을 수 있음). `notes` 배열 — `{ t(경과 초), kind }`. `kind`: `speaker`(+`speaker` 이름, 화자 힌트) / `text`(+`text`, 자유 메모). `/meeting`이 화자 매핑·회의록 작성에 활용 |
+| `notes.json` | 녹음 중 사용자 메모 (없을 수 있음). `notes` 배열 — `{ t(경과 초), kind }`. `kind`: `speaker`(+`speaker` 이름, 화자 힌트) / `text`(+`text`, 자유 메모). `/meeting`이 화자 매핑·회의록 작성에 활용하고, 전사본 탭도 읽기 전용으로 표시(자유 메모는 앵커 발화 줄 뒤 행, 화자 힌트는 발화 줄 칩 옆 🎙 마커 — 배치 규칙은 `src/utils/recordingNotes.ts` `buildNotePlacement`) |
 | `meeting-notes.md` | 회의록 본문 (SPEAKER_XX 라벨 포함, LLM·사용자 공통 편집. 앱이 표시 시점에만 이름 치환) |
 | `speaker_mapping.json` | 화자 이름 매핑 (사용자 수정 가능, 단일 진실 원천) |
 
