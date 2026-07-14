@@ -580,6 +580,24 @@ pub fn ensure_claude_config_dir(app: &tauri::AppHandle) {
                 s_changed = true;
             }
 
+            // preferredNotifChannel — claude의 모든 로컬 OS 알림 채널(완료·"입력 필요"·유휴
+            // 전부 이 한 키로 수렴, 별도 우회 채널 없음 — 2.1.207 바이너리 실측). 기본값 "auto"는
+            // macOS에서 osascript `display notification` 경로로 빠져 Apple Events(자동화) TCC
+            // 프롬프트("junmit이 터미널을 제어하려고 합니다")를 유발한다. junmit은 완료·안내를
+            // 자체 신호(signal.sh OSC 7777) + Tauri 알림으로 이미 내보내므로 claude 내장 알림은
+            // 순수 중복 — notifications_disabled로 완전히 끈다(Apple Events도, terminal_bell류의
+            // 임베드 xterm 벨 노이즈도 없는 no-op). 격리 config dir이라 사용자 개인 ~/.claude엔
+            // 영향 없음. auto mode 무인 파이프라인이라 "입력 필요" OS 알림도 불필요.
+            if obj.get("preferredNotifChannel").and_then(|v| v.as_str())
+                != Some("notifications_disabled")
+            {
+                obj.insert(
+                    "preferredNotifChannel".to_string(),
+                    serde_json::json!("notifications_disabled"),
+                );
+                s_changed = true;
+            }
+
             // permissions.allow — 관리 항목 union(사용자/claude가 /permissions로 추가한 항목 보존).
             let want_allow = [
                 "Read(~/Library/Application Support/app.junmit/**)",
