@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { Fragment, useState, useEffect, useMemo, useRef, useCallback } from "react";
 import clsx from "clsx";
 import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "@/contexts/SessionContext";
@@ -17,6 +17,7 @@ import { buildSpeakerLabels, buildSpeakerNumbers } from "@/utils/meetingNotes";
 import { loadMeetingMeta } from "@/utils/meetingMeta";
 import { loadAttendees } from "@/utils/attendees";
 import type { SpeakerMapping } from "@/types";
+import useTranscriptNotes from "@/hooks/useTranscriptNotes";
 import {
   loadTranscriptSpeakerEdits,
   buildEditsByLine as buildSpeakerEditsByLine,
@@ -28,10 +29,11 @@ import {
   splitLineByEdits,
 } from "@/utils/textEdits";
 import type { TextEdit } from "@/utils/textEdits";
-import { TRANSCRIPT_LINE_RE } from "@/utils/transcript";
+import { TRANSCRIPT_LINE_RE, timestampToSec, secToTimestamp } from "@/utils/transcript";
 import SpeakerPicker from "../SpeakerPicker";
 import SpeakerTargetPicker from "../SpeakerPicker/SpeakerTargetPicker";
 import SpeakerEditMarker from "./SpeakerEditMarker";
+import NoteHintMarker from "./NoteHintMarker";
 import TextEditTooltip from "./TextEditTooltip";
 import { invoke } from "@tauri-apps/api/core";
 import styles from "./TranscriptEditor.module.css";
@@ -344,6 +346,10 @@ export default function TranscriptEditor({
       setTextEdits([]);
       setSelected(new Set());
       setLastUndo(null);
+      // 전환 직전의 강조(≤1.3초)가 새 세션의 같은 위치에 잠깐 남지 않게 flash도 정리.
+      // (메모 관련 리셋은 useTranscriptNotes가 자체 처리)
+      setFlashLine(null);
+      if (flashTimer.current) window.clearTimeout(flashTimer.current);
     }
     prevSessionPathRef.current = sessionPath;
   }, [sessionPath]);
@@ -427,6 +433,15 @@ export default function TranscriptEditor({
   );
   // 라인 인덱스 → TextEdit[] 매핑 (한 라인에 여러 단어 교정 가능)
   const textEditsByLine = useMemo(() => buildTextEditsByLine(textEdits, lines), [textEdits, lines]);
+
+  // 녹음 메모 표시 관심사(로드·배치·"메모 N" 순회) — useTranscriptNotes에 위임.
+  // 메모가 lines에 삽입되지 않고 별도 맵으로 배치되는 이유는 buildNotePlacement 참조.
+  const { markersByLine, rowsByLine, textNoteCount, jumpToNextNote } = useTranscriptNotes(
+    sessionPath,
+    lines,
+    linesRef,
+    styles.teLineFlash
+  );
 
   // SPEAKER_XX → 표시 라벨 (매핑되면 이름, 미매핑이면 "참석자 N"). mapping과 함께 재계산.
   const speakers = useMemo(
@@ -590,12 +605,8 @@ export default function TranscriptEditor({
 
   // 근거의 타임스탬프(M:SS) → 전사본 해당 줄로 점프. 정확히 일치하는 줄(보통 sub-agent가 전사본
   // 타임스탬프를 그대로 인용)을 우선, 없으면 그 이전 가장 가까운 줄로 fallback. 잠깐 하이라이트.
-  const toSec = (ts: string): number | null => {
-    const m = /^(\d{1,3}):(\d{2})$/.exec(ts);
-    return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null;
-  };
   const jumpToTime = (t: string) => {
-    const target = toSec(t);
+    const target = timestampToSec(t);
     if (target == null) return;
     let exact = -1;
     let prevIdx = -1;
@@ -603,7 +614,7 @@ export default function TranscriptEditor({
     let firstIdx = -1;
     lines.forEach((l, i) => {
       if (l.type !== "speech" || !l.time) return;
-      const s = toSec(l.time);
+      const s = timestampToSec(l.time);
       if (s == null) return;
       if (firstIdx === -1) firstIdx = i;
       if (s === target && exact === -1) exact = i;
@@ -616,6 +627,42 @@ export default function TranscriptEditor({
     if (idx === -1) return;
     flashLineAt(idx);
   };
+  // anchor 줄 뒤(또는 -1이면 최상단)에 표시할 자유 메모 행. 화자 힌트는 rowsByLine에 없다
+  // (전부 마커로 흡수 — 배치 계산 참조)라 kind 분기가 필요 없다. 행은 발화 줄과 같은 .te-line
+  // 컬럼 구조(체크박스 자리·칩·시각·본문)를 따라 전사 리듬에 섞인다.
+  // 읽기 전용 — 사후 수정·삭제는 회의 맥락이 사라져 의미가 없고, /meeting 재작성 입력과 어긋날 뿐.
+  const renderNoteRows = (anchor: number) => {
+    const anchored = rowsByLine.get(anchor);
+    if (!anchored) return null;
+    return anchored.map(({ note, noteIndex }) => (
+      <div
+        key={`n${noteIndex}`}
+        data-note-index={noteIndex}
+        className={styles.teLine}
+        title="녹음 중에 남긴 메모입니다"
+      >
+        {/* 발화 줄 체크박스와 같은 폭의 숨김 체크박스 — 칩·시각·본문 컬럼 자리맞춤용. */}
+        <input
+          type="checkbox"
+          className={clsx(styles.teLineCheck, styles.teNoteSpacer)}
+          disabled
+          aria-hidden="true"
+          tabIndex={-1}
+        />
+        {/* 칩 + 옆 아이콘 — 발화 줄의 화자 칩 옆 🎙 마커와 같은 문법(그룹 gap 2px 공유).
+            의미는 칩 텍스트가 전달하므로 아이콘은 장식(aria-hidden). */}
+        <span className={styles.teSpeakerGroup}>
+          <span className={styles.teNoteChip}>메모</span>
+          <span className={styles.teNoteMark} aria-hidden="true">
+            📝
+          </span>
+        </span>
+        <span className={styles.teTime}>{secToTimestamp(note.t)}</span>
+        <span className={styles.teNoteText}>{note.text}</span>
+      </div>
+    ));
+  };
+
   // 언마운트 시 타이머 정리.
   useEffect(
     () => () => {
@@ -706,6 +753,16 @@ export default function TranscriptEditor({
             ↩ {lastUndo.label} · 실행 취소
           </button>
         )}
+        {textNoteCount > 0 && (
+          <button
+            type="button"
+            className={styles.teNotesChip}
+            onClick={jumpToNextNote}
+            title="녹음 중 남긴 메모 위치로 이동합니다. 누를 때마다 다음 메모로 넘어갑니다"
+          >
+            📝 메모 {textNoteCount}
+          </button>
+        )}
         {/* 배지 3-state: 처리 전=원본 / 교정 완료=전사본 교정 / 빠른 경로=무표기(텍스트 원문이라 "교정" 미표기). */}
         {!isCorrected ? (
           <span
@@ -735,60 +792,75 @@ export default function TranscriptEditor({
       </div>
 
       <div className={styles.teLines} ref={linesRef}>
+        {/* 첫 발화 이전에 남긴 메모, 붙을 발화 줄이 없어 본문 최상단에서 별도로 실행. */}
+        {renderNoteRows(-1)}
         {lines.map((line, i) => {
           // 인라인 마커/하이라이트는 교정본일 때만 — 원본은 교정 전이라 의미 X
           const speakerEdit = isCorrected ? speakerEditsByLine.get(i) : undefined;
           const textEditsForLine = isCorrected ? (textEditsByLine.get(i) ?? []) : [];
           if (line.type === "speech") {
             const segments = splitLineByEdits(line.text, textEditsForLine);
+            // Fragment key={i}로 감싸고 줄 뒤에 메모 행을 붙인다 — 메모는 lines 밖에서 렌더될 뿐
+            // 줄 인덱스(data-li·재할당·L{n} 포커스) 체계에 영향을 주지 않는다.
             return (
-              <div
-                key={i}
-                data-li={i}
-                className={clsx(
-                  styles.teLine,
-                  selected.has(i) && styles.teLineSelected,
-                  flashLine === i && styles.teLineFlash
-                )}
-              >
-                <input
-                  type="checkbox"
-                  className={clsx(styles.teLineCheck, isEditLocked && styles.teLocked)}
-                  checked={selected.has(i)}
-                  onChange={() => toggleLine(i)}
-                  aria-disabled={isEditLocked || undefined}
-                  aria-label={`${numbers[line.speaker] ?? line.speaker} 줄 선택`}
-                />
-                <span className={styles.teSpeakerGroup}>
-                  <SpeakerLabel
-                    speaker={line.speaker}
-                    name={mapping[line.speaker]?.name}
-                    state={speakerState(mapping[line.speaker])}
-                    reason={formatReason(mapping[line.speaker]?.reason)}
-                    displayLabel={labels[line.speaker] ?? line.speaker}
-                    participantLabel={numbers[line.speaker] ?? line.speaker}
-                    color={speakerColor(line.speaker)}
-                    attendees={sessionAttendees}
-                    onChange={(name) => handleMap(line.speaker, name)}
-                    onConfirm={() => handleConfirm(line.speaker)}
-                    onUnknown={() => handleUnknown(line.speaker)}
-                    onJumpToTime={jumpToTime}
-                    onAddAttendee={handleAddAttendee}
-                    disabled={isEditLocked}
-                  />
-                  {speakerEdit && <SpeakerEditMarker edit={speakerEdit} />}
-                </span>
-                <span className={styles.teTime}>{line.time}</span>
-                <span className={styles.teText}>
-                  {segments.map((seg, j) =>
-                    seg.edit ? (
-                      <TextEditTooltip key={j} text={seg.text} edit={seg.edit} />
-                    ) : (
-                      <span key={j}>{seg.text}</span>
-                    )
+              <Fragment key={i}>
+                <div
+                  data-li={i}
+                  className={clsx(
+                    styles.teLine,
+                    selected.has(i) && styles.teLineSelected,
+                    flashLine === i && styles.teLineFlash
                   )}
-                </span>
-              </div>
+                >
+                  <input
+                    type="checkbox"
+                    className={clsx(styles.teLineCheck, isEditLocked && styles.teLocked)}
+                    checked={selected.has(i)}
+                    onChange={() => toggleLine(i)}
+                    aria-disabled={isEditLocked || undefined}
+                    aria-label={`${numbers[line.speaker] ?? line.speaker} 줄 선택`}
+                  />
+                  <span className={styles.teSpeakerGroup}>
+                    <SpeakerLabel
+                      speaker={line.speaker}
+                      name={mapping[line.speaker]?.name}
+                      state={speakerState(mapping[line.speaker])}
+                      reason={formatReason(mapping[line.speaker]?.reason)}
+                      displayLabel={labels[line.speaker] ?? line.speaker}
+                      participantLabel={numbers[line.speaker] ?? line.speaker}
+                      color={speakerColor(line.speaker)}
+                      attendees={sessionAttendees}
+                      onChange={(name) => handleMap(line.speaker, name)}
+                      onConfirm={() => handleConfirm(line.speaker)}
+                      onUnknown={() => handleUnknown(line.speaker)}
+                      onJumpToTime={jumpToTime}
+                      onAddAttendee={handleAddAttendee}
+                      disabled={isEditLocked}
+                    />
+                    {speakerEdit && <SpeakerEditMarker edit={speakerEdit} />}
+                    {/* 녹음 중 화자 힌트 — 이 줄에 앵커된 kind=speaker 메모를 칩 옆 마커로.
+                        "메모 N" 순회 대상이 아니므로(자유 메모 한정) data-note-index·flash 없음. */}
+                    {markersByLine.get(i)?.map(({ note, noteIndex }) => (
+                      <NoteHintMarker
+                        key={`n${noteIndex}`}
+                        speaker={note.speaker ?? ""}
+                        time={secToTimestamp(note.t)}
+                      />
+                    ))}
+                  </span>
+                  <span className={styles.teTime}>{line.time}</span>
+                  <span className={styles.teText}>
+                    {segments.map((seg, j) =>
+                      seg.edit ? (
+                        <TextEditTooltip key={j} text={seg.text} edit={seg.edit} />
+                      ) : (
+                        <span key={j}>{seg.text}</span>
+                      )
+                    )}
+                  </span>
+                </div>
+                {renderNoteRows(i)}
+              </Fragment>
             );
           }
           return line.text.trim() ? (
