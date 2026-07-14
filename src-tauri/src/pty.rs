@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 
@@ -18,13 +18,30 @@ pub struct PtySession {
 
 pub struct PtyManager {
     session: Mutex<Option<PtySession>>,
+    /// spawn 직렬화 가드 — cmd_spawn_terminal이 블로킹 풀에서 돌아 동시 진입이 가능하므로
+    /// spawn 전체를 감싸 kill↔세션 교체 사이의 race를 막는다.
+    spawn_guard: Mutex<()>,
+    /// spawn 세대 카운터 — 직렬화(spawn_guard)만으론 **순서**가 보장되지 않는다. 동기 커맨드
+    /// 시절 메인 스레드가 공짜로 주던 "마지막 요청이 이긴다"·"kill 후엔 아무것도 안 살아난다"를
+    /// 복원한다: 새 spawn 요청(issue_spawn_ticket)과 명시적 kill()이 세대를 올리고, spawn은
+    /// 자기 티켓이 현재 세대일 때만 진행·저장한다. 없으면 회의 전환 kill(옛 회의 PTY 오염 방지 —
+    /// SessionContext 참고) 뒤에 pending spawn이 착지해 유령 CLI가 옛 세션을 계속 만질 수 있다.
+    spawn_epoch: AtomicU64,
 }
 
 impl PtyManager {
     pub fn new() -> Self {
         Self {
             session: Mutex::new(None),
+            spawn_guard: Mutex::new(()),
+            spawn_epoch: AtomicU64::new(0),
         }
+    }
+
+    /// spawn 티켓 발급 — cmd_spawn_terminal이 블로킹 풀로 넘어가기 **전에**(IPC 도착 순서가
+    /// 살아있는 시점) 호출해 요청 순서를 세대에 새긴다. 반환값이 이 요청의 세대.
+    pub fn issue_spawn_ticket(&self) -> u64 {
+        self.spawn_epoch.fetch_add(1, Ordering::SeqCst) + 1
     }
 
     /// rows/cols: 프론트 xterm의 현재 크기 — 처음부터 이 크기로 PTY를 연다. 크기 동기화를
@@ -38,9 +55,20 @@ impl PtyManager {
         args: &[&str],
         rows: u16,
         cols: u16,
+        ticket: u64,
     ) -> Result<(), String> {
-        // 기존 세션 종료
-        self.kill();
+        // spawn 전체 직렬화 — 함수 끝까지 보유(cmd_spawn_terminal async 동시 호출 대비).
+        // kill_current()는 별도 뮤텍스(session)를 잠그므로 데드락 없음.
+        let _spawn_guard = self.spawn_guard.lock().unwrap();
+
+        // 세대 확인 — 이 요청보다 새 spawn 요청이나 kill이 이미 도착했다면 낡은 요청이다.
+        // 조용히 포기(Ok) — 최신 요청 쪽이 화면을 책임진다.
+        if self.spawn_epoch.load(Ordering::SeqCst) != ticket {
+            return Ok(());
+        }
+
+        // 기존 세션 종료 (내부 교체용 — 세대는 올리지 않아 아래 재확인 기준이 ticket 그대로다)
+        self.kill_current();
 
         let pty_system = native_pty_system();
         let pair = pty_system
@@ -65,7 +93,7 @@ impl PtyManager {
         // 사용자의 로그인 쉘 PATH 사용 (brew, nvm, claude 등 포함)
         cmd.env("PATH", crate::session::get_user_shell_path());
 
-        let child = pair
+        let mut child = pair
             .slave
             .spawn_command(cmd)
             .map_err(|e| format!("명령 실행 실패: {e}"))?;
@@ -81,14 +109,26 @@ impl PtyManager {
             .map_err(|e| format!("writer 가져오기 실패: {e}"))?;
 
         let killed = Arc::new(AtomicBool::new(false));
-        let session = PtySession {
-            master: Arc::new(Mutex::new(pair.master)),
-            writer: Arc::new(Mutex::new(writer)),
-            child: Arc::new(Mutex::new(child)),
-            killed: killed.clone(),
-        };
 
-        *self.session.lock().unwrap() = Some(session);
+        {
+            // 저장 직전 세대 재확인 — fork/exec 동안 kill이나 새 요청이 도착했으면 방금 만든
+            // 자식을 회수하고 저장하지 않는다(reader 스레드는 아직 없음). 재확인과 저장을
+            // session 잠금 하나로 묶어 틈을 없앤다: kill의 세대 bump가 이 load보다 늦으면
+            // kill이 이 잠금에서 대기했다가 방금 저장된 세션을 죽이므로 어느 순서든 "죽음".
+            let mut slot = self.session.lock().unwrap();
+            if self.spawn_epoch.load(Ordering::SeqCst) != ticket {
+                drop(slot);
+                let _ = child.kill();
+                let _ = child.wait();
+                return Ok(());
+            }
+            *slot = Some(PtySession {
+                master: Arc::new(Mutex::new(pair.master)),
+                writer: Arc::new(Mutex::new(writer)),
+                child: Arc::new(Mutex::new(child)),
+                killed: killed.clone(),
+            });
+        }
 
         // PTY 출력을 프론트엔드로 전달하는 스레드
         // OSC 7777 시퀀스를 가로채서 app:signal 이벤트로 변환
@@ -180,7 +220,15 @@ impl PtyManager {
         }
     }
 
+    /// 명시적 kill (cmd_pty_kill·앱 종료 정리) — 세대를 올려 블로킹 풀에서 아직 진행 중인
+    /// pending spawn도 함께 무효화한다("kill 이후엔 아무것도 안 살아난다").
     pub fn kill(&self) {
+        self.spawn_epoch.fetch_add(1, Ordering::SeqCst);
+        self.kill_current();
+    }
+
+    /// 현재 세션만 종료 (세대 불변) — spawn 내부의 기존 세션 교체용.
+    fn kill_current(&self) {
         let mut session = self.session.lock().unwrap();
         if let Some(ref s) = *session {
             // kill 전에 플래그 set — reader가 EOF를 보기 전에 의도적 종료임이 보이도록.

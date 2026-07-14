@@ -121,19 +121,31 @@ fn cleanup_all_children(app_handle: &tauri::AppHandle) {
 type PtyState = Arc<PtyManager>;
 
 #[tauri::command]
-fn cmd_spawn_terminal(
+async fn cmd_spawn_terminal(
     app: tauri::AppHandle,
-    state: State<PtyState>,
+    state: State<'_, PtyState>,
     command: String,
     args: Vec<String>,
     rows: Option<u16>,
     cols: Option<u16>,
 ) -> Result<(), String> {
-    let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     // 0 또는 미전달(숨김 패널 등 측정 불가)이면 보수적 기본값.
     let rows = rows.filter(|&r| r > 0).unwrap_or(24);
     let cols = cols.filter(|&c| c > 0).unwrap_or(80);
-    state.spawn(app, &command, &args_ref, rows, cols)
+    // spawn은 블로킹 작업(최초 1회 로그인 셸 PATH 캡처·kill+reap·openpty·fork)이라 동기
+    // 커맨드로 두면 메인 스레드가 멈춘다(무지개 커서) — 블로킹 풀로 옮긴다. 대신 사라지는
+    // 요청 순서 보장은 티켓(IPC 도착 순서 시점 발급) + PtyManager 세대 비교가 복원(pty.rs).
+    let ticket = state.issue_spawn_ticket();
+    let mgr = state.inner().clone();
+    match tauri::async_runtime::spawn_blocking(move || {
+        let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        mgr.spawn(app, &command, &args_ref, rows, cols, ticket)
+    })
+    .await
+    {
+        Ok(result) => result,
+        Err(e) => Err(format!("터미널 spawn 스레드 실패: {e}")),
+    }
 }
 
 #[tauri::command]
@@ -1393,6 +1405,13 @@ fn main() {
             // 미서명 앱이 .app을 교체·재실행해도 Gatekeeper 경고가 재발하지 않게.
             // release 빌드에서만 실효(dev는 .app 번들이 아님). best-effort.
             session::strip_own_quarantine();
+
+            // 로그인 셸 PATH 캡처(최초 1회, 실측 1.5~2.5초 — .zshrc·nvm source) 워밍.
+            // 파이프라인을 안 거치는 fresh launch→기존 세션→"회의록 작성" 직행 경로가
+            // 첫 PTY spawn에서 이 비용을 치르지 않게 캐시를 미리 채운다. best-effort.
+            std::thread::spawn(|| {
+                let _ = session::get_user_shell_path();
+            });
 
             // 회의 유형 가이드 시드 — 사용자 위치에 없는 파일만 복사 (idempotent)
             if let Err(e) = session::seed_user_templates(app.handle()) {
