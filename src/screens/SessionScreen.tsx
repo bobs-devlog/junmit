@@ -11,7 +11,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { useDialog } from "@/contexts/DialogContext";
 import useNavigationBlocker from "@/hooks/useNavigationBlocker";
 import { Activity, Step, cliHasAgent } from "@/constants";
-import { killPty } from "@/utils/pty";
+import { cancelMeetingWork } from "@/utils/headless";
 import { invoke } from "@tauri-apps/api/core";
 import { sendNotification } from "@/utils/notification";
 
@@ -55,6 +55,7 @@ export default function SessionScreen() {
     requestAi,
     loginExpiredCli,
     clearLoginExpired,
+    headlessActive,
   } = session;
 
   // attendees 참조 안정화 — 자식의 useEffect 의존성 배열이 매 렌더 무효화되는 것 방지.
@@ -78,9 +79,8 @@ export default function SessionScreen() {
         currentActivity === Activity.Correcting ||
         currentActivity === Activity.Composing
       ) {
-        await killPty();
-        // 로컬 AI 회의록 서브프로세스 — 없으면 no-op.
-        await invoke<void>("cmd_cancel_local_meeting").catch(() => {});
+        // PTY·로컬(mlx)·headless(claude -p) 일괄 중단 — 없으면 각각 no-op.
+        await cancelMeetingWork();
         // 의도적 kill은 pty:exit를 emit하지 않으므로(Rust 억제) activity를 직접 Idle 복귀 —
         // 화면 이탈 후 비-Idle이 잔존하면 다음 진입 transition 전까지 상태가 어긋난다.
         notifyPtyExit();
@@ -221,13 +221,10 @@ export default function SessionScreen() {
       danger: true,
     });
     if (!ok) return;
-    await killPty();
+    // PTY·로컬(mlx)·headless(claude -p) 일괄 중단 — 없으면 각각 no-op.
+    await cancelMeetingWork();
     try {
       await invoke<void>("cmd_cancel_pipeline");
-    } catch {}
-    // 로컬 AI 회의록 서브프로세스 — 없으면 no-op.
-    try {
-      await invoke<void>("cmd_cancel_local_meeting");
     } catch {}
     resetSession();
     navigate("/", { replace: true });
@@ -291,6 +288,7 @@ export default function SessionScreen() {
             notesWritten={steps.notes_written}
             assistAvailable={cliHasAgent(cli)}
             localBackend={!cliHasAgent(cli)}
+            headlessBackend={headlessActive}
             noSpeech={steps.no_speech}
             onForceCompose={handleForceCompose}
             onRequestAi={handleRequestAi}

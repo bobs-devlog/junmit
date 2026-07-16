@@ -43,6 +43,24 @@ export function buildClaudeCommand(
   );
 }
 
+// headless /meeting이 끝난 세션을 **같은 대화 컨텍스트로** 대화형 PTY에 다시 여는 요청
+// (/assist 진입용). headless 실행의 init 이벤트에서 캡처한 session_id(세션 디렉토리의
+// claude_session.json에 보존)를 --resume에 넘긴다. 초기 프롬프트로 "/assist"를 병기해
+// 재개 직후 곧바로 스킬이 돈다. 무효 id(격리 config의 기록 삭제 등)면 claude가
+// "No conversation found" 출력 후 즉시 종료(비파괴) — 호출자가 pty:exit에서 폴백 처리.
+export function buildClaudeResumeRequest(
+  appDir: string | null,
+  sessionId: string,
+  sessionDir: string | null,
+  signalDir: string
+): SpawnRequest {
+  const command =
+    `${envPrefix(appDir, sessionDir, signalDir)} && ` +
+    `exec env CLAUDE_CODE_NO_FLICKER=1 CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR_SH}" ` +
+    `claude --resume "${sessionId}" "/assist"`;
+  return { command: "bash", args: ["-c", command], ts: Date.now() };
+}
+
 // 슬래시 커맨드 → 자연어 스킬 트리거 (예: "/template" → "Run the template skill.").
 // codex·antigravity 공용 — 둘 다 커스텀 슬래시 커맨드가 없고 cwd의 .agents/skills를
 // description 매칭(자연어)으로 트리거한다.

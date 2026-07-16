@@ -16,7 +16,13 @@ import { listen } from "@tauri-apps/api/event";
 import { loadMeetingMeta, updateMeetingMeta } from "@/utils/meetingMeta";
 import { loadMeetingNotesMd } from "@/utils/meetingNotes";
 import { killPty, sendSlashCommand } from "@/utils/pty";
-import { buildSpawnRequest } from "@/utils/spawn";
+import { buildSpawnRequest, buildClaudeResumeRequest } from "@/utils/spawn";
+import {
+  cancelMeetingWork,
+  clearClaudeSessionId,
+  parseHeadlessLine,
+  readClaudeSessionId,
+} from "@/utils/headless";
 import { track, meetingTypeCategory } from "@/utils/analytics";
 import { sendNotification } from "@/utils/notification";
 
@@ -56,6 +62,9 @@ interface SessionContextValue {
   signalDir: string | null;
   cli: Cli;
   refreshKey: number;
+  // headless(claude -p) 실행이 작업 패널의 주체인 상태 — WorkArea가 터미널 대신
+  // AgentProgressPanel을 렌더할지의 단일 출처 (mlx의 localBackend와 같은 결).
+  headlessActive: boolean;
 
   // 환경 초기화 (AppShell이 cmd_get_app_dir / cmd_get_signal_dir / cmd_get_active_cli 결과를 set)
   setAppDir: (dir: string) => void;
@@ -195,6 +204,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const pendingRefreshRef = useRef(false);
   // 자동 작성 preflight(completeProcessing)가 감지한 로그인 만료 CLI (persistent — 복귀해도 유지).
   const [loginExpiredCli, setLoginExpiredCli] = useState<Cli | null>(null);
+  // headless(claude -p) 실행이 현재 작업 패널의 주체인지 — WorkArea가 터미널 대신
+  // AgentProgressPanel을 보여줄지의 단일 출처. headless 실행 시작 시 true, PTY spawn이 일어나는
+  // 모든 지점·세션 전환에서 false. Idle 복귀 후에도 유지해 패널에 최종 상태가 잔존한다
+  // (LocalProgressPanel과 동일 체감 — drawer를 닫기 전까지 결과 확인 가능).
+  const [headlessActive, setHeadlessActive] = useState(false);
+  // headless 스트림의 최종 result 이벤트(is_error·본문) — runHeadlessMeeting 실패 배너에
+  // 에러 원문(로그인 만료·한도 소진 안내 등)을 병기하기 위한 보관. 실행 시작 시 초기화.
+  type HeadlessResult = { isError: boolean; text: string };
+  const headlessResultRef = useRef<HeadlessResult | null>(null);
+  // /assist resume PTY의 스폰 시각 — 직후(10초 내) pty:exit면 무효 session_id로 보고
+  // claude_session.json을 비워 다음 클릭이 fresh spawn 폴백을 타게 한다(notifyPtyExit).
+  const resumeSpawnAtRef = useRef<number | null>(null);
   // 자동 탭 전환 안내 배너 — Context가 소유해서 SessionViewer remount(refresh 신호 등)에도 표시 상태 유지.
   const [tabBanner, setTabBanner] = useState<string | null>(null);
   const tabBannerTimerRef = useRef<number | null>(null);
@@ -411,6 +432,40 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // headless(claude -p) 스트림 소비 — 의미 해석은 parseHeadlessLine 단일 지점. 여기선 둘만:
+  // ① init의 session_id를 세션 파일(claude_session.json)로 보존 — /assist --resume 재료.
+  //    앱 재시작·옛 회의 재열기에도 이어가기가 살도록 메모리가 아닌 세션 디렉토리에 둔다.
+  // ② 최종 result를 ref 보관 — runHeadlessMeeting 실패 배너에 에러 원문 병기.
+  // 진행 표시는 AgentProgressPanel이 같은 이벤트를 별도 구독(관심사 분리).
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    listen<string>("headless:event", (event) => {
+      for (const ev of parseHeadlessLine(event.payload)) {
+        if (ev.kind === "init") {
+          const dir = sessionDirRef.current;
+          if (dir) {
+            void invoke("cmd_write_session_file", {
+              sessionPath: dir,
+              filename: "claude_session.json",
+              content: `${JSON.stringify({ session_id: ev.sessionId })}\n`,
+            }).catch(() => {});
+          }
+        } else if (ev.kind === "result") {
+          headlessResultRef.current = { isError: ev.isError, text: ev.text };
+        }
+      }
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
   // 환경
   const setAppDir = useCallback((dir: string) => setAppDirState(dir), []);
   const setSignalDir = useCallback((dir: string) => setSignalDirState(dir), []);
@@ -430,10 +485,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const startNewMeeting = useCallback(
     (m: Meeting) => {
       cancelledRef.current = false;
-      void killPty();
-      // PTY kill과 대칭 — 로컬(mlx) 회의록 프로세스도 옛 회의 잔존 시 새 컨텍스트의 신호를
-      // 오염시키므로(phase_done/notify에 세션 식별 없음) 함께 중단한다. 없으면 no-op.
-      void invoke("cmd_cancel_local_meeting").catch(() => {});
+      // PTY·로컬(mlx)·headless(claude -p) 잔존 작업 일괄 중단 — 옛 회의 프로세스가 새 컨텍스트의
+      // 신호를 오염시키므로(phase_done/notify에 세션 식별 없음). 없으면 각각 no-op.
+      void cancelMeetingWork();
+      setHeadlessActive(false);
       setMeeting(m);
       setSessionDir(null);
       setSteps(EMPTY_STEPS);
@@ -456,8 +511,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const openExistingMeeting = useCallback(
     (s: { title: string; path: string; steps: SessionSteps }) => {
-      void killPty();
-      void invoke("cmd_cancel_local_meeting").catch(() => {});
+      void cancelMeetingWork();
+      setHeadlessActive(false);
       setMeeting({ title: s.title, attendees: [] });
       setSessionDir(s.path);
       setSteps(s.steps);
@@ -479,8 +534,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 
   const resetSession = useCallback(() => {
-    void killPty();
-    void invoke("cmd_cancel_local_meeting").catch(() => {});
+    void cancelMeetingWork();
+    setHeadlessActive(false);
     setMeeting(null);
     setSessionDir(null);
     setSteps(EMPTY_STEPS);
@@ -545,6 +600,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // (=신호가 끝내 안 온 크래시) 안전망 발동. 신호가 왔으면 phase_error가 이미 처리했으므로 침묵.
   const runLocalMeeting = useCallback(async () => {
     if (!sessionDir) return;
+    // 로컬 실행이 패널 주체 — 직전 claude headless 잔존 표시(headlessActive)가 남아 있으면
+    // WorkArea가 AgentProgressPanel을 우선해 mlx 진행(local:output)이 가려진다(CLI 전환 시나리오).
+    setHeadlessActive(false);
     try {
       await invoke("cmd_run_local_meeting", { sessionDir });
     } catch (e) {
@@ -562,6 +620,68 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
     }
   }, [sessionDir, showTabBanner]);
+
+  // headless(claude -p) 게이트 판정 — claude 한정 + 매 진입 시점 invoke(센티넬 파일 토글이
+  // 재시작 없이 즉시 반영, 캐싱 금지). codex headless(`codex exec --json`)는 별도 파서·플래그로
+  // 후속 — 확장 시 여기가 분기점.
+  const isHeadlessMeeting = useCallback(async () => {
+    return (
+      cliRef.current === "claude" &&
+      (await invoke<boolean>("cmd_is_headless_meeting").catch(() => false))
+    );
+  }, []);
+
+  // headless 회의록 실행 — runLocalMeeting과 대칭(Rust 서브프로세스, 진행은 "headless:event",
+  // 완료/실패 전환은 스킬의 신호 파일 → app:signal). 차이 두 가지:
+  // ① 진입 시 killPty — 잔존 PTY(직전 /assist resume 등)가 headless와 동시에 세션 파일을 쓰는
+  //   충돌 방지(startNewMeeting의 잔존 PTY 정리와 같은 논리). headlessActive로 패널도 전환.
+  // ② resolve 후에도 작업 중이면 회수 — PTY 경로의 pty:exit 안전망 부재를 invoke resolve가
+  //   대신한다(프로세스는 끝났는데 완료 신호가 유실된 케이스). 검증 중 사망은 Composing 체크에
+  //   안 걸리므로 endVerifying을 함께 — 검증 단계가 없는 runLocalMeeting과 다른 지점.
+  const runHeadlessMeeting = useCallback(async () => {
+    if (!sessionDir) return;
+    const dir = sessionDir;
+    void killPty();
+    // 캐스트 이유: 순수 null 대입은 TS 흐름 분석이 ref를 null로 좁혀, 아래 catch의 읽기가
+    // TS 버전에 따라 never로 판정된다(tsc 6.0.3 통과·IDE 내장 TS 오류). 넓은 타입으로 대입해
+    // 버전 무관하게 좁힘을 방지. 실제 값은 headless:event 리스너가 실행 중에 채운다.
+    headlessResultRef.current = null as HeadlessResult | null;
+    setHeadlessActive(true);
+    const recoverIfStalled = (failBanner?: string) => {
+      // 세션이 바뀌었으면(전환이 이미 정리) 늦게 온 회수가 새 세션을 건드리지 않게 침묵.
+      if (sessionDirRef.current !== dir) return;
+      endVerifying();
+      if (
+        activityRef.current === Activity.Correcting ||
+        activityRef.current === Activity.Composing
+      ) {
+        setActivity(Activity.Idle);
+        setCompletedActivity(null);
+        setRefreshKey((k) => k + 1); // 부분 산출물이 있으면 노출
+        if (failBanner) {
+          showTabBanner(failBanner);
+          void sendNotification("Junmit — 회의록 작성 실패", failBanner.replace("\n", " "));
+          void track("meeting_failed", { cli: cliRef.current });
+        } else {
+          showTabBanner("작업이 끝났지만 완료 신호를 받지 못했어요\n결과를 확인해주세요");
+        }
+      }
+    };
+    try {
+      await invoke("cmd_run_headless_meeting", { sessionDir: dir });
+      // 신호 감시 폴링(500ms)보다 길게 기다렸다 그때도 작업 중이면 신호 유실 — 회수.
+      await new Promise((r) => setTimeout(r, 800));
+      recoverIfStalled();
+    } catch (e) {
+      // 이중 호출 가드 거절은 오류가 아님 — runLocalMeeting과 동일 논리.
+      if (String(e).includes("이미 진행 중")) return;
+      await new Promise((r) => setTimeout(r, 800));
+      // 스트림의 result 에러 원문(로그인 만료·한도 소진 안내 등)이 exit code보다 유용 — 우선 병기.
+      const res = headlessResultRef.current;
+      const detail = res?.isError && res.text ? res.text : String(e);
+      recoverIfStalled(`회의록 작성을 완료하지 못했어요\n${detail}`);
+    }
+  }, [sessionDir, showTabBanner, endVerifying]);
 
   // 전사·화자분리 모두 끝남 → Phase 1(후보정)로 진입. setSteps는 markStepDone이 단계별로 처리.
   // drawer 자동 expand — 사용자가 panel을 직접 열지 않아도 LLM 작업 시작 시 자연스럽게 노출 (Section 10).
@@ -598,10 +718,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
     setLoginExpiredCli(null);
     setActivity(Activity.Correcting);
-    setSpawnRequest(buildSpawnRequest(appDir, `/meeting`, sessionDir, signalDir ?? "", cli));
     setDrawerOpen(true);
     setCompletedActivity(null);
-  }, [appDir, sessionDir, signalDir, cli, runLocalMeeting]);
+    // headless 게이트(claude + 센티넬) — PTY 대신 Rust 서브프로세스로 실행, 진행은
+    // AgentProgressPanel. preflight는 위에서 이미 통과(경로 공통).
+    if (await isHeadlessMeeting()) {
+      void runHeadlessMeeting();
+      return;
+    }
+    setHeadlessActive(false);
+    setSpawnRequest(buildSpawnRequest(appDir, `/meeting`, sessionDir, signalDir ?? "", cli));
+  }, [appDir, sessionDir, signalDir, cli, runLocalMeeting, isHeadlessMeeting, runHeadlessMeeting]);
 
   // 무음("발화 없음") 감지 — transcribe 단계가 transcribe_result.json에 기록한 판정을
   // ProcessingPanel이 읽어 호출. diarize·/meeting을 건너뛰고 Idle로 귀결(가짜 회의록·토큰 낭비
@@ -642,6 +769,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           // Tier 1 실패 → Tier 2 fallback
         }
       }
+      setHeadlessActive(false); // PTY가 새 실행 주체 — 작업 패널을 터미널로 되돌린다.
       setSpawnRequest(buildSpawnRequest(appDir, slash, sessionDir, signalDir ?? "", cli));
     },
     [appDir, sessionDir, signalDir, cli]
@@ -658,6 +786,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       void runLocalMeeting();
       return;
     }
+    // headless는 수동 경로도 preflight — PTY의 "만료 시 터미널 raw 노출로 복구" 표면이 없어
+    // 사전 차단이 유일한 안내 경로다(아래 PTY 경로의 생략 근거가 headless엔 성립하지 않음).
+    if (await isHeadlessMeeting()) {
+      const authed = await invoke<boolean>("cmd_is_cli_authed", { cli }).catch(() => true);
+      if (!authed) {
+        setLoginExpiredCli(cli);
+        return;
+      }
+      setLoginExpiredCli(null);
+      setActivity(stepsRef.current.corrected ? Activity.Composing : Activity.Correcting);
+      setDrawerOpen(true);
+      setCompletedActivity(null);
+      void runHeadlessMeeting();
+      return;
+    }
     // 수동 시작은 로그인 preflight 없이 즉시 진행 — 사용자가 present하고 터미널이 보이므로, 만료면
     // 터미널에 로그인 안내가 그대로 노출돼 바로 복구 가능하다(자리 비운 자동 경로와 달리 사전 차단
     // 불필요). preflight를 넣으면 스폰 전 인증 체크가 버튼 반응·터미널 노출을 지연시킨다.
@@ -668,7 +811,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setDrawerOpen(true);
     setCompletedActivity(null);
     await runSkillTier("/meeting");
-  }, [runSkillTier, cli, runLocalMeeting]);
+  }, [runSkillTier, cli, runLocalMeeting, isHeadlessMeeting, runHeadlessMeeting]);
 
   // 회의 유형 변경 → 본문 백업 + meta 갱신 + 회의록 재작성 트리거. corrected는 유지.
   // 화면이 confirm 다이얼로그를 띄우고 사용자 동의 후 호출. 실패는 throw — 화면이 toast 처리.
@@ -687,9 +830,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         void runLocalMeeting();
         return;
       }
+      if (await isHeadlessMeeting()) {
+        void runHeadlessMeeting();
+        return;
+      }
       await runSkillTier("/meeting");
     },
-    [sessionDir, runSkillTier, cli, runLocalMeeting]
+    [sessionDir, runSkillTier, cli, runLocalMeeting, isHeadlessMeeting, runHeadlessMeeting]
   );
 
   const updateTitle = useCallback(
@@ -735,18 +882,29 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   // PTY 명시 종료 (사용자 exit) — 정상 phase 완료는 phase_done 신호가 처리. 미완료 종료는 idle 복귀.
   const notifyPtyExit = useCallback(() => {
+    // /assist resume PTY가 스폰 직후(10초 내) 죽었다면 무효 session_id("No conversation found"
+    // 즉시 종료)로 보고 id 파일을 비운다 — 다음 클릭이 fresh spawn 폴백을 타게. 정상 사용 후
+    // 종료(한참 뒤 exit)는 id를 보존해 재클릭 시 다시 이어가기가 되게 한다.
+    if (resumeSpawnAtRef.current != null) {
+      if (Date.now() - resumeSpawnAtRef.current < 10_000) {
+        const dir = sessionDirRef.current;
+        if (dir) void clearClaudeSessionId(dir);
+      }
+      resumeSpawnAtRef.current = null;
+    }
     endVerifying(); // 검증 주체가 죽었으므로 verify 신호는 오지 않는다 — 잠금 즉시 해제.
     setActivity((prev) =>
       prev === Activity.Correcting || prev === Activity.Composing ? Activity.Idle : prev
     );
   }, [endVerifying]);
 
-  // LLM 작업 전면 중단 — PTY(claude/codex)와 로컬(mlx) 프로세스를 함께 죽이고 진행 상태·
-  // 잔존 spawn 요청을 정리한다. CLI 전환처럼 "돌던 작업이 더는 유효하지 않은" 지점 공용.
+  // LLM 작업 전면 중단 — PTY(claude/codex)·로컬(mlx)·headless(claude -p) 프로세스를 함께 죽이고
+  // 진행 상태·잔존 spawn 요청을 정리한다. CLI 전환처럼 "돌던 작업이 더는 유효하지 않은" 지점 공용.
   // 회의 컨텍스트(meeting/sessionDir/steps)는 건드리지 않는다 — 세션 자체는 그대로 유효.
   const abortLlmWork = useCallback(async () => {
-    await Promise.allSettled([killPty(), invoke("cmd_cancel_local_meeting")]);
+    await cancelMeetingWork();
     setSpawnRequest(null);
+    setHeadlessActive(false); // 실행 주체 무효화 — 다음 실행(다른 CLI 포함)이 패널을 새로 결정.
     setCurrentStepId(null);
     setCompletedActivity(null);
     endVerifying(); // PTY와 함께 검증도 죽음 — 잠금 해제.
@@ -769,6 +927,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // sessionDir은 APP_SESSION_DIR env로 자동 전달 — 슬래시 커맨드 인자 공백 처리 한계 회피.
   const spawnPty = useCallback(
     (slashCommand: string) => {
+      setHeadlessActive(false);
       setSpawnRequest(buildSpawnRequest(appDir, slashCommand, sessionDir, signalDir ?? "", cli));
     },
     [appDir, sessionDir, signalDir, cli]
@@ -776,12 +935,29 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   // "AI에게 추가 요청" — 사이드바·빈 상태 UI 공통 진입점. drawer expand + /assist 스킬 호출.
   // Tier 1 (살아있는 PTY): stdin write로 /assist 호출 — 회의록 작성 직후 PTY 잔류 상태에서
-  // 사이드바 클릭한 가장 흔한 케이스.
-  // Tier 2 (PTY 죽음): 새 spawn — 옛 회의 다시 열기 후 시나리오.
+  // 사이드바 클릭한 가장 흔한 케이스. (headless 모드에선 직전 resume PTY가 이 케이스)
+  // Tier 1.5 (headless 모드 + PTY 없음): headless 실행이 보존한 session_id로 `claude --resume`
+  //   PTY를 열어 **작성 대화 맥락을 이어서** /assist 진입 — PTY 경로의 "작성 직후 이어서 대화"
+  //   체감을 headless에서도 보존. id가 없거나 무효(스폰 직후 종료 → notifyPtyExit가 파일 초기화)면
+  //   다음 클릭이 아래 Tier 2로 자연 폴백.
+  // Tier 2 (그 외): 새 spawn — 옛 회의 다시 열기 후 시나리오.
   const requestAi = useCallback(async () => {
     setDrawerOpen(true);
+    if (await isHeadlessMeeting()) {
+      const alive = await invoke<boolean>("cmd_pty_is_active").catch(() => false);
+      if (!alive) {
+        const dir = sessionDirRef.current;
+        const resumeId = dir ? await readClaudeSessionId(dir) : null;
+        if (resumeId) {
+          resumeSpawnAtRef.current = Date.now();
+          setHeadlessActive(false); // resume PTY가 패널 주체
+          setSpawnRequest(buildClaudeResumeRequest(appDir, resumeId, dir, signalDir ?? ""));
+          return;
+        }
+      }
+    }
     await runSkillTier("/assist");
-  }, [runSkillTier]);
+  }, [runSkillTier, isHeadlessMeeting, appDir, signalDir]);
 
   // ─── Claude 작업 패널 (drawer) action ──────────────────────
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
@@ -825,6 +1001,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       signalDir,
       cli,
       refreshKey,
+      headlessActive,
       setAppDir,
       setSignalDir,
       setCli,
@@ -885,6 +1062,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       signalDir,
       cli,
       refreshKey,
+      headlessActive,
       setAppDir,
       setSignalDir,
       setCli,

@@ -16,6 +16,7 @@ type ChildHandle = Arc<Mutex<Option<Child>>>;
 struct PipelineChild(ChildHandle);
 struct InstallChild(ChildHandle);
 struct LocalMeetingChild(ChildHandle);
+struct HeadlessMeetingChild(ChildHandle);
 
 /// willSleep 콜백(C 함수라 캡처 불가)이 이벤트를 emit할 수 있도록 AppHandle을 전역 보관. setup에서 1회 채움.
 static SLEEP_APP_HANDLE: Mutex<Option<tauri::AppHandle>> = Mutex::new(None);
@@ -78,11 +79,20 @@ fn has_active_children(app: &tauri::AppHandle) -> bool {
     {
         return true;
     }
+    if app
+        .state::<HeadlessMeetingChild>()
+        .0
+        .lock()
+        .map(|g| g.is_some())
+        .unwrap_or(false)
+    {
+        return true;
+    }
     false
 }
 
 /// 창이 닫힐 때 모든 백그라운드 자식 프로세스를 정리.
-/// PTY 세션, 전사/화자분리 파이프라인, install.sh 세 가지를 전부 처리한다.
+/// PTY 세션, 전사/화자분리 파이프라인, install.sh, 로컬(mlx)·headless 회의록 작성 전부.
 fn cleanup_all_children(app_handle: &tauri::AppHandle) {
     // PTY 세션 (Claude Code 등) — kill()이 자식 프로세스 kill + wait까지 수행
     app_handle.state::<PtyState>().kill();
@@ -113,6 +123,16 @@ fn cleanup_all_children(app_handle: &tauri::AppHandle) {
         state.0.lock().ok().and_then(|mut g| g.take())
     };
     if let Some(mut child) = local_meeting_child {
+        kill_process_group(child.id());
+        let _ = child.wait();
+    }
+
+    // headless 회의록 작성 (claude -p)
+    let headless_meeting_child = {
+        let state = app_handle.state::<HeadlessMeetingChild>();
+        state.0.lock().ok().and_then(|mut g| g.take())
+    };
+    if let Some(mut child) = headless_meeting_child {
         kill_process_group(child.id());
         let _ = child.wait();
     }
@@ -1115,6 +1135,191 @@ async fn cmd_run_local_meeting(
     }
 }
 
+/// headless 회의록 작성 게이트 판정 — 프론트가 /meeting 진입 시점마다 호출(캐싱 금지).
+/// 센티넬 파일 토글이 앱 재시작 없이 다음 실행부터 반영되게 하기 위함.
+#[tauri::command]
+fn cmd_is_headless_meeting() -> bool {
+    session::headless_meeting_enabled()
+}
+
+/// headless 회의록 작성 중단
+#[tauri::command]
+fn cmd_cancel_headless_meeting(state: State<HeadlessMeetingChild>) -> Result<(), String> {
+    let child_opt = state.0.lock().map_err(|e| format!("lock 실패: {e}"))?.take();
+    if let Some(mut child) = child_opt {
+        kill_process_group(child.id());
+        let _ = child.wait();
+    }
+    Ok(())
+}
+
+/// headless 회의록 작성 — claude를 PTY 없이 `-p "/meeting"` + stream-json으로 실행하고
+/// stdout JSONL을 줄 단위 "headless:event"로 스트리밍(파싱은 프론트 단일 지점 담당).
+/// 완료/실패 전환은 로컬 경로와 동일하게 스킬의 신호 파일(APP_SIGNAL_DIR → app:signal)이
+/// 담당하므로 프론트 전환 로직은 기존 그대로. cmd_run_local_meeting과 같은 골격.
+/// 권한은 격리 CLAUDE_CONFIG_DIR 위에 --permission-mode bypassPermissions — auto mode는
+/// -p에서 classifier 거부 누적 시 세션이 중단될 수 있어 무인 실행에 부적합(2026-07 실측 통과).
+#[tauri::command]
+async fn cmd_run_headless_meeting(
+    app: tauri::AppHandle,
+    state: State<'_, HeadlessMeetingChild>,
+    session_dir: String,
+) -> Result<(), String> {
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    use std::os::unix::process::CommandExt;
+    use std::path::PathBuf;
+    use std::process::{Command, Stdio};
+
+    // 이중 실행 선제 거절 — 로그 헤더를 쓰기 전에 거른다(고아 헤더 방지).
+    // 최종 판정은 아래 spawn 직전의 lock 구간이 담당(여기서 통과해도 거기서 재검사).
+    if state.0.lock().map_err(|e| format!("lock 실패: {e}"))?.is_some() {
+        return Err("headless 회의록 작성이 이미 진행 중입니다".into());
+    }
+
+    // PTY 경로는 detect_clis가 격리 config를 보장하지만 headless는 자체 보장(멱등).
+    session::ensure_claude_config_dir(&app);
+
+    let app_dir = session::resource_dir(&app)?.to_string_lossy().into_owned();
+    let signal_dir = session::app_data_dir()
+        .join("run")
+        .join(std::process::id().to_string());
+    let _ = std::fs::create_dir_all(&signal_dir);
+
+    // 진단 로그 이원화 — stream-json 원문은 도구 결과(전사 전문 등)로 줄이 수십 KB라
+    // pipeline.log에 통째로 넣으면 tail 진단이 무의미해진다. 원문은 headless.jsonl에,
+    // pipeline.log엔 헤더·stderr·result 줄·exit 마커만 남긴다.
+    let log_path = PathBuf::from(&session_dir).join("pipeline.log");
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .ok()
+        .map(|f| Arc::new(Mutex::new(f)));
+    if let Some(f) = &log_file {
+        let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+        let _ = writeln!(f.lock().unwrap(), "\n=== headless-meeting @ {ts} ===");
+    }
+    let jsonl_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(PathBuf::from(&session_dir).join("headless.jsonl"))
+        .ok()
+        .map(|f| Arc::new(Mutex::new(f)));
+
+    let mut cmd = Command::new("claude");
+    // PATH: claude 설치 위치(brew·npm 등)는 로그인 셸 PATH에만 있다 — PTY spawn과 동일 규약.
+    // CLAUDE_CODE_NO_FLICKER는 TUI 렌더링 전용이라 불필요.
+    cmd.args([
+        "-p",
+        "/meeting",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--permission-mode",
+        "bypassPermissions",
+    ])
+    .current_dir(&app_dir)
+    .env("PATH", session::get_user_shell_path())
+    .env("APP_DIR", &app_dir)
+    .env("APP_SESSION_DIR", &session_dir)
+    .env("APP_SIGNAL_DIR", &signal_dir)
+    .env("CLAUDE_CONFIG_DIR", session::claude_config_dir())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .process_group(0); // 취소 시 그룹째 종료 (스킬이 띄우는 bash 손자 포함)
+
+    // 이중 실행 가드 + spawn + 등록을 한 lock 구간에서 — 두 호출이 동시에 spawn해
+    // 서로의 child를 덮어쓰는(프로세스 누수 + wait 오귀속) 경합을 원천 차단.
+    let (stdout, stderr) = {
+        let mut guard = state.0.lock().map_err(|e| format!("lock 실패: {e}"))?;
+        if guard.is_some() {
+            return Err("headless 회의록 작성이 이미 진행 중입니다".into());
+        }
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("headless 회의록 실행 실패: {e}"))?;
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+        *guard = Some(child);
+        (stdout, stderr)
+    };
+
+    // stdout(JSONL) — 줄 단위 emit + headless.jsonl 원문 보존 + result 줄만 pipeline.log 요약.
+    let app2 = app.clone();
+    let jsonl_for_stdout = jsonl_file.clone();
+    let log_for_stdout = log_file.clone();
+    let stdout_thread = std::thread::spawn(move || {
+        let Some(out) = stdout else { return };
+        let reader = std::io::BufReader::new(out);
+        use std::io::BufRead;
+        for line in reader.lines() {
+            let Ok(line) = line else { break };
+            if line.is_empty() {
+                continue;
+            }
+            let _ = app2.emit("headless:event", line.clone());
+            if let Some(f) = &jsonl_for_stdout {
+                if let Ok(mut f) = f.lock() {
+                    let _ = writeln!(f, "{line}");
+                }
+            }
+            // 최종 result 줄은 실패 시 report_pipeline_failure의 tail 30줄 진단에 잡히도록
+            // pipeline.log에도 남긴다 (JSON 파싱 없이 substring 판정 — 계약 최소화).
+            if line.contains("\"type\":\"result\"") {
+                if let Some(f) = &log_for_stdout {
+                    if let Ok(mut f) = f.lock() {
+                        let _ = writeln!(f, "{line}");
+                    }
+                }
+            }
+        }
+    });
+    let log_for_stderr = log_file.clone();
+    let stderr_thread = std::thread::spawn(move || {
+        let Some(err) = stderr else { return };
+        let reader = std::io::BufReader::new(err);
+        use std::io::BufRead;
+        for line in reader.lines() {
+            let Ok(line) = line else { break };
+            if let Some(f) = &log_for_stderr {
+                if let Ok(mut f) = f.lock() {
+                    let _ = writeln!(f, "[stderr] {}", strip_ansi(&line));
+                }
+            }
+        }
+    });
+    stdout_thread.join().ok();
+    stderr_thread.join().ok();
+
+    // child를 꺼내서 lock 밖에서 wait — lock을 잡은 채 blocking하면 취소가 영구 대기할 수 있다.
+    // None이면 취소(cmd_cancel_headless_meeting)가 이미 take한 것 — 오류가 아닌 의도된 중단이므로
+    // 조용히 성공 반환한다 (UI 상태 정리는 취소를 부른 쪽 책임). 오류 배너 오발화 방지.
+    let Some(mut child) = state.0.lock().map_err(|e| format!("lock 실패: {e}"))?.take() else {
+        if let Some(f) = &log_file {
+            let _ = writeln!(f.lock().unwrap(), "=== headless-meeting cancelled ===");
+        }
+        return Ok(());
+    };
+    let status = child
+        .wait()
+        .map_err(|e| format!("headless 회의록 대기 실패: {e}"))?;
+
+    if let Some(f) = &log_file {
+        let _ = writeln!(
+            f.lock().unwrap(),
+            "=== headless-meeting exit: {} ===",
+            status.code().map(|c| c.to_string()).unwrap_or_else(|| "signal".into())
+        );
+    }
+    if status.success() {
+        Ok(())
+    } else {
+        report_pipeline_failure(&session_dir, "headless-meeting", status.code());
+        Err(format!("headless 회의록 작성 실패 (exit code: {:?})", status.code()))
+    }
+}
+
 /// install.sh 중단
 #[tauri::command]
 fn cmd_cancel_install(state: State<InstallChild>) -> Result<(), String> {
@@ -1315,6 +1520,7 @@ fn main() {
     let pipeline_child = PipelineChild(Arc::new(Mutex::new(None)));
     let install_child = InstallChild(Arc::new(Mutex::new(None)));
     let local_meeting_child = LocalMeetingChild(Arc::new(Mutex::new(None)));
+    let headless_meeting_child = HeadlessMeetingChild(Arc::new(Mutex::new(None)));
     let close_state = Arc::new(CloseState {
         is_recording: AtomicBool::new(false),
         close_attempts: AtomicUsize::new(0),
@@ -1363,6 +1569,7 @@ fn main() {
         .manage(pipeline_child)
         .manage(install_child)
         .manage(local_meeting_child)
+        .manage(headless_meeting_child)
         .manage(close_state.clone())
         .on_window_event(move |window, event| {
             // 닫기 정책 — 메인 윈도우 한정. 보조 윈도우(reminder 등)는 OS 기본 닫기.
@@ -1533,6 +1740,9 @@ fn main() {
             cmd_cancel_pipeline,
             cmd_run_local_meeting,
             cmd_cancel_local_meeting,
+            cmd_run_headless_meeting,
+            cmd_cancel_headless_meeting,
+            cmd_is_headless_meeting,
             cmd_write_session_file,
             cmd_read_session_file,
             cmd_backup_meeting_notes,

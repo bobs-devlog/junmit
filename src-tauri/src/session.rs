@@ -599,11 +599,13 @@ pub fn ensure_claude_config_dir(app: &tauri::AppHandle) {
             }
 
             // permissions.allow — 관리 항목 union(사용자/claude가 /permissions로 추가한 항목 보존).
+            // Write(...) 규칙은 파일 권한 검사에 매칭되지 않아(공식 경고: Edit 규칙이 모든 파일
+            // 편집 도구를 커버) 무의미 + 매 실행 경고 노이즈 — 과거 베이크분은 아래에서 제거.
             let want_allow = [
                 "Read(~/Library/Application Support/app.junmit/**)",
                 "Edit(~/Library/Application Support/app.junmit/**)",
-                "Write(~/Library/Application Support/app.junmit/**)",
             ];
+            let stale_allow = "Write(~/Library/Application Support/app.junmit/**)";
             if let Some(perms) = obj
                 .entry("permissions")
                 .or_insert_with(|| serde_json::json!({}))
@@ -629,6 +631,11 @@ pub fn ensure_claude_config_dir(app: &tauri::AppHandle) {
                             arr.push(v);
                             s_changed = true;
                         }
+                    }
+                    let stale = serde_json::json!(stale_allow);
+                    if arr.contains(&stale) {
+                        arr.retain(|v| v != &stale);
+                        s_changed = true;
                     }
                 }
             }
@@ -1168,6 +1175,14 @@ fn mic_staging_path() -> PathBuf {
 /// 재처리·믹스 진단·AEC 실험을 위해 개발자가 직접 켜는 escape다(UI 없음, dev/release 동일).
 fn should_keep_recording() -> bool {
     app_data_dir().join("keep_recording").exists()
+}
+
+/// headless 회의록 작성 게이트(검증 기간 A/B 플래그, UI 없음). `app_data_dir/headless_meeting`
+/// 센티넬 파일이 있으면 claude의 `/meeting`을 PTY 대신 headless(`claude -p` + stream-json)로
+/// 실행한다. 매 진입 시점에 재평가되므로 파일 토글이 재시작 없이 즉시 반영된다.
+/// keep_recording과 같은 "존재만 체크" 패턴. 안정화 후 headless를 기본으로 확정하며 제거 예정.
+pub fn headless_meeting_enabled() -> bool {
+    app_data_dir().join("headless_meeting").exists()
 }
 
 /// 화자분리(오디오를 쓰는 마지막 단계) 완료 후 호출 — 회의 원본 오디오를 정리한다.
