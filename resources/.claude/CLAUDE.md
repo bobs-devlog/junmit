@@ -20,7 +20,7 @@
   | `교정 포함/미포함` / `detailed_correction` | "전사본 교정" — 굳이 안 내는 게 기본 |
   | `Phase` / `Phase-1` / `1단계`·`1·2단계`·`3·4단계` 등 **단계 번호** | **출력 금지** — 진행은 `TodoWrite`로만 |
   | `transcript.txt`·`transcript_corrected.txt`·`meeting.json`·`speaker_mapping.json` 등 **모든 파일명** | 노출 금지 ("전사본"·"교정본"·"회의 정보" 등 일반어) |
-  | `type=note`·`type` 필드·`auto`·`free-form` | 노출 금지 (유형은 한국어 표시 이름 "일반 회의"·"리뷰" 등으로) |
+  | `type=note`·`type` 필드·`auto`·`free-form` | 노출 금지 (유형은 한국어 표시 이름으로 — 가이드 frontmatter의 `label`(예: "일반 회의"·"리뷰"), free-form은 "자유 형식") |
   | `sub-agent` / `spawn` / `sidecar` / `sentinel` | "AI 다듬기"·"AI가 정리"처럼 사용자 시점 표현 |
   | `TYPE_DECISION` / `_quality_warning` 등 코드 식별자 | 노출 금지 |
 

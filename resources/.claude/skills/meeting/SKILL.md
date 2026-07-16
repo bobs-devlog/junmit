@@ -44,7 +44,7 @@ SESSION_DIR="$APP_SESSION_DIR"
 스킬 특화 사항:
 - **재작성 모드** (`transcript_corrected.txt`가 이미 존재해 1단계 sub-agent를 skip하는 케이스, [2단계의 재작성 모드 감지](#2단계-화자-식별--회의-내용-파악) 참고) — "회의 정보 확인"에서 이를 감지하면 "회의 정보 확인"과 "AI 다듬기"를 즉시 `completed`로 마킹하고 "회의록 작성"을 `in_progress`로 시작 (유형 판단이 필요하면 그 안에서 인라인 처리)
 - **1단계 sub-agent 병렬 spawn(교정 포함 3개 / 교정 OFF 2개, type이 auto면 유형 분류까지 +1개)은 "AI 다듬기" todo 한 항목으로 묶음** — 메인이 모든 sub-agent 결과를 받은 뒤 자체 마킹만 업데이트
-- 단계별 한국어 요약 출력(`📝 전사 교정 완료 ...`, `🎤 화자 매칭 ...` 등) 기존 형식은 그대로 유지 — TodoWrite는 그 위에 진행 지도를 덧붙이는 역할. **이 이모지 요약 줄 외에 "작업을 시작합니다"류 메타 산문은 출력하지 않습니다** (진행은 TodoWrite가 전담)
+- 단계별 한국어 요약 출력(`📝 전사본 교정 완료 ...`, `🎤 화자 매칭 ...` 등) 기존 형식은 그대로 유지 — TodoWrite는 그 위에 진행 지도를 덧붙이는 역할. **이 이모지 요약 줄 외에 "작업을 시작합니다"류 메타 산문은 출력하지 않습니다** (진행은 TodoWrite가 전담)
 
 ---
 
@@ -215,11 +215,11 @@ speaker_mapping.json + meeting-notes.md (공개 후 검증 반영) + notes_verif
 
 ### 절차
 
-**1. sub-agent foreground 동시 spawn** — Agent tool 호출들을 **같은 응답 안에 함께 넣어** 병렬 실행:
-- `speaker-label-correction` — diarize 오류 보정 → `transcript_speaker_edits.json` (**항상**)
-- `speaker-mapping` — SPEAKER_XX → 이름 매칭 → `speaker_mapping.json` (`notes.json`의 화자 힌트가 있으면 ground-truth 앵커로 최우선 활용 — sub-agent가 자체 처리) (**항상**)
-- `text-correction` — 음성 오인식·문맥 교정 → `transcript_text_edits.json` (**교정 ON에서만**)
-- `meeting-type-classification` — 회의 유형 결정 → 파일 미작성, **결정을 보고**(`TYPE_DECISION: ...`) (**`type`이 `auto`/비어있을 때만** — 위 "유형 분류 필요 여부 확인" 참고)
+**1. sub-agent foreground 동시 spawn** — Agent tool 호출들을 **같은 응답 안에 함께 넣어** 병렬 실행. **각 Agent 호출의 `description`은 아래 지정 문구를 그대로 사용**합니다 (진행 표시에 그대로 노출되는 사용자 대면 라벨 — 앱 화면 용어와 정렬된 문구라 임의로 바꾸거나 영문으로 쓰지 마세요):
+- `speaker-label-correction` — description: `화자 구분 교정` — diarize 오류 보정 → `transcript_speaker_edits.json` (**항상**)
+- `speaker-mapping` — description: `화자 이름 매칭` — SPEAKER_XX → 이름 매칭 → `speaker_mapping.json` (`notes.json`의 화자 힌트가 있으면 ground-truth 앵커로 최우선 활용 — sub-agent가 자체 처리) (**항상**)
+- `text-correction` — description: `전사본 교정` — 음성 오인식·문맥 교정 → `transcript_text_edits.json` (**교정 ON에서만**)
+- `meeting-type-classification` — description: `회의 유형 분류` — 회의 유형 결정 → 파일 미작성, **결정을 보고**(`TYPE_DECISION: ...`) (**`type`이 `auto`/비어있을 때만** — 위 "유형 분류 필요 여부 확인" 참고)
 
 각 Agent prompt에 세션 디렉토리 절대 경로를 전달 (`$SESSION_DIR` 값을 inline으로 풀어 보냄):
 ```
@@ -251,14 +251,14 @@ cp으로 corrected.txt를 만들고 sidecar가 in-place 치환(라인 수·SPEAK
 
 ### 결과 처리
 
-sub-agent가 반환하는 보고를 종합해 사용자에게 표시하고 2단계로 진행:
+sub-agent가 반환하는 보고를 종합해 사용자에게 표시하고 2단계로 진행 ("라벨"·"매핑"·"재할당" 같은 내부 용어 대신 아래 문구 그대로 — 진행 표시의 sub-agent 라벨과 같은 이름이어야 사용자가 같은 작업임을 안다):
 ```
-🎤 화자 라벨 교정 완료 (M건 재할당)
-🎤 화자 매핑 완료 (K명 식별 / J명 미확인)
+🎤 화자 구분 교정 완료 (M건 수정)
+🎤 화자 이름 매칭 완료 (K명 식별 / J명 미확인)
 ```
 **교정 ON에서만** 위에 한 줄 더:
 ```
-📝 전사 교정 완료 (N건 적용)
+📝 전사본 교정 완료 (N건 적용)
 ```
 
 > **왜 sub-agent 병렬:** 메인 직접 처리 시 ~10분. 작업들을 sub-agent 병렬로 돌려 wall-clock을 max(sub-agent 시간)으로 줄임 + 메인 컨텍스트도 분석 부담 없이 후속 작성에 집중. 화자 작업은 회의록의 발화 귀속 품질에 직결되고(실측: 매핑 없는 작성은 대화형 회의에서 왜곡 발생), 전사 교정은 완성된 전사본을 위한 것.
@@ -328,11 +328,11 @@ ls "$SESSION_DIR"/meeting-notes.bak.*.md 2>/dev/null
 - 주요 주제: X PRD 검토, 일정 공유, 다음 스프린트 준비
 ```
 
-**품질 경고 출력** (`_quality_warning`이 있는 경우만):
+**품질 경고 출력** (`_quality_warning`이 있는 경우만 — `severe_overmerge` 같은 경고 id는 내부 용어이므로 노출하지 않고 아래처럼 설명문으로 풀어 씁니다):
 ```
-⚠️ 화자 분리 품질 경고: severe_overmerge
-   최다 SPEAKER가 전체 발화의 94%를 차지합니다. 다수 화자가 한 SPEAKER로 합쳐진 것으로 보이므로,
-   대부분 SPEAKER를 미확인으로 유지했습니다. 수동 매핑을 권장합니다.
+⚠️ 화자 구분 품질 경고
+   가장 많이 말한 화자가 전체 발화의 94%를 차지합니다. 여러 사람이 한 화자로 합쳐진 것으로
+   보이므로 대부분 화자를 미확인으로 유지했습니다. 전사본 탭에서 직접 확인·수정을 권장합니다.
 ```
 
 ### AI 다듬기 완료 신호
@@ -355,10 +355,10 @@ bash -c 'source "$APP_DIR/lib/signal.sh" && app_phase_step_done correct'
    - **1단계를 skip한 경우**(`transcript_corrected.txt`가 이미 존재해 sub-agent를 안 띄움 — 재작성 모드 또는 크래시 후 재시도): 분류 sub-agent가 돌지 않아 `TYPE_DECISION` 보고가 **없습니다**. 이때는 여기서 **인라인 자동 판단**: 위 디렉토리의 모든 `*.md`의 frontmatter(`title_keywords`·`summary`)를 수집해 회의 제목·내용(`transcript_corrected.txt` + `meeting.json`의 `agenda`)과 매칭(`notes-rules.md` "자동 판단" 기준 — 제목 × `title_keywords` 0순위 포함) → 결정해 **`meeting.json.type`에 갱신**.
    - 어느 경우든 갱신 후 그 유형의 `{type}.md`를 Read (또는 `free-form`이면 free-form 절차로 진행).
 
-결정 결과를 출력:
+결정 결과를 출력 (유형은 표시 이름으로 — `free-form` 같은 내부 id 노출 금지. free-form의 표시 이름은 "자유 형식"으로 앱 화면과 동일):
 ```
 📄 회의 유형: 발표/세미나 (발표 주제 사전 정의 + Q&A 구조)
-📄 회의 유형: free-form (양방향 1:1 대화, 정형 패턴 없음)
+📄 회의 유형: 자유 형식 (양방향 1:1 대화, 정형 패턴 없음)
 ```
 
 > `auto` → 결정 후 type 갱신은 한 번 판단된 결과를 보존하기 위함. 사용자가 다시 작성 시 같은 type이 적용되어 자동 판단 반복 없음. 사용자가 다시 LLM 판단을 원하면 회의록 탭 select에서 명시적으로 "자동 판단" 다시 선택. 갱신 절차는 `notes-rules.md`의 "type 갱신 절차" 참고.
@@ -384,9 +384,24 @@ bash -c 'source "$APP_DIR/lib/signal.sh" && app_phase_step_done correct'
 
 ## 5단계: 회의록 공개 (완료 신호)
 
-작성이 끝나면 **검증을 기다리지 않고 즉시 회의록을 공개**합니다 — 검증(6단계)은 공개 후 사후 다듬기로 진행하고, 바뀐 부분은 "검증 N건" 칩으로 투명하게 보입니다. **첫 작성·재작성 무관 항상 실행** — 1번 `app_phase_done`을 누락하면 frontend가 Activity.Composing에 멈춰 review 화면 전환·사용자 다음 작업이 모두 차단됩니다:
+작성이 끝나면 **검증을 기다리지 않고 즉시 회의록을 공개**합니다 — 검증(6단계)은 공개 후 사후 다듬기로 진행하고, 바뀐 부분은 "검증 N건" 칩으로 투명하게 보입니다. **첫 작성·재작성 무관 항상 실행** — 2번 `app_phase_done`을 누락하면 frontend가 Activity.Composing에 멈춰 review 화면 전환·사용자 다음 작업이 모두 차단됩니다:
 
-1. **회의록 작성 완료 신호 전송** — 앱이 Activity.Idle 전환 + 회의록 공개(탭은 열람 가능) + 사이드바에 "AI에게 추가 요청"(에이전트 CLI 한정) 노출. 검증이 이어지는 경우 회의록 탭 자동 이동·완료 표기·알림은 앱이 6단계 verify 신호 시점에 처리(그동안 사용자는 화자 매핑을 계속). 회의록 내보내기는 회의록 탭의 "복사" 버튼:
+1. 요약 출력 (사용자 정보용) — **반드시 2번 신호보다 먼저** 출력합니다. 신호를 받은 앱은 진행 표시를 다음 단계(검증)로 넘기므로, 요약이 신호 뒤에 나오면 "회의록 작성" 결과가 검증 섹션 아래로 잘못 묶여 보입니다:
+   - **첫 작성**:
+     ```
+     ✅ 회의록 작성 완료
+
+     🎤 화자 매칭: {N}명 중 {K}명 식별 (나머지 미확인)
+     📄 회의록: {유형 표시 이름} ({세션/논의 수}개 주제)
+     ```
+     `{유형 표시 이름}`은 가이드 frontmatter의 `label`(예: "발표/세미나"), free-form이면 "자유 형식" — `free-form`·`note` 같은 내부 id를 그대로 노출하지 않습니다.
+     전사 텍스트 교정의 `📝` 요약은 1단계 결과 처리에서 이미 출력됨. 검증 결과는 6단계에서 별도 한 줄.
+   - **재작성 모드** (1단계 sub-agent skip이라 N·K 값 없음 — 단순 출력, 유형은 위와 같이 표시 이름으로):
+     ```
+     ✅ 회의록 재작성 완료 — 유형: {유형 표시 이름} ({세션/논의 수}개 주제)
+     ```
+
+2. **회의록 작성 완료 신호 전송** — 앱이 Activity.Idle 전환 + 회의록 공개(탭은 열람 가능) + 사이드바에 "AI에게 추가 요청"(에이전트 CLI 한정) 노출. 검증이 이어지는 경우 회의록 탭 자동 이동·완료 표기·알림은 앱이 6단계 verify 신호 시점에 처리(그동안 사용자는 화자 매핑을 계속). 회의록 내보내기는 회의록 탭의 "복사" 버튼:
    ```bash
    bash -c 'source "$APP_DIR/lib/signal.sh" && app_phase_done'
    ```
@@ -394,20 +409,6 @@ bash -c 'source "$APP_DIR/lib/signal.sh" && app_phase_step_done correct'
    > 앱은 이 신호를 받아도 PTY는 종료하지 않습니다. 6단계 검증·이후 사용자 추가 요청은 같은 PTY에서 이어집니다. **세션 파일(`meeting-notes.md` 등)을 수정했다면 [.claude/CLAUDE.md](../../CLAUDE.md)의 "세션 파일 수정 공통 규칙"을 따르세요 — 대규모 수정 전 백업 + 수정 후 매번 `app_refresh`. 신호가 없으면 앱 화면에 수정 결과가 반영되지 않습니다.**
 
    > **macOS 알림은 여기서 보내지 않습니다** — 6단계 맨 끝(검증 ON/OFF 공통)에서 보냅니다. 자리 비운 사용자가 알림으로 복귀했을 때 검증까지 끝난 회의록을 보게 하기 위함입니다 (공개 시점에 알리면 검증 전 초안을 복사·공유할 수 있음).
-
-2. 요약 출력 (사용자 정보용):
-   - **첫 작성**:
-     ```
-     ✅ 회의록 작성 완료
-
-     🎤 화자 매칭: {N}명 중 {K}명 식별 (나머지 미확인)
-     📄 회의록: {유형} ({세션/논의 수}개 주제)
-     ```
-     전사 텍스트 교정의 `📝` 요약은 1단계 결과 처리에서 이미 출력됨. 검증 결과는 6단계에서 별도 한 줄.
-   - **재작성 모드** (1단계 sub-agent skip이라 N·K 값 없음 — 단순 출력):
-     ```
-     ✅ 회의록 재작성 완료 — 유형: {type} ({세션/논의 수}개 주제)
-     ```
 
 ---
 
@@ -418,9 +419,9 @@ bash -c 'source "$APP_DIR/lib/signal.sh" && app_phase_step_done correct'
 **선행 분기**: `meeting.json`의 `notes_verification` 필드가 **`false`면 검증(1~4번)을 통째로 건너뛰고** 5번 알림부터 진행합니다 — 사용자가 속도/토큰을 위해 검증을 끈 것 (UI 표시명 "회의록 검증", 기본 ON. 이 경우 앱도 잠그지 않고 검증 신호를 기다리지 않습니다). `true` 또는 필드 없음이면 수행:
 
 1. TodoWrite에서 "마무리" 항목의 activeForm을 "회의록을 검증하고 마무리하는 중"으로 갱신 (문구만 — 검증은 별도 단계로 표시하지 않음).
-2. `notes-verification` sub-agent **2개를 foreground로 병렬 spawn** (같은 응답 안에 함께 — wall time을 절반으로) — 각 prompt에 세션 디렉토리 절대 경로와 담당 범위를 전달:
-   - 검증자 A: "담당 범위: ①귀속 전수 점검 + ②고유명사·수치·기한 전수 점검"
-   - 검증자 B: "담당 범위: ③블록 수준 누락"
+2. `notes-verification` sub-agent **2개를 foreground로 병렬 spawn** (같은 응답 안에 함께 — wall time을 절반으로) — 각 prompt에 세션 디렉토리 절대 경로와 담당 범위를 전달하고, **Agent 호출의 `description`은 아래 문구를 그대로 사용**합니다 (진행 패널에 그대로 표시되는 라벨 — 임의 부호(A/B)나 영문 대신 역할이 드러나야 사용자가 "서로 다른 걸 점검 중"임을 안다):
+   - 검증자 A — description: `회의록 검증 (발언자·수치)`, prompt에 "담당 범위: ①귀속 전수 점검 + ②고유명사·수치·기한 전수 점검"
+   - 검증자 B — description: `회의록 검증 (누락 점검)`, prompt에 "담당 범위: ③블록 수준 누락"
    sub-agent는 회의록을 수정하지 않고 **문제 목록만 보고**합니다 (같은 파일 동시 편집 회피).
 3. 두 보고를 받으면 **메인이 지적들을 `meeting-notes.md`에 직접 적용** (Edit — 보고의 원문/수정 쌍을 기계적으로 반영. 두 보고가 같은 문장을 다르게 고치라면 라인 근거가 더 구체적인 쪽 채택). **Edit의 원문 매칭이 실패한 항목은 건너뛰고 report에도 넣지 않습니다** — 본문 재작성·전체 갱신으로 우회하지 마세요 (그 문장이 이미 바뀌었다면 지적의 전제도 무효). 적용이 1건 이상이면 내역을 `$SESSION_DIR/notes_verification_report.json`에 Write — 앱이 회의록 탭에 "검증 N건" 칩으로 표시하는 원천:
    ```json
@@ -447,7 +448,7 @@ bash -c 'source "$APP_DIR/lib/signal.sh" && app_phase_step_done correct'
 마지막으로 TodoWrite의 "마무리" 항목을 `completed`로 마킹하고 안내 메시지를 출력합니다:
 ```
 ✅ 회의록 준비 완료. review 화면에서 결과를 검토해주세요.
-추가 개선 요청이 있으면 이 터미널에서 계속 진행 가능합니다.
+추가 개선 요청이 있으면 'AI에게 추가 요청'으로 이어서 진행할 수 있습니다.
 ```
 
 ---
