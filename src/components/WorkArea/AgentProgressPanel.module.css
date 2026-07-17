@@ -1,16 +1,25 @@
 .panel {
+  /* 부모(panel-body)가 가로 flex 컨테이너 — flex:1 없이는 패널 폭이 내용물의 최대 줄
+     길이로 잡혀 구분선(border)이 드로어 우측 끝까지 못 간다. */
+  flex: 1;
+  min-width: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--panel-bg, transparent);
 }
 
-/* 현재 단계 상태 라인 — 앱 상태(Activity·isVerifying) 기반 결정론 표시. 스크롤 밖(고정)에 둬
-   로그가 길어져도 "지금 뭘 하는 중 + 얼마나 걸렸나"가 항상 보인다. */
+/* 현재 단계 상태 카드 — 앱 상태(Activity·isVerifying) 기반 결정론 표시. 스크롤 밖(고정)에 둬
+   로그가 길어져도 "지금 뭘 하는 중 + 얼마나 걸렸나"가 항상 보인다.
+   전폭 구분선 + 굵은 글자는 헤더의 시각 문법이라 위 드로어 헤더와 헷갈려 시선이 분산된다 —
+   여백 안의 둥근 카드로 만들어 "크롬(헤더) vs 콘텐츠(상태 위젯)" 계층을 가른다. */
 .status {
   flex: none;
-  padding: 12px 16px 10px;
-  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  margin: 12px 16px 6px;
+  padding: 10px 12px;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
 }
 
 .statusLabel {
@@ -53,10 +62,11 @@
 }
 
 /* 결과 요약 텍스트(🎤·📋…) — 인용 스타일 왼쪽 레일. sub-agent 행(체크리스트 성격, 레일 없음)과
-   "AI가 낸 결과물"을 시각적으로 구분한다. 연속 줄들은 레일이 이어져 하나의 블록으로 묶여 보인다. */
+   "AI가 낸 결과물"을 시각적으로 구분한다. 세로 간격은 margin이 아니라 padding으로 — margin은
+   줄 사이마다 레일(border)을 끊어 점선처럼 보이게 한다(연속 줄은 레일이 이어져야 한 블록). */
 .line {
-  margin: 1px 0;
-  padding-left: 10px;
+  margin: 0;
+  padding: 1px 0 1px 10px;
   border-left: 2px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
 }
 
@@ -76,9 +86,41 @@
   color: var(--text-secondary, #a8adb8);
 }
 
+/* 취소·크래시로 결과 없이 끝난 행 — 완료(✓)로 속이지 않는 "중단됨" 표시 */
+.agentCanceled {
+  margin: 1px 0;
+  color: var(--text-tertiary, #6b7280);
+}
+
+.canceledTag {
+  color: var(--text-tertiary, #6b7280);
+}
+
 .agentIcon {
   display: inline-block;
   width: 18px;
+}
+
+/* 하트비트 — 스트림이 뜸한 구간의 생존 신호. 로그 밖 하단 고정, 낮은 톤. */
+.heartbeat {
+  flex: none;
+  padding: 6px 16px 10px;
+  font-size: 12px;
+  color: var(--text-tertiary, #6b7280);
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+/* 스크린리더 전용 텍스트 — 아이콘(⟳/✓/—)의 상태를 비시각 사용자에게 전달 */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .spinner {

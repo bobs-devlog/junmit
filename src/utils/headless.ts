@@ -52,47 +52,53 @@ function str(v: unknown): string {
 }
 
 export function parseHeadlessLine(raw: string): HeadlessEvent[] {
-  let e: unknown;
+  let streamEvent: unknown;
   try {
-    e = JSON.parse(raw);
+    streamEvent = JSON.parse(raw);
   } catch {
     return [];
   }
-  if (!isObj(e)) return [];
+  if (!isObj(streamEvent)) return [];
 
-  if (e.type === "system" && e.subtype === "init" && str(e.session_id)) {
-    return [{ kind: "init", sessionId: str(e.session_id) }];
+  if (
+    streamEvent.type === "system" &&
+    streamEvent.subtype === "init" &&
+    str(streamEvent.session_id)
+  ) {
+    return [{ kind: "init", sessionId: str(streamEvent.session_id) }];
   }
 
   // sub-agent 생명주기 — tool_use_id로 시작/종료를 짝짓는다(병렬 sub-agent 각각 추적).
-  if (e.type === "system" && e.subtype === "task_started") {
-    const id = str(e.tool_use_id);
+  if (streamEvent.type === "system" && streamEvent.subtype === "task_started") {
+    const id = str(streamEvent.tool_use_id);
     if (!id) return [];
     // 라벨 언어가 비결정적(description은 모델이 매번 짓는 자유 문자열 — 실측: 한 실행 한국어,
     // 다음 실행 영어) → 한국어 description만 신뢰하고, 아니면 스킬이 고정한 subagent_type
     // 식별자(meeting/SKILL.md 1단계·6단계 스펙)로 결정론 매핑한다.
-    const desc = str(e.description).trim();
-    const label = /[가-힣]/.test(desc)
-      ? desc
-      : (SUBAGENT_LABELS[str(e.subagent_type)] ?? "AI 보조 작업");
+    const description = str(streamEvent.description).trim();
+    const label = /[가-힣]/.test(description)
+      ? description
+      : (SUBAGENT_LABELS[str(streamEvent.subagent_type)] ?? "AI 보조 작업");
     return [{ kind: "agentStart", id, label }];
   }
-  if (e.type === "system" && e.subtype === "task_notification") {
-    const id = str(e.tool_use_id);
+  if (streamEvent.type === "system" && streamEvent.subtype === "task_notification") {
+    const id = str(streamEvent.tool_use_id);
     return id ? [{ kind: "agentDone", id }] : [];
   }
 
-  if (e.type === "result") {
-    return [{ kind: "result", isError: Boolean(e.is_error), text: str(e.result) }];
+  if (streamEvent.type === "result") {
+    return [
+      { kind: "result", isError: Boolean(streamEvent.is_error), text: str(streamEvent.result) },
+    ];
   }
 
-  if (e.type === "assistant") {
-    const blocks = isObj(e.message) ? e.message.content : null;
+  if (streamEvent.type === "assistant") {
+    const blocks = isObj(streamEvent.message) ? streamEvent.message.content : null;
     if (!Array.isArray(blocks)) return [];
     const events: HeadlessEvent[] = [];
-    for (const b of blocks) {
-      if (!isObj(b)) continue;
-      if (b.type === "text") {
+    for (const block of blocks) {
+      if (!isObj(block)) continue;
+      if (block.type === "text") {
         // 여러 줄 텍스트 블록을 줄 단위로 나눠 각각 판정 — 한 블록에 요약과 중얼거림이
         // 섞여 오는 경우가 있어 블록 통째 드롭/통과 둘 다 부정확하다.
         //
@@ -101,7 +107,7 @@ export function parseHeadlessLine(raw: string): HeadlessEvent[] {
         // 계약 밖 산문(메타 발화·내부 용어 노출)은 **한국어여도** 누수이므로 드롭 —
         // 블랙리스트(영문만 차단)로는 한국어 메타 발화를 못 거른다(실측). 최종 안내문은
         // result 이벤트 경로로 별도 표시되므로 여기서 떨어져도 잃지 않는다.
-        for (const rawLine of str(b.text).split("\n")) {
+        for (const rawLine of str(block.text).split("\n")) {
           const line = rawLine.trim();
           if (!line) continue;
           // ⏳ 단계 라인은 드롭 — 단계 표시는 앱 상태 기반 상태 라인이 담당 (파일 헤더 주석).

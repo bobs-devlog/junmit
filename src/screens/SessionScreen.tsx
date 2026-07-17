@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import ProcessingPanel from "@/components/ProcessingPanel";
@@ -12,6 +12,7 @@ import { useDialog } from "@/contexts/DialogContext";
 import useNavigationBlocker from "@/hooks/useNavigationBlocker";
 import { Activity, Step, cliHasAgent } from "@/constants";
 import { cancelMeetingWork } from "@/utils/headless";
+import { loadMeetingMeta } from "@/utils/meetingMeta";
 import { invoke } from "@tauri-apps/api/core";
 import { sendNotification } from "@/utils/notification";
 
@@ -60,6 +61,23 @@ export default function SessionScreen() {
 
   // attendees 참조 안정화 — 자식의 useEffect 의존성 배열이 매 렌더 무효화되는 것 방지.
   const attendees = useMemo<string[]>(() => meeting?.attendees ?? [], [meeting?.attendees]);
+
+  // 회의록 검증 토글 — 진행 패널의 단계 분모(검증 ON=4/OFF=3) 결정. 컨텍스트 Meeting은 기존
+  // 회의 재열기 시 이 필드를 싣지 않으므로 진실 원천(meeting.json)을 직접 읽는다. 녹음 시작
+  // 시 고정되는 설정이라 세션당 1회 로드로 충분, 부재(옛 세션)=기본 ON.
+  const [verifyEnabled, setVerifyEnabled] = useState(true);
+  useEffect(() => {
+    if (!sessionDir) return;
+    let stale = false;
+    loadMeetingMeta(sessionDir)
+      .then((meta) => {
+        if (!stale) setVerifyEnabled(meta?.notes_verification !== false);
+      })
+      .catch(() => {});
+    return () => {
+      stale = true;
+    };
+  }, [sessionDir]);
 
   // 작업 중(Processing/Composing) router back/forward(POP) 차단.
   // Idle은 통과. 화면 내부 명시 navigate(handleAbort PUSH/REPLACE)는 통과.
@@ -289,6 +307,7 @@ export default function SessionScreen() {
             assistAvailable={cliHasAgent(cli)}
             localBackend={!cliHasAgent(cli)}
             headlessBackend={headlessActive}
+            verifyEnabled={verifyEnabled}
             noSpeech={steps.no_speech}
             onForceCompose={handleForceCompose}
             onRequestAi={handleRequestAi}

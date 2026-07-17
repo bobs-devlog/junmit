@@ -59,6 +59,8 @@ interface WorkAreaProps {
   // headless(claude -p) 실행 중/직후 — 터미널 대신 구조화 진행 패널(headless:event 스트림) 표시.
   // localBackend와 배타적이진 않지만(둘 다 진행 패널) headless가 우선 — SessionContext가 관리.
   headlessBackend?: boolean;
+  // 회의록 검증 토글(meeting.json notes_verification, 기본 ON) — 진행 패널의 단계 분모(3/4) 결정.
+  verifyEnabled?: boolean;
   // 무음("발화 없음")으로 diarize·회의록을 건너뛴 세션 — SessionViewer가 전용 빈 상태 표시.
   noSpeech?: boolean;
   // escape hatch — "그래도 회의록 작성하기". 무음 빈 상태 버튼이 호출.
@@ -88,6 +90,7 @@ export default function WorkArea({
   assistAvailable = true,
   localBackend = false,
   headlessBackend = false,
+  verifyEnabled = true,
   noSpeech = false,
   onForceCompose,
   onRequestAi,
@@ -96,8 +99,8 @@ export default function WorkArea({
   onRetypeNotes,
 }: WorkAreaProps) {
   // headless 작업 중엔 헤더를 총괄 문구로 고정 — 구체 단계·경과·안내는 패널 상태 라인이
-  // 전담하므로(AgentProgressPanel), 헤더까지 단계별로 바뀌면 같은 말이 두 줄로 겹친다.
-  // 완료 후(작업 아님)엔 null로 비켜나 아래 완료 띠(✓) 로직이 그대로 동작.
+  // **유일한 동적 표시**로 전담한다(AgentProgressPanel). 헤더에 시간·단계를 얹으면 같은 정보가
+  // 두 곳에서 동시에 움직여 산만하다. 완료 후엔 null로 비켜나 완료 띠(✓)가 동작.
   const headlessWorking =
     headlessBackend &&
     (activity === Activity.Correcting || activity === Activity.Composing || isVerifying);
@@ -136,7 +139,12 @@ export default function WorkArea({
         // headless(claude -p)·로컬 AI는 상호작용할 터미널이 없다 — 진행 패널로 대체.
         // headless가 우선 — headlessActive는 PTY spawn 시점마다 해제되므로 충돌 없음.
         headlessBackend ? (
-          <AgentProgressPanel activity={activity} verifying={isVerifying} emptyState={emptyState} />
+          <AgentProgressPanel
+            activity={activity}
+            verifying={isVerifying}
+            verifyEnabled={verifyEnabled}
+            emptyState={emptyState}
+          />
         ) : localBackend ? (
           <LocalProgressPanel activity={activity} emptyState={emptyState} />
         ) : undefined
