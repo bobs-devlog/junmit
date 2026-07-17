@@ -5,6 +5,8 @@ import styles from "./AttendeeList.module.css";
 
 // 허용 문자: 한글, 영문, 숫자, 공백, 대시 (SpeakerPicker와 동일 정책)
 const VALID_CHAR_RE = /[^가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z0-9\s-]/g;
+// 참석자 추가 입력에서는 쉼표를 구분자로 보존한다. split 이후 개별 이름에는 포함되지 않는다.
+const VALID_INPUT_CHAR_RE = /[^가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z0-9\s,-]/g;
 const MAX_NAME_LENGTH = 40;
 
 /**
@@ -67,12 +69,11 @@ export default function AttendeeList({
   }, [attendees.length]);
 
   const handleAdd = () => {
-    const trimmed = newName.trim();
-    if (!trimmed) return;
-    if (!attendees.includes(trimmed)) {
-      onAdd(trimmed);
-      justAddedRef.current = true;
-    }
+    const names = [
+      ...new Set(newName.split(",").map((value) => value.trim().slice(0, MAX_NAME_LENGTH))),
+    ].filter((name) => name && !attendees.includes(name));
+    names.forEach(onAdd);
+    if (names.length > 0) justAddedRef.current = true;
     setNewName("");
   };
 
@@ -174,9 +175,8 @@ export default function AttendeeList({
           type="text"
           placeholder="이름 추가 (예: Bobs, 김길동-외주)"
           value={newName}
-          onChange={(e) => setNewName(e.target.value.replace(VALID_CHAR_RE, ""))}
+          onChange={(e) => setNewName(e.target.value.replace(VALID_INPUT_CHAR_RE, ""))}
           onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-          maxLength={MAX_NAME_LENGTH}
         />
         <button
           className="btn btn-secondary btn-small"
