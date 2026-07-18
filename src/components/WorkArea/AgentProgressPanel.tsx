@@ -158,10 +158,11 @@ function formatHeartbeat(ms: number): string {
 }
 
 /**
- * headless(claude -p) 진행 패널 — 터미널 드로어 자리에 들어가는 진행 표시.
- * - 상태 카드(상단 고정): 단계 (n/N) + 경과 + 안내 — Activity·isVerifying 기반 결정론.
- * - 로그(평평한 시간순): sub-agent 행(스피너 → ✓/— 제자리 전환)과 스킬의 한국어 요약 블록.
- * - 하트비트(하단 고정): 마지막 이벤트 도착 후 경과 — 스트림이 뜸한 구간의 "멈춤?" 불안 해소.
+ * headless(claude -p / codex exec) 진행 패널 — 터미널 드로어 자리에 들어가는 진행 표시.
+ * - 상태 카드(상단 고정): 단계 (n/N) + 경과 + 안내 + 하트비트(마지막 신호 후 경과 —
+ *   스트림이 뜸한 구간의 "멈춤?" 불안 해소) — Activity·isVerifying 기반 결정론.
+ * - 로그(평평한 시간순): sub-agent 행(스피너 → ✓/— 제자리 전환, claude 한정 — codex는
+ *   스트림이 sub-agent 시작을 노출하지 않아 요약 텍스트만)과 스킬의 한국어 요약 블록.
  * 파싱·노이즈 판정은 utils/headless.parseHeadlessLine 단일 지점, 여기선 표시만.
  */
 export default function AgentProgressPanel({
@@ -177,8 +178,12 @@ export default function AgentProgressPanel({
   // (result 없이 끝남 = 취소·크래시 → "중단됨")
   const resultSeenRef = useRef(false);
 
+  // codex의 "보조 작업 가동 중" 신호(kind:"working") — codex는 sub-agent 행을 만들 수 없어
+  // (파서 주석 참고) 상태 카드 전환(준비 → 다듬는 중) 근거로만 쓴다. claude는 agent 행이 같은 역할.
+  const [workUnderway, setWorkUnderway] = useState(false);
+
   const working = activity === Activity.Correcting || activity === Activity.Composing;
-  const hasAgentStarted = items.some((item) => item.type === "agent");
+  const hasAgentStarted = workUnderway || items.some((item) => item.type === "agent");
   const status = phaseStatus(activity, verifying, hasAgentStarted);
   const busy = status !== null;
 
@@ -218,6 +223,7 @@ export default function AgentProgressPanel({
     if (!prevWorkingRef.current && working) {
       setItems([]);
       setLastEventAt(null);
+      setWorkUnderway(false);
       resultSeenRef.current = false;
     }
     prevWorkingRef.current = working;
@@ -241,6 +247,8 @@ export default function AgentProgressPanel({
       for (const parsed of parseHeadlessLine(event.payload)) {
         if (parsed.kind === "agentStart") {
           setItems((prev) => appendAgent(prev, parsed.id, parsed.label));
+        } else if (parsed.kind === "working") {
+          setWorkUnderway(true);
         } else if (parsed.kind === "agentDone") {
           setItems((prev) =>
             prev.map((item) =>
@@ -291,6 +299,8 @@ export default function AgentProgressPanel({
       : status.hint;
   const totalStages = verifyEnabled ? 4 : 3;
   const silentMs = lastEventAt != null ? now - lastEventAt : 0;
+  // 90초 침묵 — 하트비트의 문구·점 색(초록→amber)·맥박을 함께 낮춰 "조용함"을 일관 표현.
+  const quietSilence = silentMs > 90_000;
 
   return (
     <div className={styles.panel} aria-label="AI 작업 진행 상황">
@@ -299,14 +309,33 @@ export default function AgentProgressPanel({
           라이브 리전(role="log") 밖 — 초당 갱신되는 경과가 낭독 폭주를 일으키지 않게. */}
       {status && (
         <div className={styles.status}>
-          <div className={styles.statusLabel}>
-            <span className={styles.statusIcon} aria-hidden="true">
-              <span className={styles.spinner} />
-            </span>
-            {status.label} ({status.stageNumber}/{totalStages})
-            <span className={styles.elapsed}>{formatElapsed(now - phaseStartedAt)}</span>
+          {/* key 교체로 단계 전환 시 remount → 슬라이드-인 + 색 플래시 재생. 하트비트는 밖 —
+              초 단위 갱신되는 라이브 줄이 key 교체에 휩쓸려 깜빡이지 않게. */}
+          <div key={status.key} className={styles.statusEnter}>
+            <div className={styles.statusLabel}>
+              <span className={styles.statusIcon} aria-hidden="true">
+                <span className={styles.spinner} />
+              </span>
+              {status.label} ({status.stageNumber}/{totalStages})
+              <span className={styles.elapsed}>{formatElapsed(now - phaseStartedAt)}</span>
+            </div>
+            {hint && <div className={styles.statusHint}>{hint}</div>}
           </div>
-          {hint && <div className={styles.statusHint}>{hint}</div>}
+          {/* 하트비트 — 스트림이 뜸한 구간의 생존 신호, 90초 침묵 시 안내로 승격. 문구는 완결
+              문장으로 — "마지막 활동"처럼 화면을 가리키는 표현은 로그가 비면 모호해진다. */}
+          {lastEventAt != null && (
+            <div className={styles.heartbeat}>
+              <span
+                className={
+                  quietSilence ? `${styles.liveDot} ${styles.liveDotQuiet}` : styles.liveDot
+                }
+                aria-hidden="true"
+              />
+              {quietSilence
+                ? `조용하지만 진행 중이에요 · 마지막 신호 ${formatHeartbeat(silentMs)} (긴 내용을 처리하는 동안은 신호가 뜸할 수 있어요)`
+                : `AI가 계속 작업 중이에요 · 마지막 신호 ${formatHeartbeat(silentMs)}`}
+            </div>
+          )}
         </div>
       )}
       <div ref={bodyRef} className={styles.log} role="log">
@@ -331,15 +360,6 @@ export default function AgentProgressPanel({
           );
         })}
       </div>
-      {/* 하트비트 — 스트림 이벤트가 뜸한 구간(모델이 긴 텍스트를 처리 중)의 생존 신호.
-          라이브 리전 밖 하단 고정. 90초 침묵 시 안내로 승격. */}
-      {busy && lastEventAt != null && (
-        <div className={styles.heartbeat}>
-          {silentMs > 90_000
-            ? `조용하지만 진행 중이에요.. 마지막 활동 ${formatHeartbeat(silentMs)} (긴 내용을 처리하는 동안은 출력이 뜸할 수 있어요)`
-            : `마지막 활동 · ${formatHeartbeat(silentMs)}`}
-        </div>
-      )}
     </div>
   );
 }

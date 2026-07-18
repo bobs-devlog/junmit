@@ -101,13 +101,71 @@
   width: 18px;
 }
 
-/* 하트비트 — 스트림이 뜸한 구간의 생존 신호. 로그 밖 하단 고정, 낮은 톤. */
+/* 단계 전환 강조 — status.key 교체 remount 시 재생. 텍스트만 바뀌면 전환이 지각되지 않아
+   슬라이드-인 + 라벨 색 플래시 2단 효과로 알린다. 패널 첫 표시에도 한 번 재생(무해). */
+.statusEnter {
+  animation: stage-enter 0.5s ease-out;
+}
+
+@keyframes stage-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 라벨 색 강조 — from만 지정해 요소 본래 색으로 자연 복귀. 주변 시야에서도 전환이 잡힌다. */
+.statusEnter .statusLabel {
+  animation: stage-label-flash 1.4s ease-out;
+}
+
+@keyframes stage-label-flash {
+  from {
+    color: var(--accent, #4cc9f0);
+  }
+}
+
+/* 하트비트 — 상태 카드의 마지막 줄(생존 신호). 라이브 점(pulse)이 정적 안내(힌트)와 구분. */
 .heartbeat {
-  flex: none;
-  padding: 6px 16px 10px;
+  padding-left: 18px;
+  margin-top: 2px;
   font-size: 12px;
   color: var(--text-tertiary, #6b7280);
-  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+/* 라이브 점 — 상태 표시등 관례(초록 = 정상 동작 중). */
+.liveDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  vertical-align: 1px;
+  border-radius: 50%;
+  background: var(--success, #70f0a0);
+  animation: live-pulse 2s ease-in-out infinite;
+}
+
+/* 90초 침묵 변형 — 주의(amber) + 느린 맥박으로 문구("조용하지만 진행 중")와 일치.
+   빨강 금지 — 실패가 아니다. */
+.liveDotQuiet {
+  background: var(--warning, #f59e0b);
+  animation-duration: 3.5s;
+}
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
 }
 
 /* 스크린리더 전용 텍스트 — 아이콘(⟳/✓/—)의 상태를 비시각 사용자에게 전달 */
@@ -143,5 +201,11 @@
   .spinner {
     animation: none;
     border-top-color: var(--text-tertiary, #6b7280);
+  }
+
+  .statusEnter,
+  .statusEnter .statusLabel,
+  .liveDot {
+    animation: none;
   }
 }
