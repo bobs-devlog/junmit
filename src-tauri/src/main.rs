@@ -1135,13 +1135,6 @@ async fn cmd_run_local_meeting(
     }
 }
 
-/// headless 회의록 작성 게이트 판정 — 프론트가 /meeting 진입 시점마다 호출(캐싱 금지).
-/// 센티넬 파일 토글이 앱 재시작 없이 다음 실행부터 반영되게 하기 위함.
-#[tauri::command]
-fn cmd_is_headless_meeting() -> bool {
-    session::headless_meeting_enabled()
-}
-
 /// headless 회의록 작성 중단
 #[tauri::command]
 fn cmd_cancel_headless_meeting(state: State<HeadlessMeetingChild>) -> Result<(), String> {
@@ -1779,7 +1772,6 @@ fn main() {
             cmd_cancel_local_meeting,
             cmd_run_headless_meeting,
             cmd_cancel_headless_meeting,
-            cmd_is_headless_meeting,
             cmd_write_session_file,
             cmd_read_session_file,
             cmd_backup_meeting_notes,

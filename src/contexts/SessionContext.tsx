@@ -621,14 +621,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [sessionDir, showTabBanner]);
 
-  // headless 게이트 판정 — claude(`claude -p`)·codex(`codex exec --json`) + 매 진입 시점
-  // invoke(센티넬 파일 토글이 재시작 없이 즉시 반영, 캐싱 금지). antigravity는 headless 미성숙
-  // (JSON 스트림 부재·resume id 미노출)으로 PTY 유지, mlx는 애초에 별도 경로(runLocalMeeting).
-  const isHeadlessMeeting = useCallback(async () => {
-    return (
-      (cliRef.current === "claude" || cliRef.current === "codex") &&
-      (await invoke<boolean>("cmd_is_headless_meeting").catch(() => false))
-    );
+  // headless 경로 판정 — claude(`claude -p`)·codex(`codex exec --json`)는 headless.
+  // antigravity는 PTY 유지 — `-p`가 있지만 이벤트 스트림 부재(진행 패널에 넣을 게 없음)·
+  // headless 권한 soft-deny·격리 홈 부재(전역 ~/.gemini 공유로 conversation id 추정 경합),
+  // 1.1.4 실측. mlx는 애초에 별도 경로(runLocalMeeting).
+  const isHeadlessMeeting = useCallback(() => {
+    return cliRef.current === "claude" || cliRef.current === "codex";
   }, []);
 
   // headless 회의록 실행 — runLocalMeeting과 대칭(Rust 서브프로세스, 진행은 "headless:event",
@@ -720,9 +718,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setActivity(Activity.Correcting);
     setDrawerOpen(true);
     setCompletedActivity(null);
-    // headless 게이트(claude + 센티넬) — PTY 대신 Rust 서브프로세스로 실행, 진행은
+    // headless(claude·codex) — PTY 대신 Rust 서브프로세스로 실행, 진행은
     // AgentProgressPanel. preflight는 위에서 이미 통과(경로 공통).
-    if (await isHeadlessMeeting()) {
+    if (isHeadlessMeeting()) {
       void runHeadlessMeeting();
       return;
     }
@@ -788,7 +786,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
     // headless는 수동 경로도 preflight — PTY의 "만료 시 터미널 raw 노출로 복구" 표면이 없어
     // 사전 차단이 유일한 안내 경로다(아래 PTY 경로의 생략 근거가 headless엔 성립하지 않음).
-    if (await isHeadlessMeeting()) {
+    if (isHeadlessMeeting()) {
       const authed = await invoke<boolean>("cmd_is_cli_authed", { cli }).catch(() => true);
       if (!authed) {
         setLoginExpiredCli(cli);
@@ -830,7 +828,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         void runLocalMeeting();
         return;
       }
-      if (await isHeadlessMeeting()) {
+      if (isHeadlessMeeting()) {
         void runHeadlessMeeting();
         return;
       }
@@ -944,7 +942,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // Tier 2 (그 외): 새 spawn — 옛 회의 다시 열기 후 시나리오.
   const requestAi = useCallback(async () => {
     setDrawerOpen(true);
-    if (await isHeadlessMeeting()) {
+    if (isHeadlessMeeting()) {
       const alive = await invoke<boolean>("cmd_pty_is_active").catch(() => false);
       if (!alive) {
         const dir = sessionDirRef.current;
