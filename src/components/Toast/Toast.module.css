@@ -56,3 +56,12 @@
 .toast--info.visible {
   transform: translateY(0);
 }
+
+/* 위치 오버라이드: 터미널 입력창 위 — 우하단 코너는 composer를 정확히 덮는 자리라,
+   입력창을 가리키는 안내("하단 입력창에 입력")가 정작 그 입력창을 가리게 된다.
+   70px = claude·codex 실측(2026-07-18)으로 입력줄·상태줄이 토스트 아래에 온전히 보이는
+   최소 높이 — 더 올리면 입력창과 멀어져 지시 효과가 떨어진다.
+   타입 클래스보다 뒤에 선언해 bottom을 덮는다. */
+.toast--above-terminal-input {
+  bottom: 70px;
+}

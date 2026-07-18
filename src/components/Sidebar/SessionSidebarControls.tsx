@@ -1,7 +1,9 @@
+import { useState } from "react";
 import clsx from "clsx";
 import { Activity, Step, activityMeta, cliHasAgent, stepsForCli } from "@/constants";
 import type { StepId } from "@/constants";
 import type { Cli, SessionSteps } from "@/types";
+import AssistRequestForm from "@/components/AssistRequestForm";
 import Spinner from "@/components/Spinner";
 import styles from "./Sidebar.module.css";
 
@@ -31,7 +33,9 @@ interface Props {
   onStartProcessing: () => void; // idle + transcribed=false
   onResumeProcessing: () => void; // idle + transcribed=true, diarized=false
   onComposeNotes: () => void; // idle + diarized=true, notes_written=false
-  onRequestAi: () => void; // idle + notes_written=true (자유 추가 요청 — panel expand + 필요시 spawn)
+  // idle + notes_written=true — 자유 추가 요청. 요청 텍스트를 먼저 받아(입력 선행) 전달하면
+  // Context가 panel expand + tier별 전송(stdin/spawn 초기 프롬프트 병기) 처리.
+  onRequestAi: (request: string) => void;
   onForceCompose: () => void; // idle + no_speech (escape hatch — 무음 판정 무효화 후 재개)
   onResetSession: () => void; // dev 전용: 녹음 끝난 시점으로 초기화 (처리 산출물 삭제)
   onResetToDiarized: () => void; // dev 전용: 화자분리 시점으로 초기화 (/meeting 산출물만 삭제)
@@ -152,7 +156,7 @@ interface IdleProps {
   onStartProcessing: () => void;
   onResumeProcessing: () => void;
   onComposeNotes: () => void;
-  onRequestAi: () => void;
+  onRequestAi: (request: string) => void;
   onForceCompose: () => void;
   loginExpiredCli: Cli | null;
   onGoLogin: () => void;
@@ -173,12 +177,26 @@ function IdleActions({
   onGoLogin,
 }: IdleProps) {
   const agent = cliHasAgent(cli);
+  // 추가 요청 입력 폼 확장 여부 — 입력 선행: 버튼 클릭 시 요청을 먼저 받아 전송한다.
+  const [assistFormOpen, setAssistFormOpen] = useState(false);
   if (steps.notes_written) {
     // 회의록 작성이 곧 마지막 단계. 복사(내보내기)는 회의록 탭 인라인 버튼이 담당하므로
     // 사이드바엔 두지 않는다. mlx는 추가 요청(/assist)이 없어 액션 없음 = 담백한 완료 상태.
     if (!agent) return null;
+    if (assistFormOpen) {
+      return (
+        <AssistRequestForm
+          autoFocus
+          onSubmit={(request) => {
+            setAssistFormOpen(false);
+            onRequestAi(request);
+          }}
+          onCancel={() => setAssistFormOpen(false)}
+        />
+      );
+    }
     return (
-      <button className="btn btn-primary btn-large" onClick={onRequestAi}>
+      <button className="btn btn-primary btn-large" onClick={() => setAssistFormOpen(true)}>
         AI에게 추가 요청
       </button>
     );

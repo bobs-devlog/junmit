@@ -30,23 +30,9 @@
   margin: 0 0 20px 0;
 }
 
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  background: none;
-  color: var(--accent);
-  font-size: 13px;
-  cursor: pointer;
-  transition:
-    background-color 0.1s ease,
-    color 0.1s ease;
-}
-
-.action-btn:hover {
-  background: var(--accent);
-  color: var(--bg-primary);
+/* 요청 입력 폼(AssistRequestForm) 폭 제한 — 빈 상태 중앙 배치에서 과도하게 퍼지지 않게. */
+.form-wrap {
+  width: 100%;
+  max-width: 380px;
+  text-align: left;
 }

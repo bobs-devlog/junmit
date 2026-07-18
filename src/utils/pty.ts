@@ -25,14 +25,39 @@ import { agentSkillTrigger } from "@/utils/spawn";
 //
 // 호출자는 슬래시(/) 포함된 명령 + 현재 cli를 넘긴다 (예: "/meeting", "/assist").
 // cli 기본값 없음 — 빠뜨리면 codex에서 슬래시가 평문 입력되는 사고라 컴파일 타임에 차단.
-export async function sendSlashCommand(slash: string, cli: Cli): Promise<void> {
+
+// 한 줄 텍스트를 현재 TUI 입력란에 넣고 제출 — 위 주석의 클리어 prefix·CLI별 제출 방식 공통.
+async function submitLine(text: string, cli: Cli): Promise<void> {
   if (cli === "codex" || cli === "antigravity") {
-    await invoke<void>("cmd_pty_input", { data: `\x01\x0b${agentSkillTrigger(slash)}` });
+    await invoke<void>("cmd_pty_input", { data: `\x01\x0b${text}` });
     await new Promise((resolve) => setTimeout(resolve, 120));
     await invoke<void>("cmd_pty_input", { data: "\r" });
     return;
   }
-  await invoke<void>("cmd_pty_input", { data: `\x01\x0b${slash}\r` });
+  await invoke<void>("cmd_pty_input", { data: `\x01\x0b${text}\r` });
+}
+
+export async function sendSlashCommand(slash: string, cli: Cli): Promise<void> {
+  await submitLine(cli === "claude" ? slash : agentSkillTrigger(slash), cli);
+}
+
+// "AI에게 추가 요청" 입력 선행 — 살아있는 PTY(Tier 1)에 요청 텍스트를 전달.
+// assistStarted=false(이 PTY 대화의 첫 /assist 진입)면 스킬 트리거에 요청을 병기하고,
+// true(이미 진입한 대화)면 요청 텍스트만 보낸다 — 재트리거는 스킬 재로드·재인사 중복이라
+// 최초 1회만 붙인다. request는 호출자(SessionContext.requestAi)가 한 줄로 정리해 넘긴다.
+export async function sendAssistRequest(
+  request: string,
+  cli: Cli,
+  assistStarted: boolean
+): Promise<void> {
+  if (assistStarted) {
+    await submitLine(request, cli);
+    return;
+  }
+  await submitLine(
+    cli === "claude" ? `/assist ${request}` : agentSkillTrigger("/assist", request),
+    cli
+  );
 }
 
 // 살아있는 PTY 정리 — 의도적 종료라 실패는 무시(이미 죽었거나 PTY 없음). idempotent.

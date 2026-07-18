@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import clsx from "clsx";
-import type { ToastData, ToastType } from "@/types";
+import type { ToastData, ToastPosition, ToastType } from "@/types";
 import styles from "./Toast.module.css";
 
 const DEFAULT_DURATION: Record<ToastType, number> = {
@@ -13,6 +13,11 @@ const TYPE_CLASS: Record<ToastType, string> = {
   error: styles.toastError,
   success: styles.toastSuccess,
   info: styles.toastInfo,
+};
+
+// 위치 오버라이드 (ToastOptions.position) — type별 기본 위치를 덮는다.
+const POSITION_CLASS: Record<ToastPosition, string> = {
+  aboveTerminalInput: styles.toastAboveTerminalInput,
 };
 
 interface ToastProps {
@@ -43,7 +48,12 @@ export default function Toast({ toast, onDismiss }: ToastProps) {
 
   return (
     <div
-      className={clsx(styles.toast, TYPE_CLASS[toast.type || "info"], visible && styles.visible)}
+      className={clsx(
+        styles.toast,
+        TYPE_CLASS[toast.type || "info"],
+        toast.position && POSITION_CLASS[toast.position],
+        visible && styles.visible
+      )}
       onClick={handleClick}
     >
       <span>{toast.message}</span>

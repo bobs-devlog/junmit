@@ -1,6 +1,6 @@
 ---
 name: assist
-description: 회의록 작성 완료 후 사용자가 자유롭게 추가 요청할 때 진입하는 자유 대화 스킬. 빠른 인사로 시작하고 사용자 요청 분기에 따라 필요한 컨텍스트만 lazy load.
+description: 회의록 작성 완료 후 사용자가 자유롭게 추가 요청할 때 진입하는 자유 대화 스킬. 함께 전달된 요청부터 즉시 처리하고 사용자 요청 분기에 따라 필요한 컨텍스트만 lazy load.
 disable-model-invocation: true
 user-invocable: true
 allowed-tools: Read Write Edit Bash AskUserQuestion mcp__atlassian__* mcp__claude_ai_Atlassian__* mcp__claude_ai_Google_Calendar__* mcp__claude_ai_Gmail__* mcp__claude_ai_Slack__* mcp__claude_ai_Notion__*
@@ -9,7 +9,7 @@ allowed-tools: Read Write Edit Bash AskUserQuestion mcp__atlassian__* mcp__claud
 # AI 추가 요청 워크플로우
 
 **세션 디렉토리는 `$APP_SESSION_DIR` 환경변수로 전달됩니다** (앱이 PTY spawn 시 설정).
-$ARGUMENTS는 사용하지 않음 — 산문 placeholder도 일관성을 위해 `$SESSION_DIR` 사용.
+산문 placeholder는 일관성을 위해 `$SESSION_DIR` 사용.
 
 ```bash
 SESSION_DIR="$APP_SESSION_DIR"
@@ -17,24 +17,30 @@ SESSION_DIR="$APP_SESSION_DIR"
 
 > **스크립트는 `$APP_DIR`(이 세션이 시작된 작업 루트)에 있습니다.** `signal.sh` 호출은 `$APP_DIR/lib/signal.sh` 절대경로로 하고 **절대 `cd` 하지 마세요.** `app_refresh`는 앱 회의록 탭 갱신의 신호라, `No such file`이 떠도 경로 오류이지 생략 사유가 아닙니다.
 
-사용자가 사이드바 "AI에게 추가 요청" 또는 panel 빈 상태 버튼을 눌러 진입한 자유 대화 스킬.
-`meeting` 스킬과 달리 **`AskUserQuestion` 사용 허용**.
+사용자가 사이드바 "AI에게 추가 요청" 또는 panel 빈 상태의 입력창에 **요청을 적어 보내**
+진입한 자유 대화 스킬. `meeting` 스킬과 달리 **`AskUserQuestion` 사용 허용**.
 
 **핵심 원칙: 초기 응답 시간 최소화**. 무거운 컨텍스트 로드는 보류하고, 사용자 요청 분기에
 따라 그때그때 필요한 파일만 lazy load. 익숙한 사용자는 추천 단계 없이 바로 작업 가능.
 
 ---
 
-## 1단계 — 빠른 인사 (즉시)
+## 1단계 — 진입 분기 (즉시)
 
-`$SESSION_DIR/meeting.json`만 read해서 **회의 제목**만 확인. 다른 파일은 아직 read X.
+앱 입력창의 요청 텍스트는 스킬 호출에 **함께 전달됩니다** — 슬래시 커맨드 인자, 또는
+스킬 트리거 문장 뒤에 이어지는 문장.
 
-사용자에게 짧은 인사 출력 (정확한 문구는 회의 컨텍스트에 맞춰 자연스럽게 다듬되 다음 톤 유지):
+- **요청이 함께 온 경우 (일반적)**: 인사·대기 **생략**. 그 텍스트를 사용자 입력으로 간주해
+  바로 2단계 분기부터 진행합니다. `meeting.json`도 미리 read하지 말고 작업에 필요할 때만.
+- **같은 대화에서 이 스킬을 이미 수행한 적이 있는 경우**: 역시 인사 생략, 바로 2단계.
+- **요청 없이 진입한 경우 (예외적 — 사용자가 터미널에서 직접 호출)**: `$SESSION_DIR/meeting.json`만
+  read해서 **회의 제목**만 확인(다른 파일은 아직 read X) 후 짧은 인사 출력 (정확한 문구는
+  회의 컨텍스트에 맞춰 자연스럽게 다듬되 다음 톤 유지):
 
-> "{title}" 회의록에 대해 무엇을 도와드릴까요?
-> 어떤 작업이 가능한지 궁금하시면 "도와줘"라고 입력해주세요.
+  > "{title}" 회의록에 대해 무엇을 도와드릴까요?
+  > 어떤 작업이 가능한지 궁금하시면 "도와줘"라고 입력해주세요.
 
-그리고 사용자 입력을 기다립니다. (claude code TUI 자체 입력 bar 활용)
+  그리고 사용자 입력을 기다립니다. (claude code TUI 자체 입력 bar 활용)
 
 ---
 

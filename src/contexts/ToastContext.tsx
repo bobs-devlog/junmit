@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useMemo } from "react";
 import type { ReactNode } from "react";
 import Toast from "@/components/Toast";
-import type { ToastApi, ToastData, ToastType } from "@/types";
+import type { ToastApi, ToastData, ToastOptions, ToastType } from "@/types";
 
 const ToastContext = createContext<ToastApi | null>(null);
 
@@ -13,9 +13,9 @@ export function ToastProvider({ children }: ToastProviderProps) {
   // toast: null | { message, type, duration, id }
   const [toast, setToast] = useState<ToastData | null>(null);
 
-  const show = useCallback((message: string, type: ToastType = "info", duration?: number) => {
+  const show = useCallback((message: string, type: ToastType = "info", opts?: ToastOptions) => {
     if (!message) return;
-    setToast({ message, type, duration, id: Date.now() });
+    setToast({ message, type, ...opts, id: Date.now() });
   }, []);
 
   const dismiss = useCallback(() => setToast(null), []);
@@ -25,9 +25,9 @@ export function ToastProvider({ children }: ToastProviderProps) {
     () => ({
       show,
       dismiss,
-      success: (msg: string, duration?: number) => show(msg, "success", duration),
-      error: (msg: string, duration?: number) => show(msg, "error", duration),
-      info: (msg: string, duration?: number) => show(msg, "info", duration),
+      success: (msg: string, opts?: ToastOptions) => show(msg, "success", opts),
+      error: (msg: string, opts?: ToastOptions) => show(msg, "error", opts),
+      info: (msg: string, opts?: ToastOptions) => show(msg, "info", opts),
     }),
     [show, dismiss]
   );

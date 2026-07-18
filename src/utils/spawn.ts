@@ -27,48 +27,62 @@ function envPrefix(appDir: string | null, sessionDir: string | null, signalDir: 
   );
 }
 
+// 초기 프롬프트 인자를 bash -c 명령줄에 싣기 위한 single-quote 이스케이프.
+// 사용자 자유 텍스트(추가 요청 입력 선행)가 프롬프트에 병기되므로 큰따옴표 보간은
+// $·`·\·" 확장/인젝션에 열려 있어 금지 — 프롬프트 인자는 전부 이걸 통과시킨다.
+function shellQuote(text: string): string {
+  return `'${text.replace(/'/g, `'\\''`)}'`;
+}
+
 export function buildClaudeCommand(
   appDir: string | null,
   slashCommand: string,
   sessionDir: string | null,
-  signalDir: string
+  signalDir: string,
+  request?: string
 ): string {
   // CLAUDE_CODE_NO_FLICKER는 claude 전용 — exec env로 이 프로세스에만 주입.
   // CLAUDE_CONFIG_DIR: 사용자 개인 ~/.claude(전역 설정·세션 기록)와 격리된 junmit 전용 환경.
   //   Rust ensure_claude_config_dir가 준비하며 .claude.json에 cwd 신뢰가 박혀 있음.
   //   인증도 이 환경 기준. 스킬·CLAUDE.md는 cwd 기반이라 무관.
+  // request(사용자 추가 요청, /assist 입력 선행)는 슬래시 커맨드 인자로 병기 — 스킬이
+  // 인사·대기 없이 바로 처리한다.
+  const prompt = request ? `${slashCommand} ${request}` : slashCommand;
   return (
     `${envPrefix(appDir, sessionDir, signalDir)} && ` +
-    `exec env CLAUDE_CODE_NO_FLICKER=1 CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR_SH}" claude "${slashCommand}"`
+    `exec env CLAUDE_CODE_NO_FLICKER=1 CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR_SH}" claude ${shellQuote(prompt)}`
   );
 }
 
 // headless /meeting이 끝난 세션을 **같은 대화 컨텍스트로** 대화형 PTY에 다시 여는 요청
 // (/assist 진입용). headless 실행의 init 이벤트에서 캡처한 session_id(세션 디렉토리의
-// agent_session.json에 보존)를 --resume에 넘긴다. 초기 프롬프트로 "/assist"를 병기해
-// 재개 직후 곧바로 스킬이 돈다. 무효 id(격리 config의 기록 삭제 등)면 claude가
-// "No conversation found" 출력 후 즉시 종료(비파괴) — 호출자가 pty:exit에서 폴백 처리.
+// agent_session.json에 보존)를 --resume에 넘긴다. 초기 프롬프트로 "/assist {요청}"을 병기해
+// 재개 직후 곧바로 사용자 요청부터 처리한다(입력 선행 — 요청은 앱 입력창에서 이미 수집).
+// 무효 id(격리 config의 기록 삭제 등)면 claude가 "No conversation found" 출력 후 즉시
+// 종료(비파괴) — 호출자가 pty:exit에서 폴백 처리.
 export function buildClaudeResumeRequest(
   appDir: string | null,
   sessionId: string,
   sessionDir: string | null,
-  signalDir: string
+  signalDir: string,
+  request: string
 ): SpawnRequest {
   const command =
     `${envPrefix(appDir, sessionDir, signalDir)} && ` +
     `exec env CLAUDE_CODE_NO_FLICKER=1 CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR_SH}" ` +
-    `claude --resume "${sessionId}" "/assist"`;
+    `claude --resume "${sessionId}" ${shellQuote(`/assist ${request}`)}`;
   return { command: "bash", args: ["-c", command], ts: Date.now() };
 }
 
 // 슬래시 커맨드 → 자연어 스킬 트리거 (예: "/template" → "Run the template skill.").
 // codex·antigravity 공용 — 둘 다 커스텀 슬래시 커맨드가 없고 cwd의 .agents/skills를
-// description 매칭(자연어)으로 트리거한다.
+// description 매칭(자연어)으로 트리거한다. request(사용자 추가 요청)가 있으면 뒤에 병기.
 // 신규 spawn(buildCodexCommand/buildAntigravityCommand)과 살아있는 TUI 입력(pty.ts
-// sendSlashCommand)이 같은 문구를 공유.
-export function agentSkillTrigger(slashCommand: string): string {
+// sendSlashCommand·sendAssistRequest)이 같은 문구를 공유.
+export function agentSkillTrigger(slashCommand: string, request?: string): string {
   const skill = slashCommand.replace(/^\//, "");
-  return `Run the ${skill} skill.`;
+  const trigger = `Run the ${skill} skill.`;
+  return request ? `${trigger} ${request}` : trigger;
 }
 
 // buildClaudeResumeRequest의 codex판 — thread_id(agent_session.json 보존값)로 대화형 resume.
@@ -79,12 +93,13 @@ export function buildCodexResumeRequest(
   appDir: string | null,
   sessionId: string,
   sessionDir: string | null,
-  signalDir: string
+  signalDir: string,
+  request: string
 ): SpawnRequest {
   const command =
     `${envPrefix(appDir, sessionDir, signalDir)} && ` +
     `exec env CODEX_HOME="${CODEX_HOME_SH}" codex resume --sandbox workspace-write ` +
-    `--add-dir "${APP_DATA_DIR_SH}" -a never "${sessionId}" "${agentSkillTrigger("/assist")}"`;
+    `--add-dir "${APP_DATA_DIR_SH}" -a never "${sessionId}" ${shellQuote(agentSkillTrigger("/assist", request))}`;
   return { command: "bash", args: ["-c", command], ts: Date.now() };
 }
 
@@ -93,14 +108,15 @@ export function buildCodexCommand(
   appDir: string | null,
   slashCommand: string,
   sessionDir: string | null,
-  signalDir: string
+  signalDir: string,
+  request?: string
 ): string {
   // --add-dir: 신호 디렉토리·staging이 cwd 밖(app.junmit)이라 샌드박스 쓰기 루트로 추가. danger-full-access 회피.
   // CODEX_HOME: 사용자 개인 ~/.codex(플러그인·hooks·기록)와 격리된 junmit 전용 home.
   //   Rust ensure_codex_home가 생성한다. 인증도 이 home 기준.
   return (
     `${envPrefix(appDir, sessionDir, signalDir)} && ` +
-    `exec env CODEX_HOME="${CODEX_HOME_SH}" codex --sandbox workspace-write --add-dir "${APP_DATA_DIR_SH}" -a never "${agentSkillTrigger(slashCommand)}"`
+    `exec env CODEX_HOME="${CODEX_HOME_SH}" codex --sandbox workspace-write --add-dir "${APP_DATA_DIR_SH}" -a never ${shellQuote(agentSkillTrigger(slashCommand, request))}`
   );
 }
 
@@ -123,12 +139,13 @@ export function buildAntigravityCommand(
   appDir: string | null,
   slashCommand: string,
   sessionDir: string | null,
-  signalDir: string
+  signalDir: string,
+  request?: string
 ): string {
   return (
     `${envPrefix(appDir, sessionDir, signalDir)} && ` +
     `exec "${AGY_BIN_SH}" --dangerously-skip-permissions --add-dir "${APP_DATA_DIR_SH}" ` +
-    `-i "${agentSkillTrigger(slashCommand)}"`
+    `-i ${shellQuote(agentSkillTrigger(slashCommand, request))}`
   );
 }
 
@@ -142,7 +159,8 @@ export function buildCommand(
   appDir: string | null,
   slashCommand: string,
   sessionDir: string | null,
-  signalDir: string
+  signalDir: string,
+  request?: string
 ): string {
   if (cli === "mlx") {
     throw new Error("로컬 AI(mlx)는 터미널 스킬을 지원하지 않습니다 (진입점 게이팅 누락)");
@@ -151,11 +169,11 @@ export function buildCommand(
   // 새 백엔드가 조용히 claude로 스폰되는 무언 폴백 사고가 된다.
   switch (cli) {
     case "codex":
-      return buildCodexCommand(appDir, slashCommand, sessionDir, signalDir);
+      return buildCodexCommand(appDir, slashCommand, sessionDir, signalDir, request);
     case "antigravity":
-      return buildAntigravityCommand(appDir, slashCommand, sessionDir, signalDir);
+      return buildAntigravityCommand(appDir, slashCommand, sessionDir, signalDir, request);
     case "claude":
-      return buildClaudeCommand(appDir, slashCommand, sessionDir, signalDir);
+      return buildClaudeCommand(appDir, slashCommand, sessionDir, signalDir, request);
   }
 }
 
@@ -164,11 +182,12 @@ export function buildSpawnRequest(
   slashCommand: string,
   sessionDir: string | null,
   signalDir: string,
-  cli: Cli = "claude"
+  cli: Cli = "claude",
+  request?: string
 ): SpawnRequest {
   return {
     command: "bash",
-    args: ["-c", buildCommand(cli, appDir, slashCommand, sessionDir, signalDir)],
+    args: ["-c", buildCommand(cli, appDir, slashCommand, sessionDir, signalDir, request)],
     ts: Date.now(),
   };
 }

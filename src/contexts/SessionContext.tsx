@@ -15,7 +15,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { loadMeetingMeta, updateMeetingMeta } from "@/utils/meetingMeta";
 import { loadMeetingNotesMd } from "@/utils/meetingNotes";
-import { killPty, sendSlashCommand } from "@/utils/pty";
+import { killPty, sendAssistRequest, sendSlashCommand } from "@/utils/pty";
 import {
   buildSpawnRequest,
   buildClaudeResumeRequest,
@@ -171,8 +171,12 @@ interface SessionContextValue {
   // 호출자가 슬래시 커맨드 명시 (예: `/meeting ${sessionDir}`).
   spawnPty: (slashCommand: string) => void;
 
-  // "AI에게 추가 요청" — 사이드바·빈 상태 UI 공통 진입점. drawer expand + (PTY 죽었으면) 자유 대화 spawn.
-  requestAi: () => Promise<void>;
+  // "AI에게 추가 요청" — 사이드바·빈 상태 UI 공통 진입점. 요청 텍스트를 먼저 받아(입력 선행)
+  // drawer expand + tier별로 실어 보낸다 (Tier 1 stdin / resume·fresh spawn 초기 프롬프트 병기).
+  requestAi: (request: string) => Promise<void>;
+  // requestAi 전송마다 bump — WorkArea→TerminalWorkspace가 터미널 focus 트리거로 소비해
+  // 폼 전송 직후 키보드 입력이 바로 터미널 입력창으로 가게 한다.
+  terminalFocusKey: number;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -221,6 +225,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // /assist resume PTY의 스폰 시각 — 직후(10초 내) pty:exit면 무효 session_id로 보고
   // agent_session.json을 비워 다음 클릭이 fresh spawn 폴백을 타게 한다(notifyPtyExit).
   const resumeSpawnAtRef = useRef<number | null>(null);
+  // 현재 살아있는 PTY 대화에서 /assist 스킬이 이미 진입했는지 — Tier 1 요청 전달 시
+  // 스킬 트리거를 최초 1회만 붙이기 위한 표식(재트리거는 스킬 재로드·재인사 중복).
+  // /assist 프롬프트로 spawn되면 true, 다른 프롬프트의 새 spawn·PTY 종료·작업 중단에서 false.
+  const assistStartedRef = useRef(false);
+  // requestAi 전송마다 bump — TerminalWorkspace가 터미널 focus 트리거로 소비.
+  const [terminalFocusKey, setTerminalFocusKey] = useState(0);
   // 자동 탭 전환 안내 배너 — Context가 소유해서 SessionViewer remount(refresh 신호 등)에도 표시 상태 유지.
   const [tabBanner, setTabBanner] = useState<string | null>(null);
   const tabBannerTimerRef = useRef<number | null>(null);
@@ -724,6 +734,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       void runHeadlessMeeting();
       return;
     }
+    assistStartedRef.current = false; // 새 PTY 대화 — /assist 진입 표식 초기화.
     setHeadlessActive(false);
     setSpawnRequest(buildSpawnRequest(appDir, `/meeting`, sessionDir, signalDir ?? "", cli));
   }, [appDir, sessionDir, signalDir, cli, runLocalMeeting, isHeadlessMeeting, runHeadlessMeeting]);
@@ -767,6 +778,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           // Tier 1 실패 → Tier 2 fallback
         }
       }
+      assistStartedRef.current = false; // 새 PTY 대화 — /assist 진입 표식 초기화.
       setHeadlessActive(false); // PTY가 새 실행 주체 — 작업 패널을 터미널로 되돌린다.
       setSpawnRequest(buildSpawnRequest(appDir, slash, sessionDir, signalDir ?? "", cli));
     },
@@ -891,6 +903,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
       resumeSpawnAtRef.current = null;
     }
+    assistStartedRef.current = false; // PTY 대화 종료 — /assist 진입 표식도 함께 소멸.
     endVerifying(); // 검증 주체가 죽었으므로 verify 신호는 오지 않는다 — 잠금 즉시 해제.
     setActivity((prev) =>
       prev === Activity.Correcting || prev === Activity.Composing ? Activity.Idle : prev
@@ -902,6 +915,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // 회의 컨텍스트(meeting/sessionDir/steps)는 건드리지 않는다 — 세션 자체는 그대로 유효.
   const abortLlmWork = useCallback(async () => {
     await cancelMeetingWork();
+    assistStartedRef.current = false; // PTY도 함께 죽음 — /assist 진입 표식 초기화.
     setSpawnRequest(null);
     setHeadlessActive(false); // 실행 주체 무효화 — 다음 실행(다른 CLI 포함)이 패널을 새로 결정.
     setCurrentStepId(null);
@@ -926,41 +940,64 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // sessionDir은 APP_SESSION_DIR env로 자동 전달 — 슬래시 커맨드 인자 공백 처리 한계 회피.
   const spawnPty = useCallback(
     (slashCommand: string) => {
+      assistStartedRef.current = false; // 새 PTY 대화 — /assist 진입 표식 초기화.
       setHeadlessActive(false);
       setSpawnRequest(buildSpawnRequest(appDir, slashCommand, sessionDir, signalDir ?? "", cli));
     },
     [appDir, sessionDir, signalDir, cli]
   );
 
-  // "AI에게 추가 요청" — 사이드바·빈 상태 UI 공통 진입점. drawer expand + /assist 스킬 호출.
-  // Tier 1 (살아있는 PTY): stdin write로 /assist 호출 — 회의록 작성 직후 PTY 잔류 상태에서
-  // 사이드바 클릭한 가장 흔한 케이스. (headless 모드에선 직전 resume PTY가 이 케이스)
+  // "AI에게 추가 요청" — 사이드바·빈 상태 UI 공통 진입점. 요청 텍스트를 **먼저 받아**(입력 선행)
+  // tier별로 실어 보낸다 — AI 기동·스킬 로드·인사를 기다렸다가 입력하던 지연 제거.
+  // 요청은 한 줄로 정리 — TUI stdin에서 줄바꿈은 조기 제출이 되고, 명령줄 병기도 한 줄이 안전.
+  // Tier 1 (살아있는 PTY): 요청을 stdin으로 전달 — 회의록 작성 직후 PTY 잔류 상태에서
+  //   사이드바 클릭한 가장 흔한 케이스. (headless 모드에선 직전 resume PTY가 이 케이스)
+  //   /assist 트리거는 PTY 대화당 최초 1회만(assistStartedRef — 재트리거는 재로드·재인사 중복).
   // Tier 1.5 (headless 모드 + PTY 없음): 보존된 세션 식별(agent_session.json)로 이어가기
-  //   PTY(claude --resume / codex resume)를 열어 **작성 대화 맥락을 이어서** /assist 진입.
-  //   id가 없거나 무효(스폰 직후 종료 → notifyPtyExit가 파일 초기화)거나 다른 CLI로 작성된
-  //   회의(타 CLI의 id는 무효)면 아래 Tier 2로 자연 폴백.
-  // Tier 2 (그 외): 새 spawn — 옛 회의 다시 열기 후 시나리오.
-  const requestAi = useCallback(async () => {
-    setDrawerOpen(true);
-    if (isHeadlessMeeting()) {
+  //   PTY(claude --resume / codex resume)를 열어 **작성 대화 맥락을 이어서** /assist 진입 —
+  //   초기 프롬프트에 요청 병기로 재개 직후 곧바로 처리. id가 없거나 무효(스폰 직후 종료 →
+  //   notifyPtyExit가 파일 초기화)거나 다른 CLI로 작성된 회의(타 CLI의 id는 무효)면
+  //   아래 Tier 2로 자연 폴백.
+  // Tier 2 (그 외): 새 spawn — 옛 회의 다시 열기 후 시나리오. 역시 초기 프롬프트에 요청 병기.
+  const requestAi = useCallback(
+    async (request: string) => {
+      const text = request.replace(/\s+/g, " ").trim();
+      if (!text) return;
+      setDrawerOpen(true);
       const alive = await invoke<boolean>("cmd_pty_is_active").catch(() => false);
-      if (!alive) {
+      if (alive) {
+        try {
+          await sendAssistRequest(text, cli, assistStartedRef.current);
+          assistStartedRef.current = true;
+          setTerminalFocusKey((k) => k + 1); // 키보드 입력이 바로 터미널로 가게 focus 이동.
+          return;
+        } catch {
+          // Tier 1 실패 → 아래 spawn 경로 폴백
+        }
+      }
+      if (isHeadlessMeeting()) {
         const dir = sessionDirRef.current;
         const stored = dir ? await readAgentSession(dir) : null;
         if (stored && stored.cli === cliRef.current) {
           resumeSpawnAtRef.current = Date.now();
+          assistStartedRef.current = true; // 초기 프롬프트가 /assist 진입을 겸함
           setHeadlessActive(false); // resume PTY가 패널 주체
           setSpawnRequest(
             stored.cli === "codex"
-              ? buildCodexResumeRequest(appDir, stored.sessionId, dir, signalDir ?? "")
-              : buildClaudeResumeRequest(appDir, stored.sessionId, dir, signalDir ?? "")
+              ? buildCodexResumeRequest(appDir, stored.sessionId, dir, signalDir ?? "", text)
+              : buildClaudeResumeRequest(appDir, stored.sessionId, dir, signalDir ?? "", text)
           );
+          setTerminalFocusKey((k) => k + 1); // 키보드 입력이 바로 터미널로 가게 focus 이동.
           return;
         }
       }
-    }
-    await runSkillTier("/assist");
-  }, [runSkillTier, isHeadlessMeeting, appDir, signalDir]);
+      assistStartedRef.current = true; // 초기 프롬프트가 /assist 진입을 겸함
+      setHeadlessActive(false); // PTY가 새 실행 주체 — 작업 패널을 터미널로 되돌린다.
+      setSpawnRequest(buildSpawnRequest(appDir, "/assist", sessionDir, signalDir ?? "", cli, text));
+      setTerminalFocusKey((k) => k + 1); // 키보드 입력이 바로 터미널로 가게 focus 이동.
+    },
+    [isHeadlessMeeting, appDir, sessionDir, signalDir, cli]
+  );
 
   // ─── Claude 작업 패널 (drawer) action ──────────────────────
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
@@ -1053,6 +1090,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       sendPtyInput,
       spawnPty,
       requestAi,
+      terminalFocusKey,
     }),
     [
       meeting,
@@ -1113,6 +1151,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       sendPtyInput,
       spawnPty,
       requestAi,
+      terminalFocusKey,
     ]
   );
 

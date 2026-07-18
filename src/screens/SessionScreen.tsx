@@ -54,6 +54,7 @@ export default function SessionScreen() {
     focusSubtab,
     clearFocusSubtab,
     requestAi,
+    terminalFocusKey,
     loginExpiredCli,
     clearLoginExpired,
     headlessActive,
@@ -225,11 +226,22 @@ export default function SessionScreen() {
     await resetSessionToDiarized();
   }, [confirm, resetSessionToDiarized]);
 
-  // "AI에게 추가 요청" — 사이드바 보조 액션·panel 빈 상태 버튼 공통 핸들러.
-  // Context가 drawer expand + (PTY 죽었으면) 자유 대화 spawn 처리.
-  const handleRequestAi = useCallback(() => {
-    void requestAi();
-  }, [requestAi]);
+  // "AI에게 추가 요청" — 사이드바 보조 액션·panel 빈 상태 폼 공통 핸들러 (입력 선행).
+  // Context가 drawer expand + 요청을 tier별로 전송(stdin/spawn 초기 프롬프트 병기) 처리.
+  // 전송 후 토스트로 터미널 직접 입력을 안내 — 첫 요청이 PTY를 띄우고 나면 터미널 입력창이
+  // 가장 빠른 경로다(폼 경유 전송에만 뜨므로 익힌 사용자에겐 자연히 안 보임). 커서도
+  // 터미널로 이동하므로(terminalFocusKey) 문구가 "그대로 입력"을 안내한다.
+  const handleRequestAi = useCallback(
+    (request: string) => {
+      void requestAi(request).then(() => {
+        toast.info("이어지는 요청은 하단 입력창에 그대로 입력하면 돼요", {
+          duration: 5000,
+          position: "aboveTerminalInput",
+        });
+      });
+    },
+    [requestAi, toast]
+  );
 
   const handleAbort = useCallback(async () => {
     const ok = await confirm({
@@ -311,6 +323,7 @@ export default function SessionScreen() {
             noSpeech={steps.no_speech}
             onForceCompose={handleForceCompose}
             onRequestAi={handleRequestAi}
+            terminalFocusKey={terminalFocusKey}
             onExit={notifyPtyExit}
             onEscape={handleEscape}
             onRetypeNotes={handleRetypeNotes}

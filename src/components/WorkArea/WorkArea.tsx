@@ -65,7 +65,10 @@ interface WorkAreaProps {
   noSpeech?: boolean;
   // escape hatch — "그래도 회의록 작성하기". 무음 빈 상태 버튼이 호출.
   onForceCompose?: () => void;
-  onRequestAi: () => void;
+  // 추가 요청 전송 (입력 선행 — EmptyState 폼이 요청 텍스트를 먼저 받아 전달).
+  onRequestAi: (request: string) => void;
+  // 추가 요청 전송마다 bump — 터미널 focus 트리거 (TerminalWorkspace로 전달).
+  terminalFocusKey?: number;
   onExit: () => void;
   // 사용자가 PTY에서 단독 Esc 누름 — Claude 응답 interrupt 의도. SessionScreen이 activity Idle 복귀 처리.
   onEscape?: () => void;
@@ -94,6 +97,7 @@ export default function WorkArea({
   noSpeech = false,
   onForceCompose,
   onRequestAi,
+  terminalFocusKey = 0,
   onExit,
   onEscape,
   onRetypeNotes,
@@ -131,6 +135,7 @@ export default function WorkArea({
       onExit={onExit}
       onEscape={onEscape}
       drawerOpen={drawerOpen}
+      focusKey={terminalFocusKey}
       onToggleDrawer={onToggleDrawer}
       panelLabel={headerLabel}
       panelDone={headerDone}

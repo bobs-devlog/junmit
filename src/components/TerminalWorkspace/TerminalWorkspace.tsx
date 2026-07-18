@@ -54,6 +54,9 @@ interface TerminalWorkspaceProps {
   showToggle?: boolean;
   /** drawer 본문을 터미널 대신 이 콘텐츠로 대체 — 로컬 AI(비-터미널 파이프라인)의 진행 패널용. */
   panelContent?: ReactNode;
+  /** 값이 바뀔 때마다 터미널에 focus — drawer가 이미 열려 있어 전환 focus가 안 도는 경우용
+   *  (예: 추가 요청 폼 전송 직후 키보드 입력이 바로 터미널로 가게). */
+  focusKey?: number;
 }
 
 export default function TerminalWorkspace({
@@ -68,6 +71,7 @@ export default function TerminalWorkspace({
   emptyState,
   showToggle = true,
   panelContent,
+  focusKey = 0,
 }: TerminalWorkspaceProps) {
   const [panelWidth, setPanelWidth] = useState<number>(loadInitialPanelWidth);
   const [isDragging, setIsDragging] = useState(false);
@@ -82,6 +86,16 @@ export default function TerminalWorkspace({
     }
     prevDrawerOpenRef.current = drawerOpen;
   }, [drawerOpen]);
+
+  // 외부 focus 트리거 — drawer가 이미 열려 있으면 위 전환 effect가 안 돌므로, 호출자가
+  // focusKey를 bump해 터미널 focus를 요청한다 (추가 요청 전송 직후 등). 첫 마운트는 제외.
+  const prevFocusKeyRef = useRef(focusKey);
+  useEffect(() => {
+    if (focusKey !== prevFocusKeyRef.current) {
+      prevFocusKeyRef.current = focusKey;
+      requestAnimationFrame(() => terminalRef.current?.focus());
+    }
+  }, [focusKey]);
 
   const onResizeHandleDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {

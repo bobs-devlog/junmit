@@ -3,19 +3,28 @@ import type { ReactNode } from "react";
 // ── Toast ────────────────────────────────────────
 export type ToastType = "success" | "error" | "info";
 
-export interface ToastData {
+// 토스트 위치 오버라이드 — 기본 위치는 type별 고정(error=상단 중앙, success/info=우하단 코너).
+// aboveTerminalInput: 우하단 코너가 터미널 입력창(composer)을 정확히 덮는 자리라, 입력창을
+// 가리켜야 하는 안내는 그 위로 띄운다.
+export type ToastPosition = "aboveTerminalInput";
+
+export interface ToastOptions {
+  duration?: number;
+  position?: ToastPosition;
+}
+
+export interface ToastData extends ToastOptions {
   message: string;
   type: ToastType;
-  duration?: number;
   id: number;
 }
 
 export interface ToastApi {
-  show: (message: string, type?: ToastType, duration?: number) => void;
+  show: (message: string, type?: ToastType, opts?: ToastOptions) => void;
   dismiss: () => void;
-  success: (msg: string, duration?: number) => void;
-  error: (msg: string, duration?: number) => void;
-  info: (msg: string, duration?: number) => void;
+  success: (msg: string, opts?: ToastOptions) => void;
+  error: (msg: string, opts?: ToastOptions) => void;
+  info: (msg: string, opts?: ToastOptions) => void;
 }
 
 // ── Confirm ──────────────────────────────────────
