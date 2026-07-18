@@ -56,14 +56,14 @@
 | `notes.json` | 녹음 중 사용자 메모 (없을 수 있음). `notes` 배열 — `{ t(경과 초), kind }`. `kind`: `speaker`(+`speaker` 이름, 화자 힌트) / `text`(+`text`, 자유 메모). `/meeting`이 화자 매핑·회의록 작성에 활용하고, 전사본 탭도 읽기 전용으로 표시(자유 메모는 앵커 발화 줄 뒤 행, 화자 힌트는 발화 줄 칩 옆 🎙 마커 — 배치 규칙은 `src/utils/recordingNotes.ts` `buildNotePlacement`) |
 | `meeting-notes.md` | 회의록 본문 (SPEAKER_XX 라벨 포함, LLM·사용자 공통 편집. 앱이 표시 시점에만 이름 치환) |
 | `speaker_mapping.json` | 화자 이름 매핑 (사용자 수정 가능, 단일 진실 원천) |
-| `headless.jsonl` | headless 실행 시에만 — claude `-p` stream-json 원문(진단용. pipeline.log엔 result·stderr 요약만) |
-| `claude_session.json` | headless 실행 시에만 — claude 대화 session_id. `/assist`가 `--resume`으로 작성 대화 맥락을 이어가는 재료(무효 id로 즉시 종료 시 앱이 비움 → fresh 폴백) |
+| `headless.jsonl` | headless 실행 시에만 — 스트림 JSONL 원문(claude `-p` stream-json / codex `exec --json`. 진단용. pipeline.log엔 최종 판정·stderr 요약만) |
+| `agent_session.json` | headless 실행 시에만 — 작성 대화 식별 `{cli, session_id}`. `/assist`가 이어가기(claude `--resume` / codex `resume`)로 작성 대화 맥락을 이어가는 재료(무효 id로 즉시 종료 시 앱이 비움, 현재 CLI와 다르면 무시 → fresh 폴백) |
 
 ## 워크플로우
 
 ### 1. `/meeting {session_dir}` — 회의록 작성
 
-> **headless A/B (검증 중, 2026-07-15~):** `headless_meeting` 센티넬(`~/Library/Application Support/app.junmit/headless_meeting`, 존재만 체크, 매 진입 재평가)이 있으면 **claude 한정** `/meeting`을 PTY 대신 Rust `cmd_run_headless_meeting`(`claude -p "/meeting" --output-format stream-json --verbose --permission-mode bypassPermissions`, 일반 서브프로세스)으로 실행. 진행은 `headless:event` → AgentProgressPanel(앱 상태 기반 결정론 상태 라인 + sub-agent·결과 요약의 평평한 로그 — 모델 출력에서 단계를 추론하지 않음, 파서는 `src/utils/headless.ts` 단일 지점), 완료/실패 신호·검증 잠금·알림은 기존 신호 파일 경로 무변경. `/assist`는 보존된 session_id로 `claude --resume` PTY 재진입(대화 맥락 유지). codex(`codex exec --json`)는 2차, antigravity는 headless 미성숙(JSON 스트림 부재·resume id 미노출)으로 PTY 유지. 안정화 후 headless 기본 확정 + 센티넬 제거 예정.
+> **headless A/B (검증 중, 2026-07-15~):** `headless_meeting` 센티넬(`~/Library/Application Support/app.junmit/headless_meeting`, 존재만 체크, 매 진입 재평가)이 있으면 **claude·codex** `/meeting`을 PTY 대신 Rust `cmd_run_headless_meeting`(claude=`claude -p "/meeting" --output-format stream-json --verbose --permission-mode bypassPermissions` / codex=`codex exec --json --skip-git-repo-check --sandbox workspace-write --add-dir <app_data_dir> "Run the meeting skill."`, 일반 서브프로세스·stdin 닫음)으로 실행. 진행은 `headless:event` → AgentProgressPanel(앱 상태 기반 결정론 상태 라인 + sub-agent·결과 요약의 평평한 로그 — 모델 출력에서 단계를 추론하지 않음, 파서는 `src/utils/headless.ts` 단일 지점이 두 스키마를 모두 해석). **codex 스트림은 sub-agent 시작(spawn)을 노출하지 않아**(0.144.5 실측) per-agent 행 없이 요약 텍스트만 — collab wait 이벤트는 상태 카드 전환 신호로만 사용. 완료/실패 신호·검증 잠금·알림은 기존 신호 파일 경로 무변경. `/assist`는 보존된 `{cli, session_id}`로 이어가기 PTY 재진입(claude `--resume` / codex `resume` — 대화 맥락 유지). antigravity는 headless 미성숙(JSON 스트림 부재·resume id 미노출)으로 PTY 유지. 안정화 후 headless 기본 확정 + 센티넬 제거 예정.
 1. 화자 라벨 교정 + 화자 매핑 (transcript.txt → transcript_corrected.txt). **전사본 교정(기본; `detailed_correction`이 false가 아니면)이 켜져 있으면 전사 텍스트 교정(text-correction)도 병렬 수행** — 모든 sub-agent를 기다려 교정 완성본을 만든 뒤 진행. 완료 시점부터 앱이 화자 매핑 편집 허용
 2. 화자 식별 + 회의 내용 파악
 3. 회의 유형 결정 (`meeting.json`의 `type` 필드. `auto`이면 1단계에서 분류 sub-agent가 병렬로 결정, 어디에도 안 맞으면 free-form)

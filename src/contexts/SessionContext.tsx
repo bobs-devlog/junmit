@@ -16,12 +16,17 @@ import { listen } from "@tauri-apps/api/event";
 import { loadMeetingMeta, updateMeetingMeta } from "@/utils/meetingMeta";
 import { loadMeetingNotesMd } from "@/utils/meetingNotes";
 import { killPty, sendSlashCommand } from "@/utils/pty";
-import { buildSpawnRequest, buildClaudeResumeRequest } from "@/utils/spawn";
+import {
+  buildSpawnRequest,
+  buildClaudeResumeRequest,
+  buildCodexResumeRequest,
+} from "@/utils/spawn";
 import {
   cancelMeetingWork,
-  clearClaudeSessionId,
+  clearAgentSession,
   parseHeadlessLine,
-  readClaudeSessionId,
+  readAgentSession,
+  writeAgentSession,
 } from "@/utils/headless";
 import { track, meetingTypeCategory } from "@/utils/analytics";
 import { sendNotification } from "@/utils/notification";
@@ -214,7 +219,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   type HeadlessResult = { isError: boolean; text: string };
   const headlessResultRef = useRef<HeadlessResult | null>(null);
   // /assist resume PTY의 스폰 시각 — 직후(10초 내) pty:exit면 무효 session_id로 보고
-  // claude_session.json을 비워 다음 클릭이 fresh spawn 폴백을 타게 한다(notifyPtyExit).
+  // agent_session.json을 비워 다음 클릭이 fresh spawn 폴백을 타게 한다(notifyPtyExit).
   const resumeSpawnAtRef = useRef<number | null>(null);
   // 자동 탭 전환 안내 배너 — Context가 소유해서 SessionViewer remount(refresh 신호 등)에도 표시 상태 유지.
   const [tabBanner, setTabBanner] = useState<string | null>(null);
@@ -432,9 +437,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // headless(claude -p) 스트림 소비 — 의미 해석은 parseHeadlessLine 단일 지점. 여기선 둘만:
-  // ① init의 session_id를 세션 파일(claude_session.json)로 보존 — /assist --resume 재료.
-  //    앱 재시작·옛 회의 재열기에도 이어가기가 살도록 메모리가 아닌 세션 디렉토리에 둔다.
+  // headless 스트림 소비 — 의미 해석은 parseHeadlessLine 단일 지점. 여기선 둘만:
+  // ① init의 세션 식별(cli + session_id)을 세션 파일(agent_session.json)로 보존 — /assist
+  //    이어가기 재료. 앱 재시작·옛 회의 재열기에도 이어가기가 살도록 메모리가 아닌 세션
+  //    디렉토리에 둔다.
   // ② 최종 result를 ref 보관 — runHeadlessMeeting 실패 배너에 에러 원문 병기.
   // 진행 표시는 AgentProgressPanel이 같은 이벤트를 별도 구독(관심사 분리).
   useEffect(() => {
@@ -444,13 +450,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       for (const ev of parseHeadlessLine(event.payload)) {
         if (ev.kind === "init") {
           const dir = sessionDirRef.current;
-          if (dir) {
-            void invoke("cmd_write_session_file", {
-              sessionPath: dir,
-              filename: "claude_session.json",
-              content: `${JSON.stringify({ session_id: ev.sessionId })}\n`,
-            }).catch(() => {});
-          }
+          if (dir) void writeAgentSession(dir, { cli: ev.cli, sessionId: ev.sessionId });
         } else if (ev.kind === "result") {
           headlessResultRef.current = { isError: ev.isError, text: ev.text };
         }
@@ -621,12 +621,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [sessionDir, showTabBanner]);
 
-  // headless(claude -p) 게이트 판정 — claude 한정 + 매 진입 시점 invoke(센티넬 파일 토글이
-  // 재시작 없이 즉시 반영, 캐싱 금지). codex headless(`codex exec --json`)는 별도 파서·플래그로
-  // 후속 — 확장 시 여기가 분기점.
+  // headless 게이트 판정 — claude(`claude -p`)·codex(`codex exec --json`) + 매 진입 시점
+  // invoke(센티넬 파일 토글이 재시작 없이 즉시 반영, 캐싱 금지). antigravity는 headless 미성숙
+  // (JSON 스트림 부재·resume id 미노출)으로 PTY 유지, mlx는 애초에 별도 경로(runLocalMeeting).
   const isHeadlessMeeting = useCallback(async () => {
     return (
-      cliRef.current === "claude" &&
+      (cliRef.current === "claude" || cliRef.current === "codex") &&
       (await invoke<boolean>("cmd_is_headless_meeting").catch(() => false))
     );
   }, []);
@@ -668,7 +668,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
     };
     try {
-      await invoke("cmd_run_headless_meeting", { sessionDir: dir });
+      await invoke("cmd_run_headless_meeting", { sessionDir: dir, cli: cliRef.current });
       // 신호 감시 폴링(500ms)보다 길게 기다렸다 그때도 작업 중이면 신호 유실 — 회수.
       await new Promise((r) => setTimeout(r, 800));
       recoverIfStalled();
@@ -882,13 +882,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   // PTY 명시 종료 (사용자 exit) — 정상 phase 완료는 phase_done 신호가 처리. 미완료 종료는 idle 복귀.
   const notifyPtyExit = useCallback(() => {
-    // /assist resume PTY가 스폰 직후(10초 내) 죽었다면 무효 session_id("No conversation found"
-    // 즉시 종료)로 보고 id 파일을 비운다 — 다음 클릭이 fresh spawn 폴백을 타게. 정상 사용 후
-    // 종료(한참 뒤 exit)는 id를 보존해 재클릭 시 다시 이어가기가 되게 한다.
+    // /assist resume PTY가 스폰 직후(10초 내) 죽었다면 무효 session_id(claude "No conversation
+    // found" / codex "ERROR: No saved session found" 즉시 종료)로 보고 id 파일을 비운다 —
+    // 다음 클릭이 fresh spawn 폴백을 타게. 정상 사용 후 종료(한참 뒤 exit)는 id를 보존해
+    // 재클릭 시 다시 이어가기가 되게 한다.
     if (resumeSpawnAtRef.current != null) {
       if (Date.now() - resumeSpawnAtRef.current < 10_000) {
         const dir = sessionDirRef.current;
-        if (dir) void clearClaudeSessionId(dir);
+        if (dir) void clearAgentSession(dir);
       }
       resumeSpawnAtRef.current = null;
     }
@@ -936,10 +937,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // "AI에게 추가 요청" — 사이드바·빈 상태 UI 공통 진입점. drawer expand + /assist 스킬 호출.
   // Tier 1 (살아있는 PTY): stdin write로 /assist 호출 — 회의록 작성 직후 PTY 잔류 상태에서
   // 사이드바 클릭한 가장 흔한 케이스. (headless 모드에선 직전 resume PTY가 이 케이스)
-  // Tier 1.5 (headless 모드 + PTY 없음): headless 실행이 보존한 session_id로 `claude --resume`
-  //   PTY를 열어 **작성 대화 맥락을 이어서** /assist 진입 — PTY 경로의 "작성 직후 이어서 대화"
-  //   체감을 headless에서도 보존. id가 없거나 무효(스폰 직후 종료 → notifyPtyExit가 파일 초기화)면
-  //   다음 클릭이 아래 Tier 2로 자연 폴백.
+  // Tier 1.5 (headless 모드 + PTY 없음): 보존된 세션 식별(agent_session.json)로 이어가기
+  //   PTY(claude --resume / codex resume)를 열어 **작성 대화 맥락을 이어서** /assist 진입.
+  //   id가 없거나 무효(스폰 직후 종료 → notifyPtyExit가 파일 초기화)거나 다른 CLI로 작성된
+  //   회의(타 CLI의 id는 무효)면 아래 Tier 2로 자연 폴백.
   // Tier 2 (그 외): 새 spawn — 옛 회의 다시 열기 후 시나리오.
   const requestAi = useCallback(async () => {
     setDrawerOpen(true);
@@ -947,11 +948,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const alive = await invoke<boolean>("cmd_pty_is_active").catch(() => false);
       if (!alive) {
         const dir = sessionDirRef.current;
-        const resumeId = dir ? await readClaudeSessionId(dir) : null;
-        if (resumeId) {
+        const stored = dir ? await readAgentSession(dir) : null;
+        if (stored && stored.cli === cliRef.current) {
           resumeSpawnAtRef.current = Date.now();
           setHeadlessActive(false); // resume PTY가 패널 주체
-          setSpawnRequest(buildClaudeResumeRequest(appDir, resumeId, dir, signalDir ?? ""));
+          setSpawnRequest(
+            stored.cli === "codex"
+              ? buildCodexResumeRequest(appDir, stored.sessionId, dir, signalDir ?? "")
+              : buildClaudeResumeRequest(appDir, stored.sessionId, dir, signalDir ?? "")
+          );
           return;
         }
       }

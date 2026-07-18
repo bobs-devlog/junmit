@@ -1178,8 +1178,9 @@ fn should_keep_recording() -> bool {
 }
 
 /// headless 회의록 작성 게이트(검증 기간 A/B 플래그, UI 없음). `app_data_dir/headless_meeting`
-/// 센티넬 파일이 있으면 claude의 `/meeting`을 PTY 대신 headless(`claude -p` + stream-json)로
-/// 실행한다. 매 진입 시점에 재평가되므로 파일 토글이 재시작 없이 즉시 반영된다.
+/// 센티넬 파일이 있으면 claude·codex의 `/meeting`을 PTY 대신 headless(`claude -p` + stream-json
+/// / `codex exec --json`)로 실행한다. 매 진입 시점에 재평가되므로 파일 토글이 재시작 없이 즉시
+/// 반영된다. antigravity는 headless 미성숙(JSON 스트림 부재)으로 PTY 유지 — 프론트가 게이팅.
 /// keep_recording과 같은 "존재만 체크" 패턴. 안정화 후 headless를 기본으로 확정하며 제거 예정.
 pub fn headless_meeting_enabled() -> bool {
     app_data_dir().join("headless_meeting").exists()

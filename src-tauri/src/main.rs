@@ -127,7 +127,7 @@ fn cleanup_all_children(app_handle: &tauri::AppHandle) {
         let _ = child.wait();
     }
 
-    // headless 회의록 작성 (claude -p)
+    // headless 회의록 작성 (claude -p / codex exec)
     let headless_meeting_child = {
         let state = app_handle.state::<HeadlessMeetingChild>();
         state.0.lock().ok().and_then(|mut g| g.take())
@@ -1153,17 +1153,21 @@ fn cmd_cancel_headless_meeting(state: State<HeadlessMeetingChild>) -> Result<(),
     Ok(())
 }
 
-/// headless 회의록 작성 — claude를 PTY 없이 `-p "/meeting"` + stream-json으로 실행하고
-/// stdout JSONL을 줄 단위 "headless:event"로 스트리밍(파싱은 프론트 단일 지점 담당).
-/// 완료/실패 전환은 로컬 경로와 동일하게 스킬의 신호 파일(APP_SIGNAL_DIR → app:signal)이
-/// 담당하므로 프론트 전환 로직은 기존 그대로. cmd_run_local_meeting과 같은 골격.
-/// 권한은 격리 CLAUDE_CONFIG_DIR 위에 --permission-mode bypassPermissions — auto mode는
-/// -p에서 classifier 거부 누적 시 세션이 중단될 수 있어 무인 실행에 부적합(2026-07 실측 통과).
+/// headless 회의록 작성 — 에이전트 CLI를 PTY 없이 JSONL 스트림 모드로 실행하고 stdout을
+/// 줄 단위 "headless:event"로 중계한다(파싱은 프론트 단일 지점). 완료/실패 전환은 로컬
+/// 경로와 동일하게 스킬의 신호 파일(APP_SIGNAL_DIR → app:signal)이 담당. cmd_run_local_meeting과
+/// 같은 골격.
+/// - claude: --permission-mode bypassPermissions — auto mode는 -p에서 classifier 거부 누적 시
+///   세션이 중단될 수 있어 무인 실행에 부적합(실측).
+/// - codex: exec은 승인 프롬프트 자체가 비활성이라 sandbox 플래그만. --skip-git-repo-check는
+///   release 필수 — .app/Contents/Resources는 git repo가 아니고 exec은 비-git cwd를 거부한다
+///   (config trust 베이크가 있어도 동일 거부 실측, 0.144.5 — 이 플래그가 유일한 통과 경로).
 #[tauri::command]
 async fn cmd_run_headless_meeting(
     app: tauri::AppHandle,
     state: State<'_, HeadlessMeetingChild>,
     session_dir: String,
+    cli: String,
 ) -> Result<(), String> {
     use std::fs::OpenOptions;
     use std::io::Write;
@@ -1177,8 +1181,45 @@ async fn cmd_run_headless_meeting(
         return Err("headless 회의록 작성이 이미 진행 중입니다".into());
     }
 
-    // PTY 경로는 detect_clis가 격리 config를 보장하지만 headless는 자체 보장(멱등).
-    session::ensure_claude_config_dir(&app);
+    // CLI 검증 + 격리 env 보장(headless는 detect_clis를 안 거치므로 자체 보장, 멱등) + 명령
+    // 구성 — 한 match로. 로그 파일 생성 전에 두어 미지원 CLI가 고아 헤더를 남기지 않는다.
+    // 플래그는 PTY 빌더(spawn.ts)와 정렬, 스트림 모드만 추가.
+    let mut cmd = match cli.as_str() {
+        "claude" => {
+            session::ensure_claude_config_dir(&app);
+            let mut c = Command::new("claude");
+            c.args([
+                "-p",
+                "/meeting",
+                "--output-format",
+                "stream-json",
+                "--verbose",
+                "--permission-mode",
+                "bypassPermissions",
+            ])
+            .env("CLAUDE_CONFIG_DIR", session::claude_config_dir());
+            c
+        }
+        // codex는 커스텀 슬래시 커맨드가 없어 자연어로 스킬 트리거(spawn.ts agentSkillTrigger와
+        // 동일 문구).
+        "codex" => {
+            session::ensure_codex_home(&app);
+            let mut c = Command::new("codex");
+            c.args([
+                "exec",
+                "--json",
+                "--skip-git-repo-check",
+                "--sandbox",
+                "workspace-write",
+                "--add-dir",
+            ])
+            .arg(session::app_data_dir())
+            .arg("Run the meeting skill.")
+            .env("CODEX_HOME", session::codex_home());
+            c
+        }
+        other => return Err(format!("headless 미지원 CLI: {other}")),
+    };
 
     let app_dir = session::resource_dir(&app)?.to_string_lossy().into_owned();
     let signal_dir = session::app_data_dir()
@@ -1198,7 +1239,7 @@ async fn cmd_run_headless_meeting(
         .map(|f| Arc::new(Mutex::new(f)));
     if let Some(f) = &log_file {
         let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-        let _ = writeln!(f.lock().unwrap(), "\n=== headless-meeting @ {ts} ===");
+        let _ = writeln!(f.lock().unwrap(), "\n=== headless-meeting ({cli}) @ {ts} ===");
     }
     let jsonl_file = OpenOptions::new()
         .create(true)
@@ -1207,27 +1248,18 @@ async fn cmd_run_headless_meeting(
         .ok()
         .map(|f| Arc::new(Mutex::new(f)));
 
-    let mut cmd = Command::new("claude");
-    // PATH: claude 설치 위치(brew·npm 등)는 로그인 셸 PATH에만 있다 — PTY spawn과 동일 규약.
-    // CLAUDE_CODE_NO_FLICKER는 TUI 렌더링 전용이라 불필요.
-    cmd.args([
-        "-p",
-        "/meeting",
-        "--output-format",
-        "stream-json",
-        "--verbose",
-        "--permission-mode",
-        "bypassPermissions",
-    ])
-    .current_dir(&app_dir)
-    .env("PATH", session::get_user_shell_path())
-    .env("APP_DIR", &app_dir)
-    .env("APP_SESSION_DIR", &session_dir)
-    .env("APP_SIGNAL_DIR", &signal_dir)
-    .env("CLAUDE_CONFIG_DIR", session::claude_config_dir())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
-    .process_group(0); // 취소 시 그룹째 종료 (스킬이 띄우는 bash 손자 포함)
+    // PATH: CLI 설치 위치(brew·npm 등)는 로그인 셸 PATH에만 있다 — PTY spawn과 동일 규약.
+    // stdin은 닫는다 — codex exec은 stdin이 열려 있으면 추가 입력을 기다린다
+    // (실측 stderr "Reading additional input from stdin..."). claude -p는 무영향.
+    cmd.current_dir(&app_dir)
+        .env("PATH", session::get_user_shell_path())
+        .env("APP_DIR", &app_dir)
+        .env("APP_SESSION_DIR", &session_dir)
+        .env("APP_SIGNAL_DIR", &signal_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .process_group(0); // 취소 시 그룹째 종료 (스킬이 띄우는 bash 손자 포함)
 
     // 이중 실행 가드 + spawn + 등록을 한 lock 구간에서 — 두 호출이 동시에 spawn해
     // 서로의 child를 덮어쓰는(프로세스 누수 + wait 오귀속) 경합을 원천 차단.
@@ -1264,9 +1296,14 @@ async fn cmd_run_headless_meeting(
                     let _ = writeln!(f, "{line}");
                 }
             }
-            // 최종 result 줄은 실패 시 report_pipeline_failure의 tail 30줄 진단에 잡히도록
-            // pipeline.log에도 남긴다 (JSON 파싱 없이 substring 판정 — 계약 최소화).
-            if line.contains("\"type\":\"result\"") {
+            // 최종 판정 줄(claude=result, codex=turn.*·error)은 실패 시 report_pipeline_failure의
+            // tail 30줄 진단에 잡히도록 pipeline.log에도 남긴다 (substring 합집합 판정 —
+            // 계약 최소화, 중첩 JSON 오탐은 로그 한 줄 추가일 뿐이라 무해).
+            if line.contains("\"type\":\"result\"")
+                || line.contains("\"type\":\"turn.completed\"")
+                || line.contains("\"type\":\"turn.failed\"")
+                || line.contains("\"type\":\"error\"")
+            {
                 if let Some(f) = &log_for_stdout {
                     if let Ok(mut f) = f.lock() {
                         let _ = writeln!(f, "{line}");

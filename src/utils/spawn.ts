@@ -45,7 +45,7 @@ export function buildClaudeCommand(
 
 // headless /meeting이 끝난 세션을 **같은 대화 컨텍스트로** 대화형 PTY에 다시 여는 요청
 // (/assist 진입용). headless 실행의 init 이벤트에서 캡처한 session_id(세션 디렉토리의
-// claude_session.json에 보존)를 --resume에 넘긴다. 초기 프롬프트로 "/assist"를 병기해
+// agent_session.json에 보존)를 --resume에 넘긴다. 초기 프롬프트로 "/assist"를 병기해
 // 재개 직후 곧바로 스킬이 돈다. 무효 id(격리 config의 기록 삭제 등)면 claude가
 // "No conversation found" 출력 후 즉시 종료(비파괴) — 호출자가 pty:exit에서 폴백 처리.
 export function buildClaudeResumeRequest(
@@ -69,6 +69,23 @@ export function buildClaudeResumeRequest(
 export function agentSkillTrigger(slashCommand: string): string {
   const skill = slashCommand.replace(/^\//, "");
   return `Run the ${skill} skill.`;
+}
+
+// buildClaudeResumeRequest의 codex판 — thread_id(agent_session.json 보존값)로 대화형 resume.
+// exec으로 만든 세션도 id 명시면 정상 오픈(실측 0.144.5 — --include-non-interactive는
+// picker/--last 전용이라 불필요). 무효 id면 "ERROR: No saved session found" 즉시 종료(비파괴)
+// — 호출자가 pty:exit에서 폴백. sandbox 플래그·격리 home은 buildCodexCommand와 동일.
+export function buildCodexResumeRequest(
+  appDir: string | null,
+  sessionId: string,
+  sessionDir: string | null,
+  signalDir: string
+): SpawnRequest {
+  const command =
+    `${envPrefix(appDir, sessionDir, signalDir)} && ` +
+    `exec env CODEX_HOME="${CODEX_HOME_SH}" codex resume --sandbox workspace-write ` +
+    `--add-dir "${APP_DATA_DIR_SH}" -a never "${sessionId}" "${agentSkillTrigger("/assist")}"`;
+  return { command: "bash", args: ["-c", command], ts: Date.now() };
 }
 
 // Codex 인터랙티브(Claude와 동일하게 PTY 유지·터미널 직접 대화). cwd의 .agents/skills에서 자동 로드.
