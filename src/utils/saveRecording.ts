@@ -21,7 +21,7 @@ export async function saveRecording(
     time: meeting?.time,
     agenda: meeting?.agenda ?? "",
     source: meeting?.source ?? "manual",
-    detailedCorrection: meeting?.detailedCorrection ?? true,
+    aiPolish: meeting?.aiPolish ?? true,
     notesVerification: meeting?.notesVerification ?? true,
   });
   if (cancelGetter()) return null;

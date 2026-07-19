@@ -444,7 +444,7 @@ fn cmd_create_session(
     time: Option<String>,
     agenda: Option<String>,
     source: Option<String>,
-    detailed_correction: Option<bool>,
+    ai_polish: Option<bool>,
     notes_verification: Option<bool>,
 ) -> Result<String, String> {
     let meta = session::MeetingMeta {
@@ -455,7 +455,7 @@ fn cmd_create_session(
         attendees,
         agenda: agenda.unwrap_or_default(),
         source: source.unwrap_or_else(|| "manual".to_string()),
-        detailed_correction: detailed_correction.unwrap_or(true),
+        ai_polish: ai_polish.unwrap_or(true),
         notes_verification: notes_verification.unwrap_or(true),
         // 시스템 오디오는 항상 캡처를 시도하므로 의도를 따로 받지 않는다. 실제 캡처 결과(mic/mic+system)는
         // convert_recording이 meeting.json에 기록한다.
@@ -517,16 +517,16 @@ fn cmd_mic_level() -> f32 {
     session::mic_level()
 }
 
-/// 정밀 교정 토글의 sticky 기본값 조회 — MeetingSelector 마운트 시 초기 토글 상태 결정.
+/// AI 다듬기 토글의 sticky 기본값 조회 — MeetingSelector 마운트 시 초기 토글 상태 결정.
 #[tauri::command]
-fn cmd_get_detailed_default() -> bool {
-    session::read_detailed_default()
+fn cmd_get_polish_default() -> bool {
+    session::read_polish_default()
 }
 
-/// 정밀 교정 토글 변경 시 sticky 기본값 저장 — 다음 회의에 동일 기본값 적용.
+/// AI 다듬기 토글 변경 시 sticky 기본값 저장 — 다음 회의에 동일 기본값 적용.
 #[tauri::command]
-fn cmd_set_detailed_default(on: bool) -> Result<(), String> {
-    session::write_detailed_default(on)
+fn cmd_set_polish_default(on: bool) -> Result<(), String> {
+    session::write_polish_default(on)
 }
 
 /// 회의록 검증 토글의 sticky 기본값 조회 — MeetingSelector 마운트 시 초기 토글 상태 결정.
@@ -1744,8 +1744,8 @@ fn main() {
             cmd_stop_system_audio_capture,
             cmd_system_audio_level,
             cmd_create_session,
-            cmd_get_detailed_default,
-            cmd_set_detailed_default,
+            cmd_get_polish_default,
+            cmd_set_polish_default,
             cmd_get_verify_default,
             cmd_set_verify_default,
             cmd_get_telemetry_enabled,

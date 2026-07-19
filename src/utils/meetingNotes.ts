@@ -7,6 +7,7 @@
 // - speaker_mapping.json: 화자 → 이름 매핑의 단일 진실 원천.
 
 import { invoke } from "@tauri-apps/api/core";
+import { fallbackSpeakerLabels } from "@/utils/speakerMapping";
 
 import type { SpeakerMapping } from "@/types";
 
@@ -115,13 +116,16 @@ export function buildSpeakerNumbers(
  *
  * 입력 nullable 허용 — 호출자가 `rawNotes != null ?` 분기할 필요 없이 일관 호출 가능.
  * md가 비어있으면 빈 문자열 반환.
+ *
+ * 치환 후에도 남은 raw SPEAKER_XX는 "참석자 N"으로 폴백 — 매핑 파일 부재(AI 다듬기 OFF 등)나
+ * 매핑에 없는 화자가 본문에 있어도 내부 라벨이 사용자에게 노출되지 않게.
  */
 export function substituteNames(
   md: string | null | undefined,
   mapping: SpeakerMapping | null | undefined
 ): string {
   if (!md) return "";
-  if (!mapping) return md;
+  if (!mapping) return fallbackSpeakerLabels(md);
 
   const labels = buildSpeakerLabels(mapping);
   const sorted = Object.keys(labels).sort((a, b) => b.length - a.length);
@@ -129,5 +133,5 @@ export function substituteNames(
   for (const sp of sorted) {
     result = result.replaceAll(sp, labels[sp]);
   }
-  return result;
+  return fallbackSpeakerLabels(result);
 }

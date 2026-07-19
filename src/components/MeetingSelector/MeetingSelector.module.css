@@ -144,7 +144,39 @@
   overflow: hidden;
 }
 
-/* 정밀 교정 — 유형 칩(선택지)이 아니라 설정 행이라 카드 크롬 없이 보더리스 + 우측 스위치. */
+/* 시간·토큰 절약 섹션 공통 안내 — 섹션 라벨 바로 아래 한 줄. */
+.ms-saver-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin: 2px 0 4px;
+}
+
+/* 절약 토글 그룹 카드 — 섹션 라벨과 토글 제목의 크기·굵기가 같아 위계가 평평하므로,
+   테두리·배경·행 구분선으로 "한 섹션의 두 항목"임을 시각적으로 묶는다. */
+.ms-saver-group {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 2px 10px;
+}
+
+.ms-saver-group .ms-detailed {
+  width: 100%;
+  padding: 10px 2px;
+}
+
+.ms-saver-group .ms-detailed + .ms-detailed {
+  border-top: 1px solid var(--border);
+}
+
+/* 카드 배경(0.03)과 같은 농도의 기본 hover는 안 보이므로 카드 안에서만 한 단계 진하게. */
+.ms-saver-group .ms-detailed:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* 절약 토글 행 — 유형 칩(선택지)이 아니라 설정 행이라 카드 크롬 없이 보더리스 + 우측 스위치. */
 .ms-detailed {
   display: flex;
   align-items: center;
@@ -171,13 +203,14 @@
   min-width: 0;
 }
 
-.ms-detailed-desc {
+.ms-detailed-title {
   font-size: 13px;
+  font-weight: 600;
   color: var(--text-primary);
 }
 
-.ms-detailed-hint {
-  font-size: 11px;
+.ms-detailed-desc {
+  font-size: 12px;
   color: var(--text-secondary);
 }
 

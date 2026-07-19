@@ -369,7 +369,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             setActivity(Activity.Composing);
             setRefreshKey((k) => k + 1);
             setFocusSubtab("transcript");
-            showTabBanner("전사 교정 완료\n전사본에서 화자 이름을 확인하고 수정할 수 있어요");
+            // 배너 문구는 meeting.json 기반 분기 — AI 다듬기 OFF도 같은 신호를 보내므로
+            // (상태 전이·잠금 해제 공용) "교정 완료"라고 하면 안 한 작업을 했다고 말하게 된다.
+            const dir = sessionDirRef.current;
+            if (dir) {
+              void loadMeetingMeta(dir).then((meta) => {
+                if (sessionDirRef.current !== dir) return;
+                showTabBanner(
+                  meta?.ai_polish === false
+                    ? "회의록 작성을 시작했어요\n전사본에서 화자 이름을 확인하고 수정할 수 있어요"
+                    : "전사 교정 완료\n전사본에서 화자 이름을 확인하고 수정할 수 있어요"
+                );
+              });
+            }
           } else if (signal.step === "verify") {
             // 자기검증 종료(스킬이 결과 무관 항상 전송, phase_done 이후 Idle에서 도착) —
             // 편집 잠금 해제 + 회의록 탭(본문·영수증 칩)만 재로드. 전체 remount(refreshKey) 대신

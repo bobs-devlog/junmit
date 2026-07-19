@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import clsx from "clsx";
-import { stepsForCli } from "@/constants";
+import { visibleSteps } from "@/constants";
 import { useDialog } from "@/contexts/DialogContext";
 import { useSession } from "@/contexts/SessionContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -92,7 +92,7 @@ export default function SessionList({ onSelect }: SessionListProps) {
               </div>
               <div className={styles.slTitle}>{s.title}</div>
               <div className={styles.slSteps}>
-                {stepsForCli(cli).map((step) => (
+                {visibleSteps(cli, s.ai_polish).map((step) => (
                   <span
                     key={step.id}
                     className={clsx(styles.slStep, s.steps[step.field] && styles.done)}

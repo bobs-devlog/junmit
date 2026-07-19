@@ -293,7 +293,7 @@ export default function TranscriptEditor({
   // 교정본을 표시 중인지 여부. 교정본이 있으면 우선 사용하고, 없으면 원본을 사용한다.
   // 인라인 교정 마커/하이라이트는 교정본일 때만 의미가 있다.
   const [isCorrected, setIsCorrected] = useState(false);
-  // 전사본 교정(내부명 detailed_correction) 여부 — "전사본 교정" 배지 표기 결정. 빠른 경로(교정 끔)면 텍스트가 원문이라 미표기.
+  // 전사 텍스트 교정 여부(AI 다듬기 ON이면 포함) — "전사본 교정" 배지 표기 결정. OFF면 텍스트가 원문이라 미표기.
   const [isDetailed, setIsDetailed] = useState(false);
   const [speakerEdits, setSpeakerEdits] = useState<SpeakerEdit[]>([]);
   const [textEdits, setTextEdits] = useState<TextEdit[]>([]);
@@ -392,10 +392,9 @@ export default function TranscriptEditor({
       const corrected = !!correctedText;
 
       setIsCorrected(corrected);
-      // 정밀 = detailed_correction(신규 의도) 또는 text_edits 존재(기능 이전 기존 세션) 둘 중 하나.
-      setIsDetailed(
-        corrected && (loadedMeta?.detailed_correction === true || loadedTextEdits.length > 0)
-      );
+      // "전사본 교정" 배지 = AI 다듬기 ON(텍스트 교정 포함). ai_polish는 신규 세션에 항상 명시되므로
+      // 명시 true만 인정(부재=ON 폴백은 여기서 안 씀 — OFF 세션이 배지를 달지 않게).
+      setIsDetailed(corrected && loadedMeta?.ai_polish === true);
       if (text) {
         setLines(text.split("\n").map(parseLine));
       }

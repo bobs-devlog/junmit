@@ -19,7 +19,7 @@ export const Activity = {
   Recording: "recording", // 녹음 중
   Saving: "saving", // 스테이징 wav → 16k wav 변환·믹스
   Processing: "processing", // 전사 + 화자분리
-  Correcting: "correcting", // LLM 후보정 (화자 라벨 교정·이름 매칭 + 전사본 교정 켬 시 텍스트 교정)
+  Correcting: "correcting", // LLM 후보정 (화자 구분 교정·이름 매칭·전사 교정. AI 다듬기 OFF면 correct 신호까지의 짧은 준비 구간)
   Composing: "composing", // LLM 회의록 작성 (자기검증은 phase_done 후 Idle에서 진행 — isVerifying이 별도 추적, 결과는 검증 영수증 칩)
 } as const;
 
@@ -80,7 +80,7 @@ export const STEPS: ReadonlyArray<StepInfo> = [
   {
     id: Step.Correct,
     label: "AI 다듬기",
-    description: "화자 라벨 정리 + 이름 매칭 + 교정 ON시 전사 교정",
+    description: "화자 구분 교정 + 이름 매칭 + 전사 교정 (AI 다듬기 OFF면 단계 자체가 숨음)",
     icon: "✏️",
     field: "corrected",
   },
@@ -123,12 +123,12 @@ export type LocalModelId = typeof LOCAL_MODEL_STANDARD | typeof LOCAL_MODEL_HIGH
 export const isLocalModelId = (m: string): m is LocalModelId =>
   m === LOCAL_MODEL_STANDARD || m === LOCAL_MODEL_HIGH;
 
-// 백엔드별 표시 단계 — mlx는 AI 다듬기(Correct) 단계가 존재하지 않으므로 stepper·기록
-// 카드에서 숨긴다 (영원히 pending인 단계를 보여주지 않기).
-const LOCAL_STEPS: ReadonlyArray<StepInfo> = STEPS.filter((s) => s.id !== Step.Correct);
+// AI 다듬기(Correct) 단계가 없는 표시 단계 — mlx(단계 자체가 없음)와 AI 다듬기 OFF 세션이 공유.
+// 영원히 pending인 단계를 stepper·기록 카드에 보여주지 않기.
+const STEPS_WITHOUT_CORRECT: ReadonlyArray<StepInfo> = STEPS.filter((s) => s.id !== Step.Correct);
 
-export function stepsForCli(cli: Cli): ReadonlyArray<StepInfo> {
-  return cliHasAgent(cli) ? STEPS : LOCAL_STEPS;
+export function visibleSteps(cli: Cli, aiPolish: boolean): ReadonlyArray<StepInfo> {
+  return cliHasAgent(cli) && aiPolish ? STEPS : STEPS_WITHOUT_CORRECT;
 }
 
 export function stepIndexById(id: StepId): number {

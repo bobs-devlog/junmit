@@ -90,12 +90,13 @@ Codex 도구명 표기입니다 — 자신이 어느 CLI인지에 따라 아래 
   않았으므로 spawn 인자로 사용하지 않습니다.
 - **병렬 spawn 지시**: 서로 다른 출력 파일만 쓰는 독립 작업은 같은 응답에서
   하위 에이전트를 모두 생성하고, 모두 끝날 때까지 기다린 뒤 결과를 종합하세요. `/meeting`
-  1단계의 하위 에이전트 수는 **meeting.json의 detailed_correction + type에 따라** 갈립니다 —
-  `detailed_correction: false`(전사본 교정 끔)면 speaker-label-correction·speaker-mapping
-  **기본 2개**, 그 외(`true` 또는 없음, **기본=교정 포함**)면 text-correction까지 **기본 3개**를
-  반드시 병렬로 시작합니다 (SKILL.md "전사본 교정 여부 확인" 참고). **추가로 `type`이
-  `auto`이거나 비어있으면** meeting-type-classification 하위 에이전트도 **함께 병렬 spawn**해
-  회의 유형을 후보정과 동시에 결정합니다. 이 에이전트는 파일을 쓰지 않고 결정을
+  1단계의 하위 에이전트 수는 **meeting.json의 ai_polish + type에 따라** 갈립니다 —
+  `ai_polish: false`(AI 다듬기 끔)면 하위 에이전트를 **하나도 만들지 않고** 메인이 원본
+  전사로 곧장 진행하고(SKILL.md "AI 다듬기 여부 확인"의 OFF 절차 — 화자 힌트 반영·완료
+  신호 포함), 그 외(`true` 또는 없음, **기본=다듬기 포함**)면 speaker-label-correction·
+  speaker-mapping·text-correction **기본 3개**를 반드시 병렬로 시작합니다. **추가로 `type`이
+  `auto`이거나 비어있으면**(다듬기 ON에서만) meeting-type-classification 하위 에이전트도
+  **함께 병렬 spawn**해 회의 유형을 후보정과 동시에 결정합니다. 이 에이전트는 파일을 쓰지 않고 결정을
   `TYPE_DECISION:` 형식으로 보고하며, 메인이 1단계 종료 후 meeting.json.type에
   반영합니다 (SKILL.md "유형 분류 필요 여부 확인" 참고). 6단계 자기검증의
   notes-verification 2개도 같은 방식(병렬 생성 → 모두 대기 → 보고 종합)입니다.

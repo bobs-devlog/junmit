@@ -119,9 +119,10 @@ export interface Meeting {
   agenda?: string;
   // "calendar" | "manual" — 회의 정보 출처.
   source?: "calendar" | "manual";
-  // 전사본 교정(내부명 detailed_correction) 여부 — 녹음 시작 설정의 토글. true면 /meeting Phase-1이
-  // 전사 텍스트 교정까지 수행(느리지만 전사본이 깔끔). 기본 true(opt-out — 끄면 빠른 경로).
-  detailedCorrection?: boolean;
+  // AI 다듬기(내부명 ai_polish) 여부 — 녹음 시작 설정의 토글. false면 /meeting이 1단계
+  // sub-agent(화자 라벨 교정·화자 매핑·전사 텍스트 교정)를 전부 생략하고 원본 전사로 바로 작성.
+  // 기본 true(opt-out — 끄면 시간·토큰 절약, 화자 귀속 품질 하락).
+  aiPolish?: boolean;
   // 회의록 검증(notes_verification) 여부 — 녹음 시작 설정의 토글. false면 /meeting이 검증 단계를
   // 건너뛰고 곧장 완료(2~4분 빠름·토큰 절약). 기본 true(opt-out).
   notesVerification?: boolean;
@@ -162,8 +163,9 @@ export interface MeetingMeta {
   attendees: string[];
   agenda: string;
   source: "calendar" | "manual";
-  // 전사본 교정(detailed_correction) 여부 — true면 전사 텍스트까지 교정됨(전사본 탭 "전사본 교정" 배지 분기에 사용).
-  detailed_correction?: boolean;
+  // AI 다듬기 여부 — false면 1단계 다듬기 sub-agent 전부 생략(원본 전사로 작성). 부재=ON(기본).
+  // 전사본 탭 "전사본 교정" 배지 분기에도 사용(ON이면 텍스트 교정 포함).
+  ai_polish?: boolean;
   // 회의록 검증 여부 — false면 /meeting이 검증 단계를 건너뜀. 옛 세션엔 없으며 부재=검증(기본 ON).
   notes_verification?: boolean;
   // 녹음 캡처 모드 — "mic"(마이크만) | "mic+system"(시스템 오디오 포함). 부재=마이크만.
@@ -200,6 +202,8 @@ export interface Session {
   title: string;
   date: string;
   time: string;
+  /** AI 다듬기 여부(meeting.json ai_polish, 부재=ON) — 기록 카드 stepper의 다듬기 단계 노출 결정. */
+  ai_polish: boolean;
   steps: SessionSteps;
   [key: string]: unknown;
 }

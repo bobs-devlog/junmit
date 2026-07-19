@@ -236,30 +236,30 @@ pub fn write_active_cli(cli: &str) -> Result<(), String> {
     fs::write(&path, cli).map_err(|e| format!("active_cli 쓰기 실패: {e}"))
 }
 
-/// 정밀 교정 토글의 sticky 기본값 — MeetingSelector가 마지막 선택을 기억해 다음 회의에 깔아둔다.
-/// per-meeting 실제 값은 meeting.json의 detailed_correction에 기록되고, 이 파일은 UI 기본값일 뿐.
-/// **"0"=OFF(빠름, 사용자가 끔), 그 외/부재=ON(정밀, 기본 opt-out).**
-fn detailed_correction_default_path() -> PathBuf {
-    app_data_dir().join("detailed_correction")
+/// AI 다듬기 토글의 sticky 기본값 — MeetingSelector가 마지막 선택을 기억해 다음 회의에 깔아둔다.
+/// per-meeting 실제 값은 meeting.json의 ai_polish에 기록되고, 이 파일은 UI 기본값일 뿐.
+/// **"0"=OFF(1단계 sub-agent 전부 생략 — 원본 전사로 바로 작성), 그 외/부재=ON(다듬기, 기본 opt-out).**
+fn ai_polish_default_path() -> PathBuf {
+    app_data_dir().join("ai_polish")
 }
 
-pub fn read_detailed_default() -> bool {
-    // 기본값 = 정밀(true, opt-out). 사용자가 명시적으로 끈 경우("0")만 false. 부재(신규)·그 외는 정밀.
-    fs::read_to_string(detailed_correction_default_path())
+pub fn read_polish_default() -> bool {
+    // 기본값 = 다듬기(true, opt-out). 사용자가 명시적으로 끈 경우("0")만 false. 부재(신규)·그 외는 다듬기.
+    fs::read_to_string(ai_polish_default_path())
         .map(|s| s.trim() != "0")
         .unwrap_or(true)
 }
 
-pub fn write_detailed_default(on: bool) -> Result<(), String> {
-    let path = detailed_correction_default_path();
+pub fn write_polish_default(on: bool) -> Result<(), String> {
+    let path = ai_polish_default_path();
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
     fs::write(&path, if on { "1" } else { "0" })
-        .map_err(|e| format!("detailed_correction 기본값 쓰기 실패: {e}"))
+        .map_err(|e| format!("ai_polish 기본값 쓰기 실패: {e}"))
 }
 
-/// 회의록 검증 토글의 sticky 기본값 — 전사본 교정(detailed_correction)과 동일 패턴.
+/// 회의록 검증 토글의 sticky 기본값 — AI 다듬기(ai_polish)와 동일 패턴.
 /// per-meeting 실제 값은 meeting.json의 notes_verification에 기록되고, 이 파일은 UI 기본값일 뿐.
 /// **"0"=OFF(빠름, 사용자가 끔), 그 외/부재=ON(검증, 기본 opt-out).**
 fn notes_verification_default_path() -> PathBuf {
@@ -1378,6 +1378,11 @@ pub fn mic_level() -> f32 {
     unsafe { native_mic_level() }
 }
 
+/// serde `default = "default_true"`용 — 부재=ON(opt-out 토글)인 bool 필드에 사용.
+fn default_true() -> bool {
+    true
+}
+
 /// 세션 메타데이터의 단일 진실 원천 (`meeting.json`).
 /// `time`은 캘린더 이벤트일 때만 채워진다.
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -1390,11 +1395,12 @@ pub struct MeetingMeta {
     pub attendees: Vec<String>,
     pub agenda: String,
     pub source: String,
-    /// 전사본 교정(text-correction) 여부 — 녹음 시작 설정의 토글값(**기본 ON, opt-out**). true면
-    /// `/meeting` 1단계가 text-correction까지 병렬 수행해 전사본을 교정(회의록 품질과는 무관 — 실측),
-    /// false면 생략. 신규 세션은 항상 명시 기록. 옛 meeting.json엔 없으며, 스킬은 "없음=ON(기본)"으로 해석.
-    #[serde(default)]
-    pub detailed_correction: bool,
+    /// AI 다듬기 여부 — 녹음 시작 설정의 토글값(**기본 ON, opt-out**). false면 `/meeting` 1단계
+    /// sub-agent(화자 라벨 교정·화자 매핑·전사 텍스트 교정)를 전부 생략하고 원본 전사로 바로 작성
+    /// (시간·토큰 절약, 화자 귀속 품질은 하락). 신규 세션은 항상 명시 기록. 필드가 없으면
+    /// 부재=ON으로 해석 — serde 기본도 동일해야 함.
+    #[serde(default = "default_true")]
+    pub ai_polish: bool,
     /// 회의록 검증(자기검증) 여부 — 녹음 시작 설정의 토글값(**기본 ON, opt-out**). false면 `/meeting`이
     /// 검증 단계를 건너뛰고 곧장 완료(2~4분 빠름·토큰 절약). 신규 세션은 항상 명시 기록.
     /// 옛 meeting.json엔 없으며, 스킬은 "없음=검증(기본)"으로 해석.
@@ -1437,6 +1443,16 @@ fn read_meeting_title(session_dir: &std::path::Path) -> Option<String> {
     let raw = fs::read_to_string(session_dir.join("meeting.json")).ok()?;
     let meta: MeetingMeta = serde_json::from_str(&raw).ok()?;
     Some(meta.title)
+}
+
+/// meeting.json의 ai_polish — 부재·파싱 실패 시 ON(기본). read_meeting_attendees와 같은
+/// 관대한 추출(전체 구조체 역직렬화에 기대지 않음 — 옛 세션·필드 드리프트 내성).
+fn read_meeting_ai_polish(session_dir: &std::path::Path) -> bool {
+    fs::read_to_string(session_dir.join("meeting.json"))
+        .ok()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        .and_then(|v| v.get("ai_polish").and_then(|b| b.as_bool()))
+        .unwrap_or(true)
 }
 
 /// meeting.json의 attendees 배열 (파일 없음·파싱 실패·필드 누락 시 빈 벡터).
@@ -2015,6 +2031,9 @@ pub struct ResumableSession {
     pub title: String,
     pub date: String,
     pub time: String,
+    /// AI 다듬기 여부(meeting.json `ai_polish`, 부재=ON) — 기록 카드 stepper에서
+    /// 다듬기 단계 노출을 가름. false 세션은 corrected 미완이어도 "미완" 오해가 없어야 함.
+    pub ai_polish: bool,
     pub steps: SessionSteps,
 }
 
@@ -2088,6 +2107,7 @@ pub fn find_resumable_sessions() -> Result<Vec<ResumableSession>, String> {
             title,
             date,
             time,
+            ai_polish: read_meeting_ai_polish(&path),
             steps,
         });
     }

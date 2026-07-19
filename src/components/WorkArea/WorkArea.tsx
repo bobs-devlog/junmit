@@ -9,10 +9,13 @@ import styles from "./WorkArea.module.css";
 
 // Activity별 panel 헤더 라벨 — "검은 화면 영문 TUI"를 "AI 작업 진행 표시기"로 재맥락화.
 // "Claude" 같은 LLM 제품명 노출은 미래 다른 모델 확장 + 일반 사용자 친화 양쪽 다 부적합 → "AI"로 통일.
-function panelLabelFor(activity: Activity): string {
+// AI 다듬기 OFF의 Correcting은 다듬기가 아니라 회의 정보 확인 구간이라 "다듬는 중"이 거짓.
+function panelLabelFor(activity: Activity, polishEnabled: boolean): string {
   switch (activity) {
     case Activity.Correcting:
-      return "AI가 회의 내용을 다듬는 중입니다";
+      return polishEnabled
+        ? "AI가 회의 내용을 다듬는 중입니다"
+        : "AI가 회의 정보를 확인하는 중입니다";
     case Activity.Composing:
       return "AI가 회의록을 작성하는 중입니다";
     default:
@@ -59,8 +62,11 @@ interface WorkAreaProps {
   // headless(claude -p) 실행 중/직후 — 터미널 대신 구조화 진행 패널(headless:event 스트림) 표시.
   // localBackend와 배타적이진 않지만(둘 다 진행 패널) headless가 우선 — SessionContext가 관리.
   headlessBackend?: boolean;
-  // 회의록 검증 토글(meeting.json notes_verification, 기본 ON) — 진행 패널의 단계 분모(3/4) 결정.
+  // 회의록 검증 토글(meeting.json notes_verification, 기본 ON) — 진행 패널의 단계 분모 결정.
   verifyEnabled?: boolean;
+  // AI 다듬기 토글(meeting.json ai_polish, 기본 ON) — 진행 패널의 다듬기 단계 유무 결정.
+  // OFF면 Correcting 동안에도 준비 단계로 표시(다듬기 단계 자체가 없음).
+  polishEnabled?: boolean;
   // 무음("발화 없음")으로 diarize·회의록을 건너뛴 세션 — SessionViewer가 전용 빈 상태 표시.
   noSpeech?: boolean;
   // escape hatch — "그래도 회의록 작성하기". 무음 빈 상태 버튼이 호출.
@@ -94,6 +100,7 @@ export default function WorkArea({
   localBackend = false,
   headlessBackend = false,
   verifyEnabled = true,
+  polishEnabled = true,
   noSpeech = false,
   onForceCompose,
   onRequestAi,
@@ -118,7 +125,7 @@ export default function WorkArea({
       ? "AI가 회의록을 검증하는 중입니다"
       : completedActivity !== null
         ? doneLabelFor(completedActivity)
-        : panelLabelFor(activity));
+        : panelLabelFor(activity, polishEnabled));
   const headerDone = effectiveOverride == null && !isVerifying && completedActivity !== null;
 
   const emptyState = (
@@ -148,6 +155,7 @@ export default function WorkArea({
             activity={activity}
             verifying={isVerifying}
             verifyEnabled={verifyEnabled}
+            polishEnabled={polishEnabled}
             emptyState={emptyState}
           />
         ) : localBackend ? (

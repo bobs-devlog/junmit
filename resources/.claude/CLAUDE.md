@@ -17,14 +17,14 @@
 
   | 내부 지침 용어 (출력 금지) | 사용자 출력 |
   |---|---|
-  | `교정 포함/미포함` / `detailed_correction` | "전사본 교정" — 굳이 안 내는 게 기본 |
+  | `다듬기 포함/OFF` / `ai_polish` | "AI 다듬기" — 굳이 안 내는 게 기본 |
   | `Phase` / `Phase-1` / `1단계`·`1·2단계`·`3·4단계` 등 **단계 번호** | **출력 금지** — 진행은 `TodoWrite`로만 |
   | `transcript.txt`·`transcript_corrected.txt`·`meeting.json`·`speaker_mapping.json` 등 **모든 파일명** | 노출 금지 ("전사본"·"교정본"·"회의 정보" 등 일반어) |
   | `type=note`·`type` 필드·`auto`·`free-form` | 노출 금지 (유형은 한국어 표시 이름으로 — 가이드 frontmatter의 `label`(예: "일반 회의"·"리뷰"), free-form은 "자유 형식") |
   | `sub-agent` / `spawn` / `sidecar` / `sentinel` | "AI 다듬기"·"AI가 정리"처럼 사용자 시점 표현 |
   | `TYPE_DECISION` / `_quality_warning` 등 코드 식별자 | 노출 금지 |
 
-  - ❌ 출력 예: `"Let me set up progress tracking and begin Phase 1. (no transcript_corrected.txt), 정밀 경로 (detailed_correction: true), type=note (분류 sub-agent 불필요)."`
+  - ❌ 출력 예: `"Let me set up progress tracking and begin Phase 1. (no transcript_corrected.txt), 정밀 경로 (ai_polish: true), type=note (분류 sub-agent 불필요)."`
   - ✅ 올바른 거동: **이런 메타 발화를 아예 출력하지 않는다.** 진행은 `TodoWrite`로 보이고, 첫 텍스트 출력은 결과 요약(`🎤 화자 매칭 …`)부터.
 
 - **진행 상황은 `TodoWrite`로 표시** — 초기화 시점에 **첫 항목을 `in_progress`, 나머지를 `pending`**. 사용자가 어느 단계가 진행 중인지 즉시 시각적으로 확인할 수 있어야 함. 모두 pending으로 초기화한 뒤 작업이 끝나서야 마킹을 한꺼번에 업데이트하면 진행 표시 의미가 사라짐

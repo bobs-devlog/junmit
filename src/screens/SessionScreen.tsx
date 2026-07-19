@@ -63,16 +63,20 @@ export default function SessionScreen() {
   // attendees 참조 안정화 — 자식의 useEffect 의존성 배열이 매 렌더 무효화되는 것 방지.
   const attendees = useMemo<string[]>(() => meeting?.attendees ?? [], [meeting?.attendees]);
 
-  // 회의록 검증 토글 — 진행 패널의 단계 분모(검증 ON=4/OFF=3) 결정. 컨텍스트 Meeting은 기존
-  // 회의 재열기 시 이 필드를 싣지 않으므로 진실 원천(meeting.json)을 직접 읽는다. 녹음 시작
-  // 시 고정되는 설정이라 세션당 1회 로드로 충분, 부재(옛 세션)=기본 ON.
+  // AI 다듬기·회의록 검증 토글 — 진행 패널의 단계 분모(2+다듬기+검증 = 2~4)와 사이드바
+  // stepper의 다듬기 단계 노출을 결정. 컨텍스트 Meeting은 기존 회의 재열기 시 이 필드를
+  // 싣지 않으므로 진실 원천(meeting.json)을 직접 읽는다. 녹음 시작 시 고정되는 설정이라
+  // 세션당 1회 로드로 충분, 부재(옛 세션)=둘 다 기본 ON.
   const [verifyEnabled, setVerifyEnabled] = useState(true);
+  const [polishEnabled, setPolishEnabled] = useState(true);
   useEffect(() => {
     if (!sessionDir) return;
     let stale = false;
     loadMeetingMeta(sessionDir)
       .then((meta) => {
-        if (!stale) setVerifyEnabled(meta?.notes_verification !== false);
+        if (stale) return;
+        setVerifyEnabled(meta?.notes_verification !== false);
+        setPolishEnabled(meta?.ai_polish !== false);
       })
       .catch(() => {});
     return () => {
@@ -271,6 +275,7 @@ export default function SessionScreen() {
             currentStepId={currentStepId}
             isVerifying={isVerifying}
             cli={cli}
+            polishEnabled={polishEnabled}
             onAbort={handleAbort}
             onStartProcessing={handleStartProcessing}
             onResumeProcessing={handleStartProcessing}
@@ -320,6 +325,7 @@ export default function SessionScreen() {
             localBackend={!cliHasAgent(cli)}
             headlessBackend={headlessActive}
             verifyEnabled={verifyEnabled}
+            polishEnabled={polishEnabled}
             noSpeech={steps.no_speech}
             onForceCompose={handleForceCompose}
             onRequestAi={handleRequestAi}

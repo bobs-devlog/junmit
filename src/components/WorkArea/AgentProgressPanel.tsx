@@ -9,8 +9,11 @@ interface AgentProgressPanelProps {
   activity: Activity;
   // 회의록 자기검증 진행 중 — 공개(phase_done→Idle) 후에도 작업이 이어지는 구간.
   verifying?: boolean;
-  // 회의록 검증 토글(meeting.json notes_verification, 기본 ON) — 단계 분모(3/4단계) 결정.
+  // 회의록 검증 토글(meeting.json notes_verification, 기본 ON) — 검증 단계 유무 결정.
   verifyEnabled?: boolean;
+  // AI 다듬기 토글(meeting.json ai_polish, 기본 ON) — 다듬기 단계 유무 결정.
+  // 단계 분모는 2(준비·작성) + 다듬기 + 검증 = 2~4.
+  polishEnabled?: boolean;
   // 표시할 게 없고 작업 중도 아닐 때 보여줄 빈 상태 (EmptyState 재사용 — LocalProgressPanel과 동일).
   emptyState: React.ReactNode;
 }
@@ -96,31 +99,48 @@ function applySuccessResult(items: PanelItem[], resultText: string): PanelItem[]
 // 앱 상태 기반 현재 단계 상태 카드 — 모델 출력과 무관한 결정론 표시.
 // Correcting은 스폰 순간부터 켜지지만 실제 처음 수십 초는 모델이 회의 정보를 읽는 준비
 // 구간이라, 첫 sub-agent 시작(task_started — 하네스 이벤트) 전까지는 "회의 정보 확인"으로
-// 표시한다(hasAgentStarted). stageNumber는 분모(검증 ON=4/OFF=3)와 함께 총량 감각을 준다
-// (진행률 %는 총량을 모르는 LLM 작업이라 불가 — 단계 분모가 표현의 상한).
+// 표시한다(hasAgentStarted). stageNumber는 분모(2(준비·작성)+다듬기+검증 = 2~4)와 함께
+// 총량 감각을 준다 (진행률 %는 총량을 모르는 LLM 작업이라 불가 — 단계 분모가 표현의 상한).
 function phaseStatus(
   activity: Activity,
   verifying: boolean,
-  hasAgentStarted: boolean
-): { key: string; stageNumber: number; label: string; hint?: string } | null {
+  hasAgentStarted: boolean,
+  polishEnabled: boolean,
+  verifyEnabled: boolean
+): { key: string; stageNumber: number; totalStages: number; label: string; hint?: string } | null {
+  const totalStages = 2 + (polishEnabled ? 1 : 0) + (verifyEnabled ? 1 : 0);
   if (verifying) {
     return {
       key: "verify",
-      stageNumber: 4,
+      stageNumber: totalStages,
+      totalStages,
       label: "AI가 회의록을 검증하고 마무리하는 중",
       hint: "회의록은 이미 열람할 수 있어요. 전사본 탭에서 화자 이름도 확인·수정해 보세요",
     };
   }
   if (activity === Activity.Correcting) {
-    if (!hasAgentStarted) {
-      return { key: "prepare", stageNumber: 1, label: "AI가 회의 정보를 확인하는 중" };
+    // AI 다듬기 OFF면 다듬기 단계 자체가 없다 — correct 신호까지의 짧은 구간 전체를 준비로
+    // 표시하고, codex의 working 신호(보조 작업)가 다듬기 단계로 오전환하는 것도 함께 차단.
+    if (!polishEnabled || !hasAgentStarted) {
+      return {
+        key: "prepare",
+        stageNumber: 1,
+        totalStages,
+        label: "AI가 회의 정보를 확인하는 중",
+      };
     }
-    return { key: "correct", stageNumber: 2, label: "AI가 회의 내용을 다듬는 중" };
+    return {
+      key: "correct",
+      stageNumber: 2,
+      totalStages,
+      label: "AI가 회의 내용을 다듬는 중",
+    };
   }
   if (activity === Activity.Composing) {
     return {
       key: "compose",
-      stageNumber: 3,
+      stageNumber: polishEnabled ? 3 : 2,
+      totalStages,
       label: "AI가 회의록을 작성하는 중",
       hint: "그동안 전사본 탭에서 화자 이름을 확인·수정할 수 있어요",
     };
@@ -169,6 +189,7 @@ export default function AgentProgressPanel({
   activity,
   verifying = false,
   verifyEnabled = true,
+  polishEnabled = true,
   emptyState,
 }: AgentProgressPanelProps) {
   const [items, setItems] = useState<PanelItem[]>([]);
@@ -184,7 +205,7 @@ export default function AgentProgressPanel({
 
   const working = activity === Activity.Correcting || activity === Activity.Composing;
   const hasAgentStarted = workUnderway || items.some((item) => item.type === "agent");
-  const status = phaseStatus(activity, verifying, hasAgentStarted);
+  const status = phaseStatus(activity, verifying, hasAgentStarted, polishEnabled, verifyEnabled);
   const busy = status !== null;
 
   // 현재 시각 tick — busy 동안만 1초 주기(정지 상태 비용 0). 경과·하트비트 표시의 공통 기준.
@@ -297,7 +318,6 @@ export default function AgentProgressPanel({
     : status.key === "correct"
       ? "녹음 분량에 따라 몇 분 걸릴 수 있어요."
       : status.hint;
-  const totalStages = verifyEnabled ? 4 : 3;
   const silentMs = lastEventAt != null ? now - lastEventAt : 0;
   // 90초 침묵 — 하트비트의 문구·점 색(초록→amber)·맥박을 함께 낮춰 "조용함"을 일관 표현.
   const quietSilence = silentMs > 90_000;
@@ -316,7 +336,7 @@ export default function AgentProgressPanel({
               <span className={styles.statusIcon} aria-hidden="true">
                 <span className={styles.spinner} />
               </span>
-              {status.label} ({status.stageNumber}/{totalStages})
+              {status.label} ({status.stageNumber}/{status.totalStages})
               <span className={styles.elapsed}>{formatElapsed(now - phaseStartedAt)}</span>
             </div>
             {hint && <div className={styles.statusHint}>{hint}</div>}

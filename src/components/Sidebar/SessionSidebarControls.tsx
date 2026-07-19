@@ -1,6 +1,6 @@
 import { useState } from "react";
 import clsx from "clsx";
-import { Activity, Step, activityMeta, cliHasAgent, stepsForCli } from "@/constants";
+import { Activity, Step, activityMeta, cliHasAgent, visibleSteps } from "@/constants";
 import type { StepId } from "@/constants";
 import type { Cli, SessionSteps } from "@/types";
 import AssistRequestForm from "@/components/AssistRequestForm";
@@ -28,6 +28,8 @@ interface Props {
   isVerifying?: boolean;
   // 활성 백엔드 — mlx(로컬 LLM)는 에이전트·MCP가 없어 stepper 단계와 추가 요청 버튼을 게이팅.
   cli: Cli;
+  // AI 다듬기 여부(meeting.json ai_polish) — false면 stepper에서 다듬기 단계를 숨긴다(mlx와 동일 표시).
+  polishEnabled: boolean;
   // 핸들러 — 화면이 직접 closure로 작성. 사용 안 하는 것은 noop으로 받지 말고 화면이 책임지고 전달.
   onAbort: () => void; // Saving/Processing/Composing 진행 중 중단 (PTY kill + 화면 reset)
   onStartProcessing: () => void; // idle + transcribed=false
@@ -51,6 +53,7 @@ export default function SessionSidebarControls({
   currentStepId,
   isVerifying = false,
   cli,
+  polishEnabled,
   onAbort,
   onStartProcessing,
   onResumeProcessing,
@@ -63,9 +66,13 @@ export default function SessionSidebarControls({
   onGoLogin,
 }: Props) {
   // 검증 중에는 Idle의 "대기" 대신 진행 상태로 — phase_done 후에도 작업이 이어지는 중.
+  // AI 다듬기 OFF의 Correcting은 다듬기가 아니라 준비 구간이라 "AI 다듬기 중"이 거짓 —
+  // 진행 패널의 준비 문구와 정렬해 표시.
   const meta = isVerifying
     ? ({ label: "회의록 검증 중", tone: "processing" } as const)
-    : activityMeta(activity);
+    : activity === Activity.Correcting && !polishEnabled
+      ? ({ label: "회의 정보 확인 중", tone: "processing" } as const)
+      : activityMeta(activity);
   const activeStep = activeStepFor(activity, currentStepId, steps);
 
   // 자동 진행 중 (Saving/Processing/Correcting/Composing) — 중단만 노출.
@@ -86,7 +93,7 @@ export default function SessionSidebarControls({
 
         {/* Stepper — 모든 활동성에서 노출 (Recording 제외, 이건 별도 화면) */}
         <div className={styles.processSteps}>
-          {stepsForCli(cli).map((step) => {
+          {visibleSteps(cli, polishEnabled).map((step) => {
             // 회의록 step은 "작성 + 검증" — 검증 중에는 notes_written이어도 ✓ 대신 스피너.
             const verifyingThis = isVerifying && step.id === Step.Notes;
             const isDone = steps[step.field] && !verifyingThis;
