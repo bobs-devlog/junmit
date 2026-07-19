@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useSession } from "@/contexts/SessionContext";
 import { routeAfterCliSelected } from "@/utils/bootstrap";
+import { formatNumbersInText } from "@/utils/format";
 import appStyles from "@/App.module.css";
 import styles from "./SetupScreen.module.css";
 
@@ -116,7 +117,9 @@ export default function SetupScreen({ mode = "base" }: { mode?: "base" | "model"
         // 용량 진행 라인("받는 중... 3400MB / 6700MB (52%)")은 본문으로도 표시 — %만으로는
         // 대용량 구간에서 멈춘 것처럼 보인다는 피드백. 실제 받은 크기가 늘어나는 게 보이면
         // 진행 중임이 자명해진다. 말미 "(52%)"는 게이지 우측 %와 중복이라 표시에서만 제거.
-        if (line.includes("MB")) setCurrentTask(line.trim().replace(/\s*\(\d+%\)$/, ""));
+        if (line.includes("MB")) {
+          setCurrentTask(formatNumbersInText(line.trim().replace(/\s*\(\d+%\)$/, "")));
+        }
         return;
       }
 
