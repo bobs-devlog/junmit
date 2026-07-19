@@ -172,6 +172,15 @@
   line-height: 1.5;
 }
 
+/* 로그인 진행 중 안내 첫 줄 — 브라우저에 화면을 뺏겼다 돌아온 사용자가 처음 읽는 문구라
+   보조 텍스트(11px muted)보다 한 단계 승격. 폴백 안내(둘째 줄)는 muted 유지. */
+.login-progress {
+  display: block;
+  font-size: 12px;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
 /* 실행될 명령을 보여주는 인라인 코드 칩(투명성용, 복사 없음) */
 .install-cmd {
   font-family: "Geist Mono", "SF Mono", Menlo, monospace;

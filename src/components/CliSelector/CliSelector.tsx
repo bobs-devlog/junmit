@@ -153,6 +153,10 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
     label: string;
     isDone: (a: CliAvailability) => boolean;
     doneMsg: string;
+    // 어느 CLI의 어느 단계 도우미인지 — 로그인 진행 중 안내를 해당 CLI 화면에서만 띄우는 근거.
+    // helper는 화면 전환(뒤로·다른 CLI 진입)에도 정리되지 않아 존재 여부만으론 stale 판별 불가.
+    cli: Cli;
+    kind: "install" | "login";
   } | null>(null);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -222,7 +226,9 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
   // 사용자가 다음 화면으로 진행하면 자연히 정리된다.
   // detect()는 detecting을 true로 만들지 않아 배지가 "확인 중…"으로 깜빡이지 않는다.
   useEffect(() => {
-    if (helper == null || setupFor !== "antigravity") return;
+    // stale 가드: 다른 CLI의 도우미가 남아있는 채 agy 설정 화면에 들어온 경우 폴링 제외.
+    if (helper?.kind !== "login" || helper.cli !== "antigravity" || setupFor !== "antigravity")
+      return;
     if (avail?.antigravity_authed) return;
     let stopped = false;
     let inFlight = false;
@@ -253,16 +259,20 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
     };
   }, [helper, setupFor, avail?.antigravity_authed, detect, toast]);
 
-  // 도우미 실행 — 우측 터미널에 설치/로그인 명령을 띄운다.
+  // 도우미 실행 — 우측 터미널에 설치/로그인 명령을 띄운다. helper state와 같은 필드 구성
+  // (spawn만 commandLine에서 빌드) — 호출부가 필드 이름으로 읽히게 객체 인자로 받는다.
   const runHelper = useCallback(
-    (
-      commandLine: string,
-      label: string,
-      isDone: (a: CliAvailability) => boolean,
-      doneMsg: string
-    ) => {
+    (config: {
+      cli: Cli;
+      kind: "install" | "login";
+      commandLine: string;
+      label: string;
+      isDone: (a: CliAvailability) => boolean;
+      doneMsg: string;
+    }) => {
+      const { commandLine, ...helperFields } = config;
       setCollapsed(false);
-      setHelper({ spawn: buildShellRequest(commandLine), label, isDone, doneMsg });
+      setHelper({ spawn: buildShellRequest(commandLine), ...helperFields });
     },
     []
   );
@@ -525,8 +535,8 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
                         {variantReady
                           ? " 선택한 모델은 이미 설치되어 있어요."
                           : ` 모델(${chosenVariant.size})을 한 번만 내려받아요.`}{" "}
-                        녹음·전사·화자 구분·회의록 작성은 모두 동일하고, AI에게 추가
-                        요청(대화로 다듬기)은 Claude·Codex에서만 지원돼요.
+                        녹음·전사·화자 구분·회의록 작성은 모두 동일하고, AI에게 추가 요청(대화로
+                        다듬기)은 Claude·Codex에서만 지원돼요.
                       </p>
                       <div className={styles.cards}>
                         {LOCAL_VARIANTS.map((v) => {
@@ -651,12 +661,14 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
                         type="button"
                         className="btn btn-primary btn-small"
                         onClick={() =>
-                          runHelper(
-                            setupOpt.installCmd,
-                            `${setupOpt.name} 설치`,
-                            (a) => cliInstalledOf(a, setupOpt.id),
-                            `${setupOpt.name} 설치가 완료되었습니다. 이어서 로그인해주세요.`
-                          )
+                          runHelper({
+                            cli: setupOpt.id,
+                            kind: "install",
+                            commandLine: setupOpt.installCmd,
+                            label: `${setupOpt.name} 설치`,
+                            isDone: (a) => cliInstalledOf(a, setupOpt.id),
+                            doneMsg: `${setupOpt.name} 설치가 완료되었습니다. 이어서 로그인해주세요.`,
+                          })
                         }
                       >
                         설치하기
@@ -678,15 +690,20 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
                         type="button"
                         className="btn btn-primary btn-small"
                         onClick={() =>
-                          runHelper(
-                            setupOpt.loginCmd,
-                            `${setupOpt.name} 로그인`,
-                            (a) => cliAuthedOf(a, setupOpt.id),
-                            `${setupOpt.name} 로그인이 확인되었습니다.`
-                          )
+                          runHelper({
+                            cli: setupOpt.id,
+                            kind: "login",
+                            commandLine: setupOpt.loginCmd,
+                            label: `${setupOpt.name} 로그인`,
+                            isDone: (a) => cliAuthedOf(a, setupOpt.id),
+                            doneMsg: `${setupOpt.name} 로그인이 확인되었습니다.`,
+                          })
                         }
                       >
-                        로그인하기
+                        {/* claude/codex는 클릭 즉시 기본 브라우저가 열린다 — 버튼 자체가 그걸
+                            예고해 갑작스러운 브라우저 전환의 혼란을 줄인다(사전 알럿 대체).
+                            agy는 TUI 마법사가 먼저라 브라우저 시점을 약속하지 않는다. */}
+                        {setupOpt.id === "antigravity" ? "로그인하기" : "브라우저로 로그인하기"}
                       </button>
                       <div className={styles.installLabel}>
                         {setupOpt.id === "antigravity" ? (
@@ -696,21 +713,21 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
                           // 종료 조작은 요구하지 않는다 — 위 폴링 effect가 확인을 대신하며,
                           // "닫아라" 안내는 /logout 오입력 사고(계정 로그아웃)를 유발했다(실측).
                           <>
-                            우측 터미널에 {setupOpt.name}가 뜹니다. 화면의 안내에 따라 로그인과
-                            초기 설정을 마쳐주세요.
+                            우측 터미널에 {setupOpt.name}가 뜹니다. 화면의 안내에 따라 로그인과 초기
+                            설정을 마쳐주세요.
                             <br />
                             {/* 전역 설정 수정 고지 — claude/codex의 "전용 환경" 고지와 대칭.
                                 agy는 격리 환경이 없어 사용자 전역 설정에 항목을 추가하므로 알린다. */}
                             회의록 작성에 필요한 설정(작업 폴더 신뢰)은 Junmit이 {setupOpt.name}{" "}
                             설정에 자동 등록합니다.
                             <br />
-                            {helper != null ? (
+                            {helper?.kind === "login" && helper.cli === "antigravity" ? (
                               // 폴링 표시 — 상시 문구 대신 실제 확인이 도는 순간에만 스피너를
                               // 잠깐 노출(loginChecking, 최소 600ms 보장). 자리는 visibility로
                               // 유지해 레이아웃이 점프하지 않는다.
                               <>
-                                로그인이 확인되면 이 화면이 자동으로 바뀝니다. 터미널은 닫지
-                                않아도 됩니다.
+                                로그인이 확인되면 이 화면이 자동으로 바뀝니다. 터미널은 닫지 않아도
+                                됩니다.
                                 <br />
                                 <span
                                   className={clsx(
@@ -724,10 +741,22 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
                               </>
                             ) : (
                               <>
-                                로그인이 확인되면 이 화면이 자동으로 바뀝니다. 터미널은 닫지
-                                않아도 됩니다.
+                                로그인이 확인되면 이 화면이 자동으로 바뀝니다. 터미널은 닫지 않아도
+                                됩니다.
                               </>
                             )}
+                          </>
+                        ) : helper?.kind === "login" && helper.cli === setupOpt.id ? (
+                          // 로그인 진행 중 — 브라우저에 화면을 뺏겼다 돌아온 사용자가 처음 보는
+                          // 안내가 이 문구다(업계 관례의 "브라우저에서 계속" 대기 상태).
+                          // 스피너는 두지 않는다: claude/codex는 폴링이 아니라 명령 종료
+                          // (pty:exit) 시점 감지라 "확인 중" 시늉이 거짓이 된다(agy 폴링과 다름).
+                          <>
+                            <span className={styles.loginProgress}>
+                              🌐 브라우저에 로그인 화면이 열렸어요. 로그인을 마치고 이 앱으로
+                              돌아오면 자동으로 확인됩니다.
+                            </span>
+                            브라우저가 열리지 않았다면 위 버튼을 다시 눌러주세요.
                           </>
                         ) : (
                           <>
