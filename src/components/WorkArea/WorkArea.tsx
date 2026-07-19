@@ -156,6 +156,7 @@ export default function WorkArea({
             verifying={isVerifying}
             verifyEnabled={verifyEnabled}
             polishEnabled={polishEnabled}
+            completed={completedActivity !== null}
             emptyState={emptyState}
           />
         ) : localBackend ? (

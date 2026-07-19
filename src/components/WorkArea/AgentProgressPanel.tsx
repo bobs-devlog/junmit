@@ -14,6 +14,8 @@ interface AgentProgressPanelProps {
   // AI 다듬기 토글(meeting.json ai_polish, 기본 ON) — 다듬기 단계 유무 결정.
   // 단계 분모는 2(준비·작성) + 다듬기 + 검증 = 2~4.
   polishEnabled?: boolean;
+  // phase_done 정상 완료 여부 — 크래시 회수는 null(completedActivity)이라 거짓 완료 없음.
+  completed?: boolean;
   // 표시할 게 없고 작업 중도 아닐 때 보여줄 빈 상태 (EmptyState 재사용 — LocalProgressPanel과 동일).
   emptyState: React.ReactNode;
 }
@@ -190,6 +192,7 @@ export default function AgentProgressPanel({
   verifying = false,
   verifyEnabled = true,
   polishEnabled = true,
+  completed = false,
   emptyState,
 }: AgentProgressPanelProps) {
   const [items, setItems] = useState<PanelItem[]>([]);
@@ -309,7 +312,9 @@ export default function AgentProgressPanel({
     if (el) el.scrollTop = el.scrollHeight;
   }, [items]);
 
-  if (items.length === 0 && !busy) {
+  // completed면 빈 로그로 대기 — 요약이 완료 신호보다 늦게 오는 순서 역전(실측)에서 빈 상태
+  // (추가 요청 폼)가 번쩍이지 않게.
+  if (items.length === 0 && !busy && !completed) {
     return <>{emptyState}</>;
   }
 
