@@ -9,7 +9,7 @@
 
 `$SESSION_DIR/meeting.json`을 읽고 `type` 필드를 확인하세요:
 
-- **`auto` 또는 `type` 필드 없음** → 아래 "자동 판단" 절차로 적합 유형 결정 → **결정 결과를 `meeting.json.type`에 즉시 갱신** (한 번 판단된 결과 유지, 다음 재작성 시 자동 판단 반복 X). **`/meeting` 흐름에선 이 판단을 1단계의 `meeting-type-classification` sub-agent가 후보정과 병렬로 미리 수행**하므로, 메인은 그 보고의 `TYPE_DECISION:` 값을 적용만 하고 재분류하지 않습니다 (아래 "자동 판단"은 그 sub-agent가 따르는 동일 기준이자, 1단계를 skip한 경우(재작성·크래시 후 재시도로 `transcript_corrected.txt`가 이미 존재)나 명시 유형 파일이 삭제된 edge 케이스에서 메인이 인라인 fallback할 때의 절차)
+- **`auto` 또는 `type` 필드 없음** → 아래 "자동 판단" 절차로 적합 유형 결정 → **결정 결과를 `meeting.json.type`에 즉시 갱신** (한 번 판단된 결과 유지, 다음 재작성 시 자동 판단 반복 X). **`/meeting` 흐름에선 이 판단을 1단계의 `meeting-type-classification` sub-agent가 후보정과 병렬로 미리 수행**하므로, 메인은 그 보고의 `TYPE_DECISION:` 값을 적용만 하고 재분류하지 않습니다 (아래 "자동 판단"은 그 sub-agent가 따르는 동일 기준이자, 1단계를 skip한 경우(AI 다듬기 OFF(`ai_polish: false`) — 이땐 sub-agent 0개·corrected 미생성 — 또는 재작성·크래시 후 재시도로 `transcript_corrected.txt`가 이미 존재)나 명시 유형 파일이 삭제된 edge 케이스에서 메인이 인라인 fallback할 때의 절차)
 - **`free-form`** → 자동 판단 skip + 아래 "Free-form 작성" 절차 직접 적용 (templates 매칭 X)
 - **`presentation`, `note`, `review`, `retrospective`, `1on1` 또는 사용자 정의 유형명** → `~/Library/Application Support/app.junmit/templates/{type}.md`를 Read. **그 파일이 없으면**(유형이 삭제·개명됨) → `auto`처럼 자동 판단 절차로 진행 + 결정 결과로 `type` 갱신 (작성 중단 금지)
 
@@ -37,7 +37,7 @@
 
 ### 자동 판단
 
-위 디렉토리의 모든 `*.md` 파일을 순회하며 frontmatter의 `summary`(+ 선택 필드 `title_keywords`)를 수집하세요. 회의 내용(`transcript_corrected.txt` + `meeting.json`의 `agenda` 필드)과 각 summary를 매칭해 가장 적합한 유형을 결정합니다.
+위 디렉토리의 모든 `*.md` 파일을 순회하며 frontmatter의 `summary`(+ 선택 필드 `title_keywords`)를 수집하세요. 회의 내용(전사본 — `transcript_corrected.txt`, 없으면(AI 다듬기 OFF 등) `transcript.txt` — + `meeting.json`의 `agenda` 필드)과 각 summary를 매칭해 가장 적합한 유형을 결정합니다.
 
 **판단 우선순위**: **0순위 — `meeting.json`의 `title`이 정확히 한 유형의 `title_keywords`와 매칭되면 그 유형으로 확정** (로컬 AI 경로의 결정론 1단계와 동일 규칙 — 백엔드 간 유형 일관성. 단어가 실제 그 의미로 쓰인 경우만: "프리뷰"는 리뷰 매칭 아님. 복수 매칭이거나 전사 내용과 명백히 모순이면 아래로). 그다음 summary의 *의도 신호*(회의 목적·구조·사전 자료 유무)를 1순위로 보고, *발화 분포*(누가 얼마나 말했는지)는 보조 신호. 예: "한 명 70%+ 발화"는 presentation·review 모두 정상이라 단독으로 구분 신호가 아님 — `agenda`/transcript의 호명·자기소개·주제 컨텍스트로 의도를 파악하세요.
 
