@@ -129,6 +129,7 @@ export default function SessionSidebarControls({
             <IdleActions
               steps={steps}
               cli={cli}
+              verifying={isVerifying}
               onStartProcessing={onStartProcessing}
               onResumeProcessing={onResumeProcessing}
               onComposeNotes={onComposeNotes}
@@ -160,6 +161,8 @@ export default function SessionSidebarControls({
 interface IdleProps {
   steps: SessionSteps;
   cli: Cli;
+  // 회의록 자기검증 진행 중 — true면 "AI에게 추가 요청"을 노출하지 않는다(검증 종료 시점에 노출).
+  verifying: boolean;
   onStartProcessing: () => void;
   onResumeProcessing: () => void;
   onComposeNotes: () => void;
@@ -175,6 +178,7 @@ interface IdleProps {
 function IdleActions({
   steps,
   cli,
+  verifying,
   onStartProcessing,
   onResumeProcessing,
   onComposeNotes,
@@ -190,6 +194,13 @@ function IdleActions({
     // 회의록 작성이 곧 마지막 단계. 복사(내보내기)는 회의록 탭 인라인 버튼이 담당하므로
     // 사이드바엔 두지 않는다. mlx는 추가 요청(/assist)이 없어 액션 없음 = 담백한 완료 상태.
     if (!agent) return null;
+    // 검증 중엔 추가 요청 미노출 — 탭 자동 이동·완성 배너·알림과 동일하게 "완료 표시는 전부
+    // 검증 종료 시점" 원칙(상태 라벨 "회의록 검증 중"이 진행을 알린다). 구조적 이유도 있다:
+    // headless(claude·codex)는 이 시점 PTY가 없어 요청이 Tier 1.5 resume 스폰을 타는데, 검증
+    // 중인 headless 프로세스가 아직 살아 있어 같은 세션 파일(meeting-notes.md)을 두 프로세스가
+    // 동시에 쓰는 경합이 된다(PTY 시절엔 Tier 1 stdin 직렬화로 안전했던 흐름). verify 신호
+    // (유실 시 10분 타임아웃)가 verifying을 해제하면 그때 노출된다.
+    if (verifying) return null;
     if (assistFormOpen) {
       return (
         <AssistRequestForm
