@@ -113,8 +113,9 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
   // detect()는 detecting을 true로 만들지 않아 배지가 "확인 중…"으로 깜빡이지 않는다.
   useEffect(() => {
     // stale 가드: 다른 CLI의 도우미가 남아있는 채 agy 설정 화면에 들어온 경우 폴링 제외.
-    if (helper?.kind !== "login" || helper.cli !== "antigravity" || setupFor !== "antigravity")
+    if (helper?.kind !== "login" || helper.cli !== "antigravity" || setupFor !== "antigravity") {
       return;
+    }
     if (avail?.antigravity_authed) return;
     let stopped = false;
     let inFlight = false;
