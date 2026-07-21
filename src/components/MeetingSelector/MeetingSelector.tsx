@@ -22,6 +22,13 @@ import {
   type NameCache,
   type NameSource,
 } from "@/utils/attendeeNames";
+import {
+  findAutoSelectIndex,
+  isPastEvent,
+  nowMinutes,
+  sortEventsByStartTime,
+} from "@/utils/eventTime";
+import { track } from "@/utils/analytics";
 import styles from "./MeetingSelector.module.css";
 
 // `auto`는 templates 디렉토리에 파일이 없는 가상 옵션 — 사용자가 명시 유형을 고르지 않을 때 자동 판단.
@@ -63,9 +70,10 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
   const [aiPolish, setAiPolish] = useState(true);
   // 회의록 검증 토글 — AI 다듬기와 동일 패턴(기본 ON·opt-out·sticky).
   const [notesVerification, setNotesVerification] = useState(true);
+  // 기본 false: 로드 실패 시 모달을 띄우는 현행 동작으로 폴백.
+  const [attendeeHintSeen, setAttendeeHintSeen] = useState(false);
   // 사용자 templates 디렉토리에서 동적으로 로드. auto는 항상 첫 옵션으로 prepend.
   const [typeOptions, setTypeOptions] = useState<MeetingTypeOption[]>([AUTO_OPTION]);
-  const [duration, setDuration] = useState<number | string>(DEFAULT_DURATION_MIN);
   // "not_determined" | "restricted" | "denied" | "authorized"
   const [micStatus, setMicStatus] = useState<string | null>(null);
   // 캘린더 notes 시드 + 사용자 편집 가능한 회의 컨텍스트.
@@ -88,7 +96,8 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
   const loadEvents = async (isRefresh = false) => {
     try {
       const fetchedEvents = await invoke<CalendarEvent[]>("cmd_fetch_calendar");
-      setEvents(fetchedEvents);
+      // EventKit은 정렬 미보장. selected가 인덱스 기반이라 렌더가 아닌 fetch 시점에 한 번 정렬한다.
+      setEvents(sortEventsByStartTime(fetchedEvents));
       setCalendarError(null);
       if (isRefresh) setSelected(null);
       if (fetchedEvents.length === 0) {
@@ -157,6 +166,9 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
       .catch(() => {});
     invoke<boolean>("cmd_get_verify_default")
       .then(setNotesVerification)
+      .catch(() => {});
+    invoke<boolean>("cmd_get_attendee_hint_seen")
+      .then(setAttendeeHintSeen)
       .catch(() => {});
   }, []);
 
@@ -275,9 +287,29 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
       })
     );
     setIsManualMode(false);
-    setDuration(evt.duration_min || DEFAULT_DURATION_MIN);
     setAgenda(evt.notes ?? "");
   };
+
+  // "지금 시간대" 일정 자동 선택 — 목록이 새로 도착할 때 1회만(참조 스탬프), 사용자가 손댄
+  // 흔적(선택·참석자·제목·사전정보)이 하나도 없을 때만. handleSelectEvent가 agenda까지 덮으므로
+  // agenda도 가드에 포함한다. isManualMode는 가드에 안 쓴다 — 일정 0건이 자동 진입시킨 빈 수동
+  // 모드에서도 창 복귀 재조회로 일정이 들어오면 이어져야 하므로, 모드가 아닌 내용 유무로 판단.
+  const autoSelectSourceRef = useRef<CalendarEvent[] | null>(null);
+  useEffect(() => {
+    if (events.length === 0 || autoSelectSourceRef.current === events) return;
+    autoSelectSourceRef.current = events;
+    if (
+      selected !== null ||
+      attendees.length > 0 ||
+      manualTitle.trim() !== "" ||
+      agenda.trim() !== ""
+    )
+      return;
+    const idx = findAutoSelectIndex(events, nowMinutes());
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 캘린더 fetch 도착에 대한 목록당 1회 반응(스탬프 가드).
+    if (idx !== null) handleSelectEvent(idx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 목록 갱신 때만 평가; 다른 state 변화로 재발동 금지.
+  }, [events]);
 
   const removeAttendee = (index: number) => {
     setAttendees((prev) => prev.filter((_, i) => i !== index));
@@ -325,9 +357,11 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
   };
 
   const handleConfirm = async () => {
-    // 참석자 미입력 시 부드러운 안내 — 막지 않고 정확도 향상을 알린 뒤 선택. 입력했으면 바로 진행.
-    // (참석자는 화자 picker 후보 + /meeting 화자 식별의 핵심 입력. 녹음 후 회의 정보에서도 추가 가능)
-    if (attendees.length === 0) {
+    // 참석자 안내는 교육 목적이라 첫 1회만 모달로, 이후엔 참석자 섹션의 상시 인라인 힌트가 맡는다.
+    if (attendees.length === 0 && !attendeeHintSeen) {
+      // 응답 전에 기록 — 모달 도중 앱이 꺼져도 "첫 1회"가 보장된다.
+      setAttendeeHintSeen(true);
+      void invoke("cmd_set_attendee_hint_seen", { seen: true }).catch(() => {});
       const proceed = await confirm({
         title: "참석자 없이 시작할까요?",
         body: (
@@ -340,6 +374,7 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
         confirmLabel: "이대로 시작",
         cancelLabel: "참석자 추가",
       });
+      void track("attendee_prompt", { choice: proceed ? "proceed" : "add" });
       if (!proceed) {
         // 모달이 닫힌 뒤(포커스 복원 후) 입력칸에 포커스 — 바로 이름 입력 가능.
         setTimeout(() => attendeeInputRef.current?.focus(), 0);
@@ -347,16 +382,19 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
       }
     }
 
+    // 예상 시간은 리마인더 알림 시점에만 쓰이는 값(자동 종료 없음)이라 입력을 없앴다.
+    // 캘린더면 일정 길이, 수동이면 기본 60분.
     let title = "회의";
     let time: string | undefined;
+    let dur = DEFAULT_DURATION_MIN;
     if (isManualMode) {
       title = manualTitle.trim() || "회의";
     } else if (selected !== null) {
       const evt = events[selected];
       title = evt?.title || "회의";
       time = evt?.time;
+      dur = evt?.duration_min || DEFAULT_DURATION_MIN;
     }
-    const dur = Math.max(1, parseInt(String(duration), 10) || DEFAULT_DURATION_MIN);
     const source = isManualMode ? "manual" : "calendar";
     // meeting.json·다운스트림은 이름 문자열만 사용 — 이메일은 캐시 귀속에만 쓰고 여기서 흘리지 않음.
     onSelect({
@@ -381,6 +419,8 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
   }
 
   const hasSelection = selected !== null || isManualMode;
+  // 지난 일정 흐림 기준 — 화면 체류가 짧아 타이머 없이 렌더 시점 값으로 충분.
+  const nowMin = nowMinutes();
   // 일정 목록/새로고침 헤더는 실제로 fetch를 시도한(authorized 또는 조회 실패) 경우에만 노출.
   const calendarActive = calPermission === "authorized" || calPermission === "unknown";
   // 권한은 있는데 오늘 일정이 0건 — "진짜 빈 날"인지 "회의 캘린더 미연동"인지 EventKit으론 구분
@@ -482,7 +522,11 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
             {events.map((evt, i) => (
               <button
                 key={i}
-                className={clsx(styles.msEvent, selected === i && !isManualMode && styles.active)}
+                className={clsx(
+                  styles.msEvent,
+                  isPastEvent(evt.time, nowMin) && styles.past,
+                  selected === i && !isManualMode && styles.active
+                )}
                 onClick={() => handleSelectEvent(i)}
               >
                 <span className={styles.msEventTime}>{evt.time}</span>
@@ -546,41 +590,23 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
               onConfirm={confirmAttendee}
               addInputRef={attendeeInputRef}
             />
+
+            {attendees.length === 0 && (
+              <p className={styles.msAttendeeHint}>
+                참석자를 입력하면 화자 이름 매핑이 더 정확해져요. 녹음 후 회의 정보에서도 추가할 수
+                있어요.
+              </p>
+            )}
           </div>
         )}
 
-        {/* 예상 녹음 시간 */}
-        {hasSelection && (
-          <>
-            <div className={styles.msSectionLabel}>예상 녹음 시간</div>
-            <div className={styles.msDurationRow}>
-              <input
-                className={styles.msDurationInput}
-                type="number"
-                min="1"
-                max="480"
-                step="5"
-                value={duration}
-                onChange={(e) => setDuration(e.target.value)}
-              />
-              <span className={styles.msDurationUnit}>분</span>
-              <span className={styles.msDurationHint}>
-                종료 시각이 되면 알림 — 직접 종료할 때까지 녹음은 계속됩니다
-              </span>
-            </div>
-          </>
-        )}
-
-        {/* 시간·토큰 절약 섹션 — AI 다듬기(ai_polish)·회의록 검증(notes_verification) 토글 묶음.
-            둘 다 opt-out 절약 옵션이라 한 섹션으로 묶고, 품질 영향은 서로 달라 토글별 설명에 기술.
-            로컬 AI(mlx)는 두 단계가 모두 없어 효과 없는 설정이므로 숨긴다(값은 저장돼도 local_meeting.py가 안 읽음). */}
+        {/* 시간·토큰 절약 섹션 — AI 다듬기(ai_polish)·회의록 검증(notes_verification) opt-out 토글 묶음.
+            잘 안 바꾸는 값이라 접을까 고려했으나, 끌지 말지 판단하려면 각 토글이 뭘 하는지 보여야 해
+            상시 노출한다(접힘은 그 설명을 예측 불가하게 숨김). 로컬 AI(mlx)는 두 단계가 모두 없어 효과
+            없는 설정이므로 숨긴다(값은 저장돼도 local_meeting.py가 안 읽음). */}
         {hasSelection && cliHasAgent(cli) && (
           <>
             <div className={styles.msSectionLabel}>시간·토큰 절약</div>
-            <p className={styles.msSaverHint}>
-              끄면 회의록이 더 빨리, 더 적은 사용량으로 완성돼요. 대신 품질이 아쉬울 수 있어요.
-              설정은 다음 회의에도 유지돼요
-            </p>
             {/* 그룹 카드 — 섹션 라벨·토글 제목이 같은 급으로 읽히지 않도록 두 토글을 한 컨테이너로 묶는다. */}
             <div className={styles.msSaverGroup}>
               <button
@@ -593,11 +619,7 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
                 <span className={styles.msDetailedText}>
                   <span className={styles.msDetailedTitle}>AI 다듬기</span>
                   <span className={styles.msDetailedDesc}>
-                    회의 맥락으로 화자를 자동 매칭하고, 전사본의 음성 인식 오류를 교정한 뒤 회의록을
-                    써요.
-                    <br />
-                    끄면 이 과정을 건너뛰고 바로 작성해요. 더 빠른 대신 자동 화자 매칭, 오탈자 교정
-                    등이 제외돼요
+                    화자 자동 매칭 · 음성 인식 오류 교정
                   </span>
                 </span>
                 <span className={styles.msDetailedSwitch} aria-hidden="true">
@@ -614,16 +636,17 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
               >
                 <span className={styles.msDetailedText}>
                   <span className={styles.msDetailedTitle}>회의록 검증</span>
-                  <span className={styles.msDetailedDesc}>
-                    작성된 회의록을 전사와 대조해 잘못 들어간 이름·날짜·누락을 걸러내요. 끄면 2~4분
-                    빨라지지만 이 검증을 건너뛰어요
-                  </span>
+                  <span className={styles.msDetailedDesc}>전사와 대조해 이름·날짜·누락 교정</span>
                 </span>
                 <span className={styles.msDetailedSwitch} aria-hidden="true">
                   <span className={styles.msDetailedKnob} />
                 </span>
               </button>
             </div>
+            <p className={styles.msSaverHint}>
+              끄면 더 빨리·적은 사용량으로 완성돼요. 대신 품질이 조금 아쉬울 수 있어요. 다음
+              회의에도 유지돼요.
+            </p>
           </>
         )}
 
