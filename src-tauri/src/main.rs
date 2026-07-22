@@ -407,6 +407,18 @@ fn cmd_write_attendee_names(names: std::collections::HashMap<String, String>) ->
     session::write_attendee_names(&names)
 }
 
+/// 반복 회의용 참석자 그룹 조회.
+#[tauri::command]
+fn cmd_read_attendee_groups() -> session::AttendeeGroups {
+    session::read_attendee_groups()
+}
+
+/// 참석자 그룹 전체 목록 저장. 같은 참석자 조합의 중복 항목도 그대로 보존한다.
+#[tauri::command]
+fn cmd_write_attendee_groups(attendee_groups: session::AttendeeGroups) -> Result<(), String> {
+    session::write_attendee_groups(&attendee_groups)
+}
+
 /// 용어 사전 조회. 전사 priming + 후보정 교정에 쓰이는 사용자 편집 사전.
 #[tauri::command]
 fn cmd_read_vocabulary() -> session::Vocabulary {
@@ -1742,6 +1754,8 @@ fn main() {
             cmd_fetch_calendar,
             cmd_read_attendee_names,
             cmd_write_attendee_names,
+            cmd_read_attendee_groups,
+            cmd_write_attendee_groups,
             cmd_read_vocabulary,
             cmd_write_vocabulary,
             cmd_check_mic_permission,

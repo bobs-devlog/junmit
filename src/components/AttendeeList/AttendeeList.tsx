@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { Ref } from "react";
 import clsx from "clsx";
+import AttendeeGroupControls from "./AttendeeGroupControls";
 import styles from "./AttendeeList.module.css";
 
 // 허용 문자: 한글, 영문, 숫자, 공백, 대시 (SpeakerPicker와 동일 정책)
 const VALID_CHAR_RE = /[^가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z0-9\s-]/g;
-// 참석자 추가 입력에서는 쉼표를 구분자로 보존한다. split 이후 개별 이름에는 포함되지 않는다.
-const VALID_INPUT_CHAR_RE = /[^가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z0-9\s,-]/g;
 const MAX_NAME_LENGTH = 40;
 
 /**
@@ -45,7 +44,6 @@ export default function AttendeeList({
   onConfirm,
   addInputRef,
 }: AttendeeListProps) {
-  const [newName, setNewName] = useState("");
   const [editing, setEditing] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
   // 스크롤 리스트 — 아래에 더 있는지(moreBelow) 단서 + 추가 시 맨 아래로 스크롤.
@@ -68,13 +66,12 @@ export default function AttendeeList({
     updateMoreBelow();
   }, [attendees.length]);
 
-  const handleAdd = () => {
+  const handleAdd = (raw: string) => {
     const names = [
-      ...new Set(newName.split(",").map((value) => value.trim().slice(0, MAX_NAME_LENGTH))),
+      ...new Set(raw.split(",").map((value) => value.trim().slice(0, MAX_NAME_LENGTH))),
     ].filter((name) => name && !attendees.includes(name));
     names.forEach(onAdd);
     if (names.length > 0) justAddedRef.current = true;
-    setNewName("");
   };
 
   const startEdit = (index: number) => {
@@ -168,24 +165,7 @@ export default function AttendeeList({
         <div className={styles.alHint}>자동으로 채운 이름이에요. 맞는지 확인하거나 수정하세요.</div>
       )}
 
-      <div className={styles.alAddRow}>
-        <input
-          ref={addInputRef}
-          className={styles.alInput}
-          type="text"
-          placeholder="이름 추가 (예: Bobs, 김길동-외주)"
-          value={newName}
-          onChange={(e) => setNewName(e.target.value.replace(VALID_INPUT_CHAR_RE, ""))}
-          onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-        />
-        <button
-          className="btn btn-secondary btn-small"
-          onClick={handleAdd}
-          disabled={!newName.trim()}
-        >
-          추가
-        </button>
-      </div>
+      <AttendeeGroupControls attendees={attendees} onAdd={handleAdd} inputRef={addInputRef} />
     </div>
   );
 }

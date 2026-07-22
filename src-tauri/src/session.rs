@@ -206,6 +206,44 @@ pub fn write_attendee_names(
     fs::write(&path, json).map_err(|e| format!("attendee_names 쓰기 실패: {e}"))
 }
 
+/// 반복 회의에서 다시 불러오는 참석자 그룹. 같은 참석자 조합도 회의 목적별로 중복 저장할 수 있다.
+const ATTENDEE_GROUPS_FILE: &str = "attendee_groups.json";
+
+fn attendee_groups_path() -> PathBuf {
+    app_data_dir().join(ATTENDEE_GROUPS_FILE)
+}
+
+#[derive(Serialize, Deserialize, Default, Clone)]
+pub struct AttendeeGroup {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub attendees: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Default, Clone)]
+pub struct AttendeeGroups {
+    #[serde(default)]
+    pub groups: Vec<AttendeeGroup>,
+}
+
+pub fn read_attendee_groups() -> AttendeeGroups {
+    fs::read_to_string(attendee_groups_path())
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+pub fn write_attendee_groups(attendee_groups: &AttendeeGroups) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(attendee_groups)
+        .map_err(|e| format!("attendee_groups 직렬화 실패: {e}"))?;
+    let path = attendee_groups_path();
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    fs::write(&path, json).map_err(|e| format!("attendee_groups 쓰기 실패: {e}"))
+}
+
 /// LLM 작업을 수행하는 CLI 선택 — 사용자가 명시 선택한 값을 영구 보관(`active_cli` 텍스트 파일).
 /// 값은 "claude"·"codex"·"antigravity"·"mlx"(로컬 LLM). 없으면 미선택(앱이 감지 결과로 선택
 /// UI를 띄움). 목록은 프론트 `Cli` 유니온(types/index.ts)·isCli(constants.ts)·install.sh case와
