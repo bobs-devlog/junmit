@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Ref } from "react";
+import { useDialog } from "@/contexts/DialogContext";
 import { useAttendeeGroups } from "./useAttendeeGroups";
 import styles from "./AttendeeList.module.css";
 
@@ -19,6 +20,7 @@ export default function AttendeeGroupControls({
   inputRef,
 }: AttendeeGroupControlsProps) {
   const { groups, saveGroup, removeGroup } = useAttendeeGroups();
+  const { confirm } = useDialog();
   const [inputValue, setInputValue] = useState("");
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
@@ -34,6 +36,8 @@ export default function AttendeeGroupControls({
     if (!groupsOpen && !saveOpen) return;
     const handleMouseDown = (event: MouseEvent) => {
       if (areaRef.current?.contains(event.target as Node)) return;
+      // 삭제 확인 모달 안에서의 클릭은 바깥 클릭으로 취급하지 않는다 (확인 중 드롭다운 유지)
+      if ((event.target as Element).closest?.(".dialog-overlay")) return;
       setGroupsOpen(false);
       closeSave();
     };
@@ -55,7 +59,16 @@ export default function AttendeeGroupControls({
     setGroupsOpen(true);
   };
 
-  const handleDelete = (index: number) => {
+  const handleDelete = async (index: number) => {
+    const group = groups[index];
+    if (!group) return;
+    const ok = await confirm({
+      title: "참석자 그룹 삭제",
+      body: `${group.name ? `[${group.name}] ` : ""}${group.attendees.join(", ")} 그룹을 삭제합니다. 되돌릴 수 없습니다.`,
+      confirmLabel: "삭제",
+      danger: true,
+    });
+    if (!ok) return;
     removeGroup(index);
     if (groups.length === 1) setGroupsOpen(false);
   };
