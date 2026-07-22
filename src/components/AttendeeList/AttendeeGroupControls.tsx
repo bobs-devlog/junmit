@@ -133,7 +133,7 @@ export default function AttendeeGroupControls({
         </div>
       )}
 
-      {groupsOpen && groups.length > 0 && (
+      {groupsOpen && !inputValue && groups.length > 0 && (
         <div className={styles.alGroupMenu}>
           {groups.map((group, index) => (
             <div className={styles.alGroupItem} key={index}>
