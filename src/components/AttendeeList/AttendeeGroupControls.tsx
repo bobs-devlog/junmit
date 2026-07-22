@@ -128,7 +128,7 @@ export default function AttendeeGroupControls({
                 type="button"
                 className={styles.alGroupSelect}
                 onClick={() => {
-                  setInputValue(group.attendees.join(", "));
+                  onAdd(group.attendees.join(", "));
                   setGroupsOpen(false);
                 }}
               >
