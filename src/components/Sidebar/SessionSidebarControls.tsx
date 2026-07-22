@@ -26,9 +26,9 @@ interface Props {
   // 회의록 자기검증 진행 중 (phase_done 후 Idle에서 진행) — 상태 라벨·회의록 step을
   // 완료(✓)가 아닌 진행(스피너)으로 표시해 아직 작업이 이어지고 있음을 알린다.
   isVerifying?: boolean;
-  // 활성 백엔드 — mlx(로컬 LLM)는 에이전트·MCP가 없어 stepper 단계와 추가 요청 버튼을 게이팅.
+  // 활성 백엔드 — mlx(로컬 LLM)는 에이전트·MCP가 없어 추가 요청 버튼을 게이팅.
   cli: Cli;
-  // AI 다듬기 여부(meeting.json ai_polish) — false면 stepper에서 다듬기 단계를 숨긴다(mlx와 동일 표시).
+  // AI 다듬기 여부(meeting.json ai_polish) — false면 stepper에서 다듬기 단계를 숨긴다.
   polishEnabled: boolean;
   // 핸들러 — 화면이 직접 closure로 작성. 사용 안 하는 것은 noop으로 받지 말고 화면이 책임지고 전달.
   onAbort: () => void; // Saving/Processing/Composing 진행 중 중단 (PTY kill + 화면 reset)
@@ -93,7 +93,7 @@ export default function SessionSidebarControls({
 
         {/* Stepper — 모든 활동성에서 노출 (Recording 제외, 이건 별도 화면) */}
         <div className={styles.processSteps}>
-          {visibleSteps(cli, polishEnabled).map((step) => {
+          {visibleSteps(polishEnabled).map((step) => {
             // 회의록 step은 "작성 + 검증" — 검증 중에는 notes_written이어도 ✓ 대신 스피너.
             const verifyingThis = isVerifying && step.id === Step.Notes;
             const isDone = steps[step.field] && !verifyingThis;

@@ -44,7 +44,7 @@ export function activityMeta(a: Activity) {
 }
 
 // 회의 진행 단계의 단일 진실 원천.
-// 사용처: Sidebar stepper, SessionList 카드, ProcessingPanel, nextPendingStep 헬퍼.
+// 사용처: Sidebar stepper, SessionList 카드, ProcessingPanel.
 export const Step = {
   Transcribe: "transcribe",
   Diarize: "diarize",
@@ -123,20 +123,16 @@ export type LocalModelId = typeof LOCAL_MODEL_STANDARD | typeof LOCAL_MODEL_HIGH
 export const isLocalModelId = (m: string): m is LocalModelId =>
   m === LOCAL_MODEL_STANDARD || m === LOCAL_MODEL_HIGH;
 
-// AI 다듬기(Correct) 단계가 없는 표시 단계 — mlx(단계 자체가 없음)와 AI 다듬기 OFF 세션이 공유.
-// 영원히 pending인 단계를 stepper·기록 카드에 보여주지 않기.
+// AI 다듬기(Correct) 단계가 없는 표시 단계 — 영원히 pending인 단계를 stepper·기록 카드에 안 보이기.
 const STEPS_WITHOUT_CORRECT: ReadonlyArray<StepInfo> = STEPS.filter((s) => s.id !== Step.Correct);
 
-export function visibleSteps(cli: Cli, aiPolish: boolean): ReadonlyArray<StepInfo> {
-  return cliHasAgent(cli) && aiPolish ? STEPS : STEPS_WITHOUT_CORRECT;
+// 현재 백엔드(cli)를 섞지 말 것 — 과거 기록의 단계가 백엔드를 바꿀 때마다 달라진다.
+export function visibleSteps(aiPolish: boolean): ReadonlyArray<StepInfo> {
+  return aiPolish ? STEPS : STEPS_WITHOUT_CORRECT;
 }
 
 export function stepIndexById(id: StepId): number {
   return STEPS.findIndex((s) => s.id === id);
-}
-
-export function nextPendingStep(steps: SessionSteps): StepInfo | undefined {
-  return STEPS.find((s) => !steps[s.field]);
 }
 
 // 녹음 시간 관련 — MeetingSelector(안내 문구), RecordingScreen(타이머·알림) 공유

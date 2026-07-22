@@ -119,9 +119,9 @@ export interface Meeting {
   agenda?: string;
   // "calendar" | "manual" — 회의 정보 출처.
   source?: "calendar" | "manual";
-  // AI 다듬기(내부명 ai_polish) 여부 — 녹음 시작 설정의 토글. false면 /meeting이 1단계
-  // sub-agent(화자 라벨 교정·화자 매핑·전사 텍스트 교정)를 전부 생략하고 원본 전사로 바로 작성.
-  // 기본 true(opt-out — 끄면 시간·토큰 절약, 화자 귀속 품질 하락).
+  // AI 다듬기(내부명 ai_polish) 여부 — 녹음 시작 설정의 토글값 그대로(백엔드를 섞지 않는다).
+  // false면 /meeting이 1단계 sub-agent(화자 라벨 교정·화자 매핑·전사 텍스트 교정)를 전부 생략하고
+  // 원본 전사로 바로 작성. 기본 true(opt-out — 끄면 시간·토큰 절약, 화자 귀속 품질 하락).
   aiPolish?: boolean;
   // 회의록 검증(notes_verification) 여부 — 녹음 시작 설정의 토글. false면 /meeting이 검증 단계를
   // 건너뛰고 곧장 완료(2~4분 빠름·토큰 절약). 기본 true(opt-out).
@@ -163,8 +163,9 @@ export interface MeetingMeta {
   attendees: string[];
   agenda: string;
   source: "calendar" | "manual";
-  // AI 다듬기 여부 — false면 1단계 다듬기 sub-agent 전부 생략(원본 전사로 작성). 부재=ON(기본).
-  // 전사본 탭 "전사본 교정" 배지 분기에도 사용(ON이면 텍스트 교정 포함).
+  // AI 다듬기 여부 — false면 1단계 sub-agent 전부 생략(원본 전사로 작성). 부재=ON(기본).
+  // 로컬 작성은 그 단계가 없으므로 실행 시 false로 갱신된다. 소비처는 스킬 분기, 단계 표시
+  // (constants.visibleSteps), 전사본 탭 "전사본 교정" 배지(ON이면 텍스트 교정 포함).
   ai_polish?: boolean;
   // 회의록 검증 여부 — false면 /meeting이 검증 단계를 건너뜀. 옛 세션엔 없으며 부재=검증(기본 ON).
   notes_verification?: boolean;

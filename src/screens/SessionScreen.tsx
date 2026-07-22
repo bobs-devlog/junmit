@@ -9,6 +9,7 @@ import { useSidebarTarget } from "@/components/MainLayout";
 import { useSession } from "@/contexts/SessionContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useDialog } from "@/contexts/DialogContext";
+import { DialogCheckbox } from "@/components/Dialog";
 import useNavigationBlocker from "@/hooks/useNavigationBlocker";
 import { Activity, Step, cliHasAgent } from "@/constants";
 import { cancelMeetingWork } from "@/utils/headless";
@@ -65,8 +66,8 @@ export default function SessionScreen() {
 
   // AI 다듬기·회의록 검증 토글 — 진행 패널의 단계 분모(2+다듬기+검증 = 2~4)와 사이드바
   // stepper의 다듬기 단계 노출을 결정. 컨텍스트 Meeting은 기존 회의 재열기 시 이 필드를
-  // 싣지 않으므로 진실 원천(meeting.json)을 직접 읽는다. 녹음 시작 시 고정되는 설정이라
-  // 세션당 1회 로드로 충분, 부재(옛 세션)=둘 다 기본 ON.
+  // 싣지 않으므로 진실 원천(meeting.json)을 직접 읽는다. 부재(옛 세션)=둘 다 기본 ON.
+  // 로컬 작성·재작성 선택이 ai_polish를 갱신하므로 작업 전환·완료 신호마다 다시 읽는다.
   const [verifyEnabled, setVerifyEnabled] = useState(true);
   const [polishEnabled, setPolishEnabled] = useState(true);
   useEffect(() => {
@@ -82,7 +83,7 @@ export default function SessionScreen() {
     return () => {
       stale = true;
     };
-  }, [sessionDir]);
+  }, [sessionDir, refreshKey, activity]);
 
   // 작업 중(Processing/Composing) router back/forward(POP) 차단.
   // Idle은 통과. 화면 내부 명시 navigate(handleAbort PUSH/REPLACE)는 통과.
@@ -175,11 +176,32 @@ export default function SessionScreen() {
     notifyPtyExit();
   }, [notifyPtyExit]);
 
+  // 사이드바 stepper는 기록 카드와 묻는 게 다르다 — 카드는 "이 회의에 다듬기가 있었나"(이력이라
+  // 파일이 진실), 사이드바는 작업 중이면 "지금 도는 이 작업에 다듬기가 있나"다. 후자에선 현재
+  // 백엔드가 그 작업의 주체 자체라 섞는 게 아니라 사실이고, 덕분에 파일 기록을 작업 완료까지
+  // 미룰 수 있다(중단·실패가 잘못된 값을 남기지 않는다). 단 교정본이 이미 있으면(에이전트로 다듬은
+  // 뒤 로컬로 재작성) 그 다듬기는 실재하므로 로컬 작업 중에도 계속 노출한다. Idle이면 이력=파일만.
+  const polishInThisRun =
+    polishEnabled && (cliHasAgent(cli) || steps.corrected || activity === Activity.Idle);
+
+  // 재작성은 회의록 본문만 다시 만드는 일이라 회의록 층의 설정(검증)은 그 회의의 값을 그대로
+  // 따른다. 전사본 층의 다듬기만, 그것도 교정본이 아직 없을 때만 "이번에 같이 만들까"를 묻는다 —
+  // 이미 있으면 사용자가 손대는 자산이고 재작성이 그걸 재사용한다(utils/speakerCorrection.ts).
+  //
+  // steps.corrected만으로는 교정본 유무를 알 수 없다 — 다듬기 OFF 세션도 correct 신호를 보내고
+  // phase_done도 방어적으로 올려서, 방금 작성한 세션과 다시 연 세션(Rust가 파일로 계산)의 판정이
+  // 갈린다. ai_polish가 false면 교정본은 만들어지지 않으므로 둘을 함께 본다. (Rust 판정은 교정본과
+  // 매핑을 둘 다 요구해 매핑만 실패한 세션은 "없음"으로 잡힌다 — 드물고 표시만 어긋난다.)
+  const hasCorrectedTranscript = polishEnabled && steps.corrected;
+  const canChoosePolish = cliHasAgent(cli) && !hasCorrectedTranscript;
+
   // 회의록 유형 변경 → confirm 후 Context가 backup·meta·pty·spawn 처리.
   // 반환값으로 NotesPreview의 낙관적 select 업데이트 롤백 여부 알림 (false = 롤백).
   const handleRetypeNotes = useCallback(
     async (newType: string): Promise<boolean> => {
       if (!sessionDir) return false;
+      // confirm은 확인/취소만 돌려주므로 체크박스 값은 이 상자로 받는다.
+      const polishChoice = { on: polishEnabled };
       const ok = await confirm({
         title: "회의록을 다시 작성합니다",
         body: (
@@ -187,21 +209,36 @@ export default function SessionScreen() {
             현재 회의록 본문은 <code>meeting-notes.bak.&#123;타임스탬프&#125;.md</code>로
             백업됩니다.
             <br />
-            교정된 전사·화자를 반영해 처음부터 다시 작성됩니다. 진행할까요?
+            {canChoosePolish
+              ? "전사본을 바탕으로 처음부터 다시 작성됩니다."
+              : "교정된 전사·화자를 반영해 처음부터 다시 작성됩니다."}
+            {canChoosePolish && (
+              <DialogCheckbox
+                label="AI 다듬기 포함"
+                description="화자 자동 매칭 · 음성 인식 오류 교정"
+                defaultChecked={polishEnabled}
+                onChange={(v) => (polishChoice.on = v)}
+              />
+            )}
           </>
         ),
         confirmLabel: "다시 작성",
       });
       if (!ok) return false;
+      // restartCompose가 activity를 바꾸기 전에 반영해야 한다 — 늦으면 그 사이 사이드바·진행
+      // 패널이 이전 설정의 단계 수로 샌다.
+      const prevPolish = polishEnabled;
+      if (canChoosePolish) setPolishEnabled(polishChoice.on);
       try {
-        await restartCompose(newType);
+        await restartCompose(newType, canChoosePolish ? polishChoice.on : undefined);
         return true;
       } catch (e) {
+        setPolishEnabled(prevPolish);
         toast.error(`회의록 재작성 준비 실패: ${e}`);
         return false;
       }
     },
-    [sessionDir, confirm, toast, restartCompose]
+    [sessionDir, confirm, toast, restartCompose, canChoosePolish, polishEnabled]
   );
 
   // 사이드바 액션 dispatch — 모두 Context transition 또는 단순 navigate/외부 명령
@@ -275,7 +312,7 @@ export default function SessionScreen() {
             currentStepId={currentStepId}
             isVerifying={isVerifying}
             cli={cli}
-            polishEnabled={polishEnabled}
+            polishEnabled={polishInThisRun}
             onAbort={handleAbort}
             onStartProcessing={handleStartProcessing}
             onResumeProcessing={handleStartProcessing}

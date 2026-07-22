@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import clsx from "clsx";
 import { visibleSteps } from "@/constants";
 import { useDialog } from "@/contexts/DialogContext";
-import { useSession } from "@/contexts/SessionContext";
 import { useToast } from "@/contexts/ToastContext";
 import { invoke } from "@tauri-apps/api/core";
 import type { Session } from "@/types";
@@ -16,8 +15,6 @@ export default function SessionList({ onSelect }: SessionListProps) {
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const { confirm } = useDialog();
   const toast = useToast();
-  // 활성 백엔드에 따라 카드 단계 표시 필터 — mlx는 AI 다듬기 단계가 없다.
-  const { cli } = useSession();
 
   useEffect(() => {
     invoke?.<Session[]>("cmd_find_sessions")
@@ -92,7 +89,7 @@ export default function SessionList({ onSelect }: SessionListProps) {
               </div>
               <div className={styles.slTitle}>{s.title}</div>
               <div className={styles.slSteps}>
-                {visibleSteps(cli, s.ai_polish).map((step) => (
+                {visibleSteps(s.ai_polish).map((step) => (
                   <span
                     key={step.id}
                     className={clsx(styles.slStep, s.steps[step.field] && styles.done)}

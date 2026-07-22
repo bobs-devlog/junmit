@@ -23,6 +23,15 @@ export async function loadMeetingNotesMd(sessionPath: string): Promise<string | 
   }).catch(() => null);
 }
 
+// 교정본 존재 확인용 — 내용이 필요한 게 아니라 있음/없음만 본다(null=없음).
+export async function loadCorrectedTranscript(sessionPath: string): Promise<string | null> {
+  if (!invoke) return null;
+  return await invoke<string>("cmd_read_session_file", {
+    sessionPath,
+    filename: "transcript_corrected.txt",
+  }).catch(() => null);
+}
+
 export async function saveMeetingNotesMd(sessionPath: string, content: string) {
   if (!invoke) throw new Error("Tauri invoke unavailable");
   await invoke<void>("cmd_write_session_file", {

@@ -52,3 +52,36 @@
 .dialog-title-danger {
   color: var(--danger);
 }
+
+/* 본문 안 선택지 (DialogCheckbox) */
+.dialog-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.dialog-checkbox input {
+  margin-top: 3px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.dialog-checkbox-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.dialog-checkbox-desc {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}

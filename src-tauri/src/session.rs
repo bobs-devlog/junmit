@@ -1454,7 +1454,8 @@ pub struct MeetingMeta {
     pub attendees: Vec<String>,
     pub agenda: String,
     pub source: String,
-    /// AI 다듬기 여부 — 녹음 시작 설정의 토글값(**기본 ON, opt-out**). false면 `/meeting` 1단계
+    /// AI 다듬기 여부 = "이 회의에 다듬기 단계가 있(었)는가"(**기본 ON, opt-out**). 녹음 시작
+    /// 토글값이되 로컬 AI 세션은 단계가 없어 false로 들어온다. false면 `/meeting` 1단계
     /// sub-agent(화자 라벨 교정·화자 매핑·전사 텍스트 교정)를 전부 생략하고 원본 전사로 바로 작성
     /// (시간·토큰 절약, 화자 귀속 품질은 하락). 신규 세션은 항상 명시 기록. 필드가 없으면
     /// 부재=ON으로 해석 — serde 기본도 동일해야 함.

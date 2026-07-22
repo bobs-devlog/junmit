@@ -14,7 +14,7 @@ import type { Cli, Meeting, SessionSteps, SpawnRequest } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { loadMeetingMeta, updateMeetingMeta } from "@/utils/meetingMeta";
-import { loadMeetingNotesMd } from "@/utils/meetingNotes";
+import { loadCorrectedTranscript, loadMeetingNotesMd } from "@/utils/meetingNotes";
 import { killPty, sendAssistRequest, sendSlashCommand } from "@/utils/pty";
 import {
   buildSpawnRequest,
@@ -151,7 +151,7 @@ interface SessionContextValue {
   // "그래도 회의록 작성하기" — 무음 판정을 무효화하고 보존된 전사로 파이프라인 재개.
   overrideNoSpeech: () => Promise<void>;
   startComposing: () => Promise<void>;
-  restartCompose: (newType: string) => Promise<void>;
+  restartCompose: (newType: string, aiPolish?: boolean) => Promise<void>;
   // meeting.json.title 갱신 + context 동기화. 빈 문자열은 거절.
   updateTitle: (title: string) => Promise<void>;
   updateAttendees: (attendees: string[]) => Promise<void>;
@@ -398,8 +398,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           // SessionViewer refreshKey++로 새 파일 가용성 재체크. Composing 완료는 회의록 탭 자동 이동.
           const prev = activityRef.current;
           if (prev === Activity.Correcting || prev === Activity.Composing) {
-            // 교정 신호 누락 케이스 방어 — corrected까지 함께 true로 보정.
-            setSteps((s) => ({ ...s, corrected: true, notes_written: true }));
+            // 교정 신호 누락 케이스 방어 — corrected까지 함께 true로 보정. 단 mlx는 correct 단계가
+            // 없어 corrected가 원래 false다(교정본 있는 재작성이면 이미 true) — 여기서 강제하면
+            // 완료 순간 사이드바에 "✓ AI 다듬기"가 잠깐 뜬다. 에이전트 경로에서만 보정한다.
+            const forceCorrected = cliHasAgent(cliRef.current);
+            setSteps((s) => ({
+              ...s,
+              corrected: forceCorrected || s.corrected,
+              notes_written: true,
+            }));
             setActivity(Activity.Idle);
             setCompletedActivity(prev);
             setRefreshKey((k) => k + 1);
@@ -442,6 +449,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
               );
             } else {
               // mlx(로컬) — 검증 단계가 없어 이 시점이 곧 완료.
+              // "이 회의에 다듬기가 있었나"는 교정본 존재가 말해준다 — 로컬 경로는 교정본을 만들지
+              // 않으니, 있으면 에이전트가 남긴 것이고 없으면 다듬기가 없던 회의다. 그 사실을 파일에
+              // 반영해 기록 카드(파일만 봄)를 맞춘다. "쓸지 말지"가 아니라 "사실대로 쓰기"라, 옛
+              // 빌드가 잘못 남긴 false도 되돌린다(자기교정). 시작이 아니라 완료 시점인 이유는
+              // 중단·실패(phase_done 미도착)가 이 기록을 건드리지 않게 하기 위함. 쓰기 뒤 재로드.
+              if (dir) {
+                void loadCorrectedTranscript(dir).then((corrected) => {
+                  if (sessionDirRef.current !== dir) return;
+                  void updateMeetingMeta(dir, { ai_polish: corrected != null })
+                    .then(() => {
+                      // 쓰기 사이 세션을 옮겼으면 남의 화면을 재로드시키지 않는다.
+                      if (sessionDirRef.current === dir) setRefreshKey((k) => k + 1);
+                    })
+                    .catch(() => {});
+                });
+              }
               setFocusSubtab("notes");
               showTabBanner("회의록 초안 완성\n내용을 검토하고 화자 매핑을 진행해주세요");
             }
@@ -839,13 +862,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // 화면이 confirm 다이얼로그를 띄우고 사용자 동의 후 호출. 실패는 throw — 화면이 toast 처리.
   // Tier 1 (살아있는 PTY 활용): sendSlashCommand로 /meeting 호출 — PTY kill 안 함 (다듬기 패턴과 일관).
   // Tier 2 (없으면): 새 PTY spawn. backup 파일은 meeting 스킬이 재작성 모드 감지 신호로 사용.
+  // aiPolish는 교정본 없는 재작성에서만 화면이 받아 넘긴다(undefined면 기존 값 유지). true면 스킬이
+  // 1단계를 되살리므로 Composing이 아니라 Correcting으로 진입해야 correct 신호가 정상 처리된다.
   const restartCompose = useCallback(
-    async (newType: string) => {
+    async (newType: string, aiPolish?: boolean) => {
       if (!sessionDir) return;
       await invoke<string | null>("cmd_backup_meeting_notes", { sessionPath: sessionDir });
-      await updateMeetingMeta(sessionDir, { type: newType });
+      await updateMeetingMeta(
+        sessionDir,
+        aiPolish === undefined ? { type: newType } : { type: newType, ai_polish: aiPolish }
+      );
       setSteps((s) => ({ ...s, notes_written: false }));
-      setActivity(Activity.Composing);
+      setActivity(aiPolish === true ? Activity.Correcting : Activity.Composing);
       setDrawerOpen(true);
       setCompletedActivity(null);
       if (cli === "mlx") {
