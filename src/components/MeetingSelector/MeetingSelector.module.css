@@ -89,6 +89,19 @@
   background: rgba(76, 201, 240, 0.08);
 }
 
+/* 종료 시각이 지난 일정 — 뒤늦은 기록 시작도 있으므로 disabled가 아니라 시각 흐림만. */
+.ms-event.past {
+  opacity: 0.45;
+}
+
+.ms-event.past:hover {
+  opacity: 0.8;
+}
+
+.ms-event.past.active {
+  opacity: 1;
+}
+
 .ms-event-time {
   font-size: 13px;
   color: var(--text-secondary);
@@ -144,11 +157,11 @@
   overflow: hidden;
 }
 
-/* 시간·토큰 절약 섹션 공통 안내 — 섹션 라벨 바로 아래 한 줄. */
+/* 시간·토큰 절약 섹션 공통 안내 — 토글 그룹 아래 트레이드오프·유지 한 줄. */
 .ms-saver-hint {
   font-size: 11px;
   color: var(--text-secondary);
-  margin: 2px 0 4px;
+  margin: 8px 0 0;
 }
 
 /* 절약 토글 그룹 카드 — 섹션 라벨과 토글 제목의 크기·굵기가 같아 위계가 평평하므로,
@@ -262,39 +275,16 @@
   margin-top: 16px;
 }
 
+/* 참석자 0명 상시 힌트 — 확인 모달(첫 1회)과 별개로 항상 보이는 비차단 안내. */
+.ms-attendee-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin: 4px 0 0;
+}
+
 .ms-confirm {
   width: 100%;
   margin: 0;
-}
-
-.ms-duration-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.ms-duration-input {
-  width: 80px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--border, #374151);
-  background: var(--bg-input, #1f2937);
-  color: var(--text, #e5e7eb);
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-}
-
-.ms-duration-unit {
-  font-size: 14px;
-  color: var(--text, #e5e7eb);
-}
-
-.ms-duration-hint {
-  font-size: 12px;
-  color: var(--text-secondary, #9ca3af);
-  flex-basis: 100%;
-  margin-top: 2px;
 }
 
 .ms-agenda-input {

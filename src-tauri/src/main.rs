@@ -553,6 +553,18 @@ fn cmd_set_telemetry_enabled(on: bool) -> Result<(), String> {
     session::write_telemetry_enabled(on)
 }
 
+/// 참석자 없음 확인 모달 노출 여부 조회 — MeetingSelector 마운트 시 로드.
+#[tauri::command]
+fn cmd_get_attendee_hint_seen() -> bool {
+    session::read_attendee_hint_seen()
+}
+
+/// 참석자 없음 확인 모달 첫 노출 시 기록 — 이후엔 인라인 힌트만.
+#[tauri::command]
+fn cmd_set_attendee_hint_seen(seen: bool) -> Result<(), String> {
+    session::write_attendee_hint_seen(seen)
+}
+
 /// 익명 사용량 이벤트를 실제로 보낼 조건인지 — 프론트 analytics 게이트.
 /// 키가 없거나(dev·미설정) debug 빌드거나 사용자가 껐으면 false → trackEvent를 아예 시도하지 않는다.
 #[tauri::command]
@@ -1750,6 +1762,8 @@ fn main() {
             cmd_set_verify_default,
             cmd_get_telemetry_enabled,
             cmd_set_telemetry_enabled,
+            cmd_get_attendee_hint_seen,
+            cmd_set_attendee_hint_seen,
             cmd_analytics_active,
             cmd_open_log_dir,
             cmd_list_meeting_types,

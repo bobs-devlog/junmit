@@ -304,6 +304,27 @@ pub fn write_telemetry_enabled(on: bool) -> Result<(), String> {
         .map_err(|e| format!("telemetry_enabled 쓰기 실패: {e}"))
 }
 
+/// 참석자 없음 확인 모달을 이미 봤는지 — 첫 1회만 모달, 이후엔 인라인 힌트만.
+/// 주의: 위 토글들과 read 기본값이 반대다 — 부재(신규 사용자) = false(아직 안 봄, 모달 노출).
+fn attendee_hint_seen_path() -> PathBuf {
+    app_data_dir().join("attendee_hint_seen")
+}
+
+pub fn read_attendee_hint_seen() -> bool {
+    fs::read_to_string(attendee_hint_seen_path())
+        .map(|s| s.trim() == "1")
+        .unwrap_or(false)
+}
+
+pub fn write_attendee_hint_seen(seen: bool) -> Result<(), String> {
+    let path = attendee_hint_seen_path();
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    fs::write(&path, if seen { "1" } else { "0" })
+        .map_err(|e| format!("attendee_hint_seen 쓰기 실패: {e}"))
+}
+
 // 워크스페이스 신뢰 베이크(ensure_antigravity_trust)는 /meeting·/assist spawn에 필요하므로 유지.
 
 /// codex 스킬 실행 전용 CODEX_HOME — 사용자 개인 `~/.codex`(플러그인·hooks·trust 가득)와
