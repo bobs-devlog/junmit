@@ -109,8 +109,8 @@ export default function LocalModelSetup({
         {variantReady
           ? " 선택한 모델은 이미 설치되어 있어요."
           : ` 모델(${chosenVariant.size})을 한 번만 내려받아요.`}{" "}
-        녹음·전사·화자 구분·회의록 작성은 모두 동일하고, AI에게 추가 요청(대화로 다듬기)은
-        Claude·Codex에서만 지원돼요.
+        녹음·전사·화자 구분·회의록 작성은 모두 동일하고, AI에게 추가 요청(대화로 다듬기)은 구독형
+        AI에서만 지원돼요.
       </p>
       <div className={styles.cards}>
         {LOCAL_VARIANTS.map((variant) => {

@@ -43,27 +43,22 @@ export default function SetupScreen({ mode = "base" }: { mode?: "base" | "model"
       };
   const navigate = useNavigate();
   const location = useLocation();
-  // 모델 다운로드 화면은 되돌릴 수 있어야 함 — 온보딩은 백엔드 재선택(/select-cli),
-  // 설정 전환은 설정(/settings)으로. 호출부(CliSelector)가 state.returnTo로 전달.
-  // state가 없는 진입(재시작 후 부트스트랩 강제 라우팅)은 선택 이력 기준으로 폴백 —
-  // 이미 도구를 고른 사용자를 온보딩 게이트로 되돌리면 동선이 꼬인다.
+  // 모델 다운로드 화면은 되돌릴 수 있어야 함(온보딩은 백엔드 재선택 /select-cli,
+  // 설정 전환은 설정 /settings). 호출부(CliSelector)가 state.returnTo로 전달.
+  // state가 없는 진입은 재시작 후 부트스트랩 강제 라우팅: 돌아갈 이전 화면이 없으므로
+  // "뒤로" 대신 AI 도구 재선택 출구를 연다 (다운로드를 미루고 종료한 사용자가
+  // 매 기동 이 화면에 갇혀 구독형 AI로 갈아탈 길을 못 찾는 함정 방지).
   const navState = location.state as { returnTo?: string; revertCli?: string } | null;
-  const [returnFallback, setReturnFallback] = useState("/select-cli");
-  useEffect(() => {
-    invoke<boolean>("cmd_is_cli_chosen")
-      .then((c) => {
-        if (c) setReturnFallback("/settings");
-      })
-      .catch(() => {});
-  }, []);
-  const returnTo = navState?.returnTo ?? returnFallback;
+  const isBootEntry = navState?.returnTo == null;
+  const returnTo = navState?.returnTo ?? "/select-cli";
+  const backLabel = isBootEntry ? "다른 AI 도구 선택" : "뒤로";
   const session = useSession();
 
-  // 다운로드 없이 "뒤로" — 성급하게 영속된 선택들을 복원한다. 안 하면 설치도 안 한
+  // 설치/다운로드 없이 "뒤로": 성급하게 영속된 선택들을 복원한다. 안 하면 설치도 안 한
   // 도구/변형이 "사용 중"·"다운로드 필요"로 남는다 (전환 영속이 라우팅 판정보다 앞서는 구조 보완).
   // ① 미설치 변형 선택 → 설치된 변형으로 ② CLI 전환(설정 경유) → 이전 CLI(revertCli)로.
-  // 복원을 await 후 이동 — 다음 화면 mount의 상태 조회가 복원 전 값을 읽는 순간 오표시 방지.
-  const handleModelBack = async () => {
+  // 복원을 await 후 이동: 다음 화면 mount의 상태 조회가 복원 전 값을 읽는 순간 오표시 방지.
+  const handleBack = async () => {
     const revert = navState?.revertCli;
     const jobs: Promise<unknown>[] = [invoke("cmd_revert_local_model_if_missing")];
     if (revert && isCli(revert)) {
@@ -144,14 +139,9 @@ export default function SetupScreen({ mode = "base" }: { mode?: "base" | "model"
   // Rust take()가 no-op이 되어 취소가 증발한다. 이 플래그가 다음 단계 진입을 막고,
   // 취소로 reject된 invoke가 catch에서 오류 화면을 띄우는 경합도 걸러낸다.
   const cancelRequestedRef = useRef(false);
-  // 실패한 단계 — 연속 설치(base→model)에서 model 실패 시 base 화면에도 "뒤로"(백엔드
-  // 재선택 탈출구)를 열기 위함. 없으면 반복 실패 사용자가 "다시 시도"만 가능한 막다른 길.
-  const phaseRef = useRef<"base" | "model">(isModel ? "model" : "base");
-  const [errorPhase, setErrorPhase] = useState<"base" | "model">(isModel ? "model" : "base");
 
   const handleStartInstall = async () => {
     cancelRequestedRef.current = false;
-    phaseRef.current = isModel ? "model" : "base";
     setStep("installing");
     setLogs([]);
     setCurrentTask("준비 중...");
@@ -166,7 +156,6 @@ export default function SetupScreen({ mode = "base" }: { mode?: "base" | "model"
         if (cancelRequestedRef.current) return; // base 완료와 model 시작 사이 취소
         const present = await invoke<boolean>("cmd_check_local_model").catch(() => false);
         if (!present) {
-          phaseRef.current = "model";
           setCurrentTask("로컬 AI 모델 다운로드 준비 중...");
           setProgress(null);
           await invoke("cmd_run_install", { mode: "model" });
@@ -181,7 +170,6 @@ export default function SetupScreen({ mode = "base" }: { mode?: "base" | "model"
         if (dir) session.setAppDir(dir);
         const route = await routeAfterCliSelected();
         if (route === "/local-model") {
-          setErrorPhase("model");
           setStep("error");
           setErrorMsg("설치 확인에 실패했습니다 (모델 파일이 온전하지 않아요). 다시 시도해주세요.");
         } else {
@@ -194,7 +182,6 @@ export default function SetupScreen({ mode = "base" }: { mode?: "base" | "model"
       // 사용자 중단으로 죽은 invoke의 reject — 오류가 아니라 의도된 취소.
       // handleCancel이 이미 ready로 되돌렸으므로 오류 화면으로 덮지 않는다.
       if (cancelRequestedRef.current) return;
-      setErrorPhase(phaseRef.current);
       setStep("error");
       setErrorMsg(`${e}`);
     }
@@ -236,17 +223,20 @@ export default function SetupScreen({ mode = "base" }: { mode?: "base" | "model"
               <p className="setup-desc">
                 {copy.desc}
                 {localModelNote}
+                {isModel &&
+                  isBootEntry &&
+                  " 지금 받지 않으시려면 다른 AI 도구(Claude·ChatGPT 등 구독형)를 선택해 시작할 수도 있어요."}
               </p>
 
               <button className="btn btn-primary btn-large" onClick={handleStartInstall}>
                 {copy.start}
               </button>
-              {/* 모델 다운로드는 되돌릴 수 있어야 함(기초 설치는 필수라 뒤로 없음). */}
-              {isModel && (
-                <button className="btn btn-secondary" onClick={handleModelBack}>
-                  뒤로
-                </button>
-              )}
+              {/* 어느 모드든 설치 전엔 되돌릴 수 있어야 한다. 기초 설치 자체는 모든 백엔드에
+                  필수지만, 총 용량을 보고 AI 도구를 바꿀 결심이 서는 곳이 바로 이 화면이고
+                  (설치 취소 복귀 포함), 출구가 없으면 앱 재시작만 남는 막다른 화면이 된다. */}
+              <button className="btn btn-secondary" onClick={handleBack}>
+                {backLabel}
+              </button>
             </>
           )}
 
@@ -323,11 +313,9 @@ export default function SetupScreen({ mode = "base" }: { mode?: "base" | "model"
               <button className="btn btn-secondary" onClick={() => setStep("ready")}>
                 다시 시도
               </button>
-              {(isModel || errorPhase === "model") && (
-                <button className="btn btn-secondary" onClick={handleModelBack}>
-                  뒤로
-                </button>
-              )}
+              <button className="btn btn-secondary" onClick={handleBack}>
+                {backLabel}
+              </button>
             </>
           )}
         </div>

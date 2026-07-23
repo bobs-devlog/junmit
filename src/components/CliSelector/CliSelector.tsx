@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { useSession } from "@/contexts/SessionContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -31,6 +31,10 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
   const navigate = useNavigate();
   const session = useSession();
   const toast = useToast();
+  // 설정 페이지 경유 여부: 완료 후 복귀지 판별(설정이면 설정으로, 온보딩 게이트면 홈으로).
+  // chosen(선택 이력)으로 판별하면 안 된다. 모델 다운로드 함정 탈출("다른 AI 도구 선택")이
+  // chosen=true인 채 온보딩 게이트(/select-cli)로 들어오므로 라우트가 정확한 근거다.
+  const fromSettings = useLocation().pathname !== "/select-cli";
   const [avail, setAvail] = useState<CliAvailability | null>(null);
   const [detecting, setDetecting] = useState(true);
   // CLI를 이미 선택한 적 있는지 — "사용 중" 칩 표시 가드.
@@ -185,7 +189,7 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
     id === "mlx" ? localModel === true : isInstalled(id) && !needsLogin(id);
 
   // 선택한 CLI를 영속 저장하고 다음 화면으로.
-  // chosen=true 진입은 설정 경로뿐(온보딩 게이트는 미선택일 때만 뜸) — 이를 컨텍스트 판별에 사용.
+  // chosen은 선택 이력(전환 중단·이미-사용-중·이전 CLI 복원)에만 쓴다. 복귀지는 fromSettings.
   const proceed = useCallback(
     async (id: Cli) => {
       if (busy) return;
@@ -218,28 +222,24 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
         await invoke("cmd_set_active_cli", { cli: id });
         session.setCli(id);
         const route = await routeAfterCliSelected();
-        // 모델 다운로드 화면(/local-model)에서 "뒤로" 시 돌아올 곳 — 설정 전환이면 설정, 온보딩이면 백엔드 재선택.
-        const returnTo = chosen ? "/settings" : "/select-cli";
-        if (chosen) {
-          // 설정에서의 전환 — 결과를 알리고 설정으로 복귀. 단 의존성이 더 필요하면
-          // 그 화면 우선(기초 미설치→/setup, 로컬 모델만 필요→/local-model). 모두 갖춰졌으면 설정.
-          // 완료 토스트는 의존성이 다 갖춰졌을 때만 — 다운로드가 남았는데 "변경했습니다"라고
-          // 말하면 되돌아 나온 사용자가 전환이 확정된 걸로 오해한다.
-          if (route === "/") {
-            toast.success(`회의록 AI를 ${name}로 변경했습니다.`);
-            navigate("/settings", { replace: true, state: { returnTo } });
-          } else {
-            navigate(route, { replace: true, state: { returnTo, revertCli } });
-          }
+        // 모델 다운로드 화면(/local-model)에서 "뒤로" 시 돌아올 곳(설정 경유면 설정, 온보딩 게이트면 재선택).
+        const returnTo = fromSettings ? "/settings" : "/select-cli";
+        // 의존성이 더 필요하면 그 화면 우선(기초 미설치→/setup, 로컬 모델만 필요→/local-model).
+        // 모두 갖춰졌으면 복귀: 설정 경유는 설정으로(전환 맥락 유지), 온보딩 게이트는 홈으로.
+        // 완료 토스트는 의존성이 다 갖춰진 CLI 변경 시에만. 다운로드가 남았는데 "변경했습니다"라고
+        // 말하면 되돌아 나온 사용자가 전환이 확정된 걸로 오해한다.
+        if (route === "/") {
+          if (chosen) toast.success(`회의록 AI를 ${name}로 변경했습니다.`);
+          navigate(fromSettings ? "/settings" : "/", { replace: true });
         } else {
-          navigate(route, { replace: true, state: { returnTo } });
+          navigate(route, { replace: true, state: { returnTo, revertCli } });
         }
       } catch (e) {
         toast.error(`선택을 저장하지 못했습니다: ${e}`);
         setBusy(false);
       }
     },
-    [busy, chosen, navigate, session, toast]
+    [busy, chosen, fromSettings, navigate, session, toast]
   );
 
   // 로컬 AI 진행 — 변형 선택(LocalModelSetup)이 확정한 모델을 영속 저장하고 라우팅.
@@ -263,9 +263,12 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
           const route = await routeAfterCliSelected();
           if (route === "/") {
             toast.success(`로컬 AI(${variantName})를 사용합니다.`);
-            navigate("/settings", { replace: true });
+            navigate(fromSettings ? "/settings" : "/", { replace: true });
           } else {
-            navigate(route, { replace: true, state: { returnTo: "/settings" } });
+            navigate(route, {
+              replace: true,
+              state: { returnTo: fromSettings ? "/settings" : "/select-cli" },
+            });
           }
         } catch (e) {
           toast.error(`화면 이동에 실패했습니다: ${e}`);
@@ -275,7 +278,7 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
       }
       await proceed("mlx");
     },
-    [busy, chosen, session.cli, proceed, navigate, toast]
+    [busy, chosen, session.cli, fromSettings, proceed, navigate, toast]
   );
 
   // 카드 상태 배지 문구 — 상태 우선순위를 조기 반환으로 서술 (중첩 삼항 지양).

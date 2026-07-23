@@ -28,6 +28,18 @@
   gap: 12px;
 }
 
+/* 카드 그룹 라벨: 구독 보유 여부로 선택지를 갈라 "내 카드"를 즉시 찾게 하는 결정 가이드. */
+.cards-group-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+.cards-group-label:first-child {
+  margin-top: 0;
+}
+
 /* AI 도구 감지 중 — 카드가 잠시 선택 불가임을 중앙에 명시. 감지는 네트워크 왕복(설치·로그인
    확인)이라 수 초 걸릴 수 있어, 어두운 카드가 "영구 비활성"처럼 오해되지 않게 로딩 신호를 준다. */
 .detecting-row {

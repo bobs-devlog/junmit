@@ -59,7 +59,9 @@ export const OPTIONS: CliOption[] = [
   {
     id: "mlx",
     name: "로컬 AI (무료)",
-    subtitle: "AI 구독 없이 이 기기에서 실행 · Gemma 4 12B · 메모리 16GB+ 필요",
+    // 제약(대화형 다듬기 미지원)은 선택 전 카드에서 미리 알린다. 2단계나 사용 시점에야
+    // 알면 수 GB 다운로드 뒤 기대가 깨진다. 모델명 등 상세는 2단계(LocalModelSetup)가 담당.
+    subtitle: "이 기기에서 실행 · 메모리 16GB+ 필요 · 회의록을 대화로 다듬는 추가 요청은 미지원",
     installCmd: "",
     loginCmd: "",
     loginCmdLabel: "",
