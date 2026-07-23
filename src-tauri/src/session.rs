@@ -1215,7 +1215,8 @@ pub fn calendar_permission_status() -> &'static str {
 pub const CAPTURE_MODE_MIC: &str = "mic";
 pub const CAPTURE_MODE_MIC_SYSTEM: &str = "mic+system";
 
-/// 녹음 중 시스템 오디오를 기록하는 스테이징 파일(48k 스테레오 16-bit WAV). 단독 사용자·단일 녹음이라 고정 경로.
+/// 녹음 중 시스템 오디오를 기록하는 스테이징 파일(48k 스테레오 16-bit WAV). 단독 사용자·단일 녹음이라
+/// 고정 경로. convert 시작 시 세션 디렉토리로 즉시 이동된다(claim_staging, 다음 녹음의 선삭제와 격리).
 fn system_audio_staging_path() -> PathBuf {
     app_data_dir().join("recording_system_staging.wav")
 }
@@ -1223,8 +1224,31 @@ fn system_audio_staging_path() -> PathBuf {
 /// 녹음 중 마이크를 기록하는 스테이징 파일(48k mono 16-bit WAV). 네이티브 마이크 캡처가 녹음 중 직접
 /// 기록하고, convert_recording이 이 파일을 입력으로 삼아 16k 변환·정규화·믹스한다. 세션 디렉토리는
 /// 녹음 종료 후에야 만들어지므로 시스템 오디오와 동일하게 app_data_dir에 고정 경로로 둔다.
+/// convert 시작 시 세션 디렉토리로 즉시 이동된다(claim_staging).
 fn mic_staging_path() -> PathBuf {
     app_data_dir().join("recording_mic_staging.wav")
+}
+
+/// 스테이징 파일을 app_data 고정 경로에서 세션 디렉토리로 이동(claim)하고 세션 쪽 경로를 반환.
+/// convert(믹스 경로 ~1분) 동안 스테이징은 회의 오디오의 유일한 사본인데, 이 사이 앱이 죽으면
+/// 다음 녹음 시작의 스테이징 선삭제가 오디오를 복구 불가능하게 지운다. ms 단위 rename으로
+/// 취약 구간을 없앤다. 원본이 없으면 이동 없이 세션 쪽 경로만 반환(이미 이동된 변환 재시도이거나
+/// 캡처 부재, 존재 판정은 호출부 몫). rename 실패는 copy+remove 폴백(볼륨 경계 방어).
+fn claim_staging(src: &std::path::Path, session_path: &std::path::Path) -> PathBuf {
+    let Some(name) = src.file_name() else {
+        return src.to_path_buf();
+    };
+    let dst = session_path.join(name);
+    if src.exists() && fs::rename(src, &dst).is_err() {
+        if fs::copy(src, &dst).is_ok() {
+            let _ = fs::remove_file(src);
+        } else {
+            // 부분 복사본이 남으면 잘린 오디오로 변환이 진행된다. dst를 지워
+            // "원본은 app_data에 그대로, 세션엔 없음" 상태로 되돌린다(호출부가 부재로 판정).
+            let _ = fs::remove_file(&dst);
+        }
+    }
+    dst
 }
 
 /// 녹음 오디오 보존 게이트(숨은 개발자 플래그). `app_data_dir/keep_recording` 센티넬 파일이
@@ -1962,16 +1986,19 @@ fn convert_mic_only(ffmpeg: &std::path::Path, mic_path: &std::path::Path, wav_pa
 ///      tap이 유일한 원격 소스.
 pub fn convert_recording(app: &tauri::AppHandle, session_dir: &str) -> Result<String, String> {
     let session_path = PathBuf::from(session_dir);
-    let mic_path = mic_staging_path();
     let wav_path = session_path.join("recording.wav");
     // 앱 동봉 ffmpeg (PATH 의존 제거). dev/release 모두 resource_dir/bin/ffmpeg를 가리킨다.
     let ffmpeg = resource_dir(app)?.join("bin/ffmpeg");
 
+    // 스테이징을 세션 디렉토리로 먼저 옮긴다. 이후 처리는 전부 세션 로컬 파일 기준이라
+    // 다음 녹음 시작(app_data 스테이징 선삭제)과 절대 충돌하지 않고, convert 중 앱이 죽어도
+    // 재호출로 변환을 재시도할 수 있다.
+    let mic_path = claim_staging(&mic_staging_path(), &session_path);
+    let staging = claim_staging(&system_audio_staging_path(), &session_path);
+
     if !mic_path.exists() {
         return Err("마이크 녹음 파일이 없습니다".into());
     }
-
-    let staging = system_audio_staging_path();
     // 스테이징에 실제 데이터가 있을 때만 믹스. 헤더만 있는 ~44바이트는 권한거부/무콜백 → 제외.
     // byte 임계로 "캡처 미전달"(거부)과 "캡처됨(무음 포함)"을 가른다 — 무음은 섞어도 무해(mic+0=mic).
     let staging_has_audio = fs::metadata(&staging).map(|m| m.len() > 4096).unwrap_or(false);
@@ -2436,4 +2463,49 @@ fn sanitize_title(title: &str) -> String {
         result = result.replace("__", "_");
     }
     result.trim_matches('_').to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 테스트별 고유 임시 위치: (app_data 스테이징 역할, 세션 디렉토리 역할).
+    fn temp_dirs(name: &str) -> (PathBuf, PathBuf) {
+        let base = std::env::temp_dir().join(format!("junmit-test-{}-{name}", std::process::id()));
+        let staging_dir = base.join("app_data");
+        let session = base.join("session");
+        fs::create_dir_all(&staging_dir).unwrap();
+        fs::create_dir_all(&session).unwrap();
+        (staging_dir, session)
+    }
+
+    #[test]
+    fn claim_staging_moves_into_session() {
+        let (staging_dir, session) = temp_dirs("move");
+        let src = staging_dir.join("recording_mic_staging.wav");
+        fs::write(&src, b"audio").unwrap();
+        let dst = claim_staging(&src, &session);
+        assert_eq!(dst, session.join("recording_mic_staging.wav"));
+        assert!(dst.exists() && !src.exists(), "세션으로 이동되고 원본은 없어야 함");
+        assert_eq!(fs::read(&dst).unwrap(), b"audio");
+    }
+
+    #[test]
+    fn claim_staging_keeps_already_moved_file() {
+        // convert 중 앱이 죽은 뒤 재시도: app_data엔 없고 세션에만 있는 상태 그대로 사용.
+        let (staging_dir, session) = temp_dirs("retry");
+        let src = staging_dir.join("recording_mic_staging.wav");
+        let dst = session.join("recording_mic_staging.wav");
+        fs::write(&dst, b"moved").unwrap();
+        assert_eq!(claim_staging(&src, &session), dst);
+        assert_eq!(fs::read(&dst).unwrap(), b"moved");
+    }
+
+    #[test]
+    fn claim_staging_missing_everywhere_returns_nonexistent_path() {
+        // 캡처 부재(시스템 오디오 미사용 등). 존재 판정은 호출부 몫.
+        let (staging_dir, session) = temp_dirs("missing");
+        let dst = claim_staging(&staging_dir.join("recording_mic_staging.wav"), &session);
+        assert!(!dst.exists());
+    }
 }
