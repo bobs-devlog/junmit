@@ -179,6 +179,9 @@ export interface Recorder {
   isRecording: boolean;
   elapsed: number;
   level: number;
+  // 시스템 오디오 캡처 상태(null=미확정/시작 전, true=캡처 중, false=시작 실패: 권한 거부 등).
+  // 캡처 실패는 조용한 마이크-only 강등이라, 녹음 화면이 이 값으로 상대 음성 누락을 경고한다.
+  systemAudioActive: boolean | null;
   abort: () => void;
   // 마이크 녹음 시작. 시스템 오디오는 항상 함께 캡처를 시도한다(OS 권한이 게이트). 레벨 미터엔 둘을 합성.
   start: () => Promise<void>;

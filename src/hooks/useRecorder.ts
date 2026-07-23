@@ -15,12 +15,13 @@ import { invoke } from "@tauri-apps/api/core";
  *   움직여 "원격 음성이 잡히고 있다"를 실시간으로 확인.
  *
  * 반환값:
- *   isRecording  — 녹음 중 여부
- *   elapsed      — 녹음 경과 시간 (초)
- *   level        — 오디오 레벨 0~1 (게이지 표시용)
- *   abort()      — start() 진행 중 취소
- *   start()      — 녹음 시작
- *   stop()       — 녹음 중지, Promise<boolean>(저장할 녹음 캡처 여부) 반환
+ *   isRecording       — 녹음 중 여부
+ *   elapsed           — 녹음 경과 시간 (초)
+ *   level             — 오디오 레벨 0~1 (게이지 표시용)
+ *   systemAudioActive — 시스템 오디오 캡처 상태 (null=미확정, false=실패 → 화면이 경고)
+ *   abort()           — start() 진행 중 취소
+ *   start()           — 녹음 시작
+ *   stop()            — 녹음 중지, Promise<boolean>(저장할 녹음 캡처 여부) 반환
  */
 
 // 네이티브 마이크 캡처 시작 실패(주로 권한 거부 — MicCapture.start가 authorized 아니면 강등)를
@@ -44,6 +45,9 @@ export default function useRecorder() {
   const [isRecording, setIsRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [level, setLevel] = useState(0);
+  // 시스템 오디오 캡처 상태(null=미확정/시작 전, true=캡처 중, false=시작 실패: 권한 거부 등).
+  // 실패는 조용히 마이크-only로 진행되므로, 원격회의 상대 음성 누락을 녹음 화면이 이 값으로 경고한다.
+  const [systemAudioActive, setSystemAudioActive] = useState<boolean | null>(null);
 
   const timerRef = useRef<number | null>(null);
   const levelTimerRef = useRef<number | null>(null);
@@ -58,8 +62,10 @@ export default function useRecorder() {
     try {
       const code = await invoke<number>("cmd_start_system_audio_capture");
       if (code === 0) systemAudioStartedRef.current = true;
+      setSystemAudioActive(code === 0);
     } catch {
-      // 시작 실패 — 마이크만으로 진행
+      // 시작 실패해도 마이크만으로 진행 (경고 표시는 systemAudioActive=false가 담당)
+      setSystemAudioActive(false);
     }
   }, []);
 
@@ -108,6 +114,7 @@ export default function useRecorder() {
       systemAudioStartedRef.current = false;
       stops.push(invoke("cmd_stop_system_audio_capture").catch(() => {}));
     }
+    setSystemAudioActive(null);
     await Promise.all(stops);
   }, [stopLevelPolling]);
 
@@ -123,6 +130,7 @@ export default function useRecorder() {
     // 이전 회의의 잔여 elapsed를 즉시 0으로 — start invoke await 동안 RecordingScreen의 리마인더·트레이·
     // 사이드바가 직전 회의 값(예: 60)을 보고 오작동하는 것을 방지.
     setElapsed(0);
+    setSystemAudioActive(null);
 
     const code = await invoke<number>("cmd_start_mic_capture");
 
@@ -169,7 +177,7 @@ export default function useRecorder() {
     };
   }, [stopCapture]);
 
-  return { isRecording, elapsed, level, abort, start, stop };
+  return { isRecording, elapsed, level, systemAudioActive, abort, start, stop };
 }
 
 export { MIC_PERMISSION_DENIED };

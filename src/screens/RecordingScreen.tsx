@@ -14,7 +14,12 @@ import useRecordingNotes from "@/hooks/useRecordingNotes";
 import useRecordingReminder from "@/hooks/useRecordingReminder";
 import useRecordingAutoStop from "@/hooks/useRecordingAutoStop";
 import useRecordingTray from "@/hooks/useRecordingTray";
-import { DEFAULT_DURATION_MIN, Activity, MIC_PRIVACY_SETTINGS_URL } from "@/constants";
+import {
+  DEFAULT_DURATION_MIN,
+  Activity,
+  MIC_PRIVACY_SETTINGS_URL,
+  SYSTEM_AUDIO_PRIVACY_SETTINGS_URL,
+} from "@/constants";
 import { saveRecording } from "@/utils/saveRecording";
 import { MIC_PERMISSION_DENIED } from "@/hooks/useRecorder";
 import { hideReminderWindow } from "@/utils/reminderWindow";
@@ -267,17 +272,40 @@ export default function RecordingScreen() {
           sidebarTarget
         )}
 
-      {/* 메인 영역 — 녹음 중엔 메모 패널, Saving은 안내 표시 */}
+      {/* 메인 영역(녹음 중엔 메모 패널, Saving은 안내 표시).
+          래퍼 필수: 부모(.content-body)는 row flex라 배너·메모를 세로로 쌓으려면 열 컨테이너 필요. */}
       {activity === Activity.Recording && (
-        <RecordingNotes
-          attendees={meeting?.attendees ?? NO_ATTENDEES}
-          notes={notes}
-          briefing={briefing}
-          onAddSpeaker={addSpeaker}
-          onAddText={addText}
-          onEditText={editText}
-          onRemove={removeNote}
-        />
+        <div className={styles.recordingMain}>
+          {/* 시스템 오디오 캡처 실패(권한 거부 등)는 조용한 마이크-only 강등. 원격 회의라면
+              상대 음성이 통째로 빠진 걸 회의록에서야 알게 되므로 녹음 중에 미리 알린다. */}
+          {recorder.systemAudioActive === false && (
+            <div className={styles.captureNotice}>
+              🔇 시스템 오디오가 캡처되지 않아요. 대면 회의라면 문제없지만, 원격 회의(Zoom·Meet
+              등)는 상대방 음성이 녹음되지 않습니다.{" "}
+              <button
+                type="button"
+                className={styles.captureNoticeLink}
+                onClick={() =>
+                  invoke("cmd_open_path", { path: SYSTEM_AUDIO_PRIVACY_SETTINGS_URL }).catch(
+                    () => {}
+                  )
+                }
+              >
+                시스템 설정에서 허용
+              </button>
+              하면 다음 녹음부터 함께 녹음돼요 (적용이 안 되면 앱을 종료했다 다시 열어주세요).
+            </div>
+          )}
+          <RecordingNotes
+            attendees={meeting?.attendees ?? NO_ATTENDEES}
+            notes={notes}
+            briefing={briefing}
+            onAddSpeaker={addSpeaker}
+            onAddText={addText}
+            onEditText={editText}
+            onRemove={removeNote}
+          />
+        </div>
       )}
 
       {activity === Activity.Saving && (
