@@ -794,6 +794,16 @@ fn report_pipeline_failure(session_dir: &str, label: &str, code: Option<i32>) {
     telemetry::capture_pipeline_failure(label, code, &tail);
 }
 
+/// cmd_run_pipeline의 종결 상태. 취소는 실패가 아니라 정상 종결의 한 갈래다(로컬 회의록의
+/// "취소면 조용히 성공" 처리와 같은 철학). 프론트 단계 루프는 cancelled면 조용히 멈춘다 —
+/// 상태 정리·화면 전환은 취소를 부른 쪽(중단 버튼·이탈 cleanup) 책임.
+#[derive(serde::Serialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum PipelineRun {
+    Completed,
+    Cancelled,
+}
+
 /// 셸 명령을 자식 프로세스로 실행하고 stdout/stderr를 이벤트로 스트리밍
 /// PTY가 아닌 일반 프로세스 — 전사/화자분리용
 #[tauri::command]
@@ -802,12 +812,18 @@ async fn cmd_run_pipeline(
     state: State<'_, PipelineChild>,
     session_dir: String,
     step: String, // "transcribe" | "diarize"
-) -> Result<(), String> {
+) -> Result<PipelineRun, String> {
     use std::fs::OpenOptions;
     use std::io::Write;
     use std::os::unix::process::CommandExt;
     use std::path::PathBuf;
     use std::process::{Command, Stdio};
+
+    // 이중 실행 선제 거절: 로그 헤더를 쓰기 전에 거른다(고아 헤더 방지).
+    // 최종 판정은 아래 spawn 직전의 lock 구간이 담당(여기서 통과해도 거기서 재검사).
+    if state.0.lock().map_err(|e| format!("lock 실패: {e}"))?.is_some() {
+        return Err("전사·화자분리가 이미 진행 중입니다".into());
+    }
 
     let app_dir = session::resource_dir(&app)?.to_string_lossy().into_owned();
 
@@ -877,17 +893,22 @@ async fn cmd_run_pipeline(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0); // 새 프로세스 그룹 생성: 취소 시 손자까지 묶어서 종료
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("{step} 실행 실패: {e}"))?;
-
-
-    // stdout/stderr 스트리밍 (\r도 줄 경계로 처리)
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
-
-    // Child를 state에 저장 (취소용)
-    *state.0.lock().map_err(|e| format!("lock 실패: {e}"))? = Some(child);
+    // 이중 실행 가드 + spawn + 등록을 한 lock 구간에서 처리: 두 호출이 동시에 spawn해
+    // 서로의 child를 덮어쓰는(프로세스 누수 + wait 오귀속) 경합을 원천 차단.
+    let (stdout, stderr) = {
+        let mut guard = state.0.lock().map_err(|e| format!("lock 실패: {e}"))?;
+        if guard.is_some() {
+            return Err("전사·화자분리가 이미 진행 중입니다".into());
+        }
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("{step} 실행 실패: {e}"))?;
+        // stdout/stderr 스트리밍용 핸들 (\r도 줄 경계로 처리)
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+        *guard = Some(child); // 취소용 등록
+        (stdout, stderr)
+    };
 
     let app2 = app.clone();
     let step2 = step.clone();
@@ -953,13 +974,16 @@ async fn cmd_run_pipeline(
     stdout_thread.join().ok();
     stderr_thread.join().ok();
 
-    // state에서 child를 꺼내서 wait
-    let status = state.0.lock().map_err(|e| format!("lock 실패: {e}"))?
-        .as_mut()
-        .ok_or_else(|| format!("{step} child가 없습니다 (취소됨?)"))?
-        .wait()
-        .map_err(|e| format!("{step} 대기 실패: {e}"))?;
-    *state.0.lock().map_err(|e| format!("lock 실패: {e}"))? = None;
+    // child를 꺼내서(take) lock 밖에서 wait: 슬롯을 wait 결과와 무관하게 항상 비워
+    // 이중 실행 가드에 죽은 child가 남지 않게 한다(local/headless와 같은 골격).
+    // None이면 취소(cmd_cancel_pipeline)가 이미 take한 것 — 의도된 중단이므로 에러가 아니다.
+    let Some(mut child) = state.0.lock().map_err(|e| format!("lock 실패: {e}"))?.take() else {
+        if let Some(f) = &log_file {
+            let _ = writeln!(f.lock().unwrap(), "=== {step} cancelled ===");
+        }
+        return Ok(PipelineRun::Cancelled);
+    };
+    let status = child.wait().map_err(|e| format!("{step} 대기 실패: {e}"))?;
 
     if let Some(f) = &log_file {
         let _ = writeln!(
@@ -975,7 +999,7 @@ async fn cmd_run_pipeline(
         if step == "diarize" {
             session::cleanup_recording_audio(&session_dir);
         }
-        Ok(())
+        Ok(PipelineRun::Completed)
     } else {
         report_pipeline_failure(&session_dir, &step, status.code());
         Err(format!("{step} 실패 (exit code: {:?})", status.code()))
@@ -1047,7 +1071,7 @@ async fn cmd_run_local_meeting(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0); // 취소 시 그룹째 종료
-    // 이중 실행 가드 + spawn + 등록을 한 lock 구간에서 — 두 호출이 동시에 spawn해
+    // 이중 실행 가드 + spawn + 등록을 한 lock 구간에서 처리: 두 호출이 동시에 spawn해
     // 서로의 child를 덮어쓰는(프로세스 누수 + wait 오귀속) 경합을 원천 차단.
     let (stdout, stderr) = {
         let mut guard = state.0.lock().map_err(|e| format!("lock 실패: {e}"))?;
@@ -1278,7 +1302,7 @@ async fn cmd_run_headless_meeting(
         .stderr(Stdio::piped())
         .process_group(0); // 취소 시 그룹째 종료 (스킬이 띄우는 bash 손자 포함)
 
-    // 이중 실행 가드 + spawn + 등록을 한 lock 구간에서 — 두 호출이 동시에 spawn해
+    // 이중 실행 가드 + spawn + 등록을 한 lock 구간에서 처리: 두 호출이 동시에 spawn해
     // 서로의 child를 덮어쓰는(프로세스 누수 + wait 오귀속) 경합을 원천 차단.
     let (stdout, stderr) = {
         let mut guard = state.0.lock().map_err(|e| format!("lock 실패: {e}"))?;
@@ -1806,4 +1830,16 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pipeline_run_serializes_to_lowercase_string() {
+        // 프론트 invoke<"completed" | "cancelled"> 계약의 실측 근거.
+        assert_eq!(serde_json::to_string(&PipelineRun::Completed).unwrap(), "\"completed\"");
+        assert_eq!(serde_json::to_string(&PipelineRun::Cancelled).unwrap(), "\"cancelled\"");
+    }
 }

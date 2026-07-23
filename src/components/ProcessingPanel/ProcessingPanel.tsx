@@ -202,10 +202,13 @@ export default function ProcessingPanel({
         onStepChange?.(step.id);
 
         try {
-          await invoke<void>("cmd_run_pipeline", {
+          const outcome = await invoke<"completed" | "cancelled">("cmd_run_pipeline", {
             sessionDir,
             step: step.id,
           });
+          // 취소는 실패가 아니다: 상태 정리·화면 전환은 취소를 부른 쪽(중단 버튼·이탈
+          // cleanup)이 이미 마쳤으므로, 다음 단계로 가지 않고 조용히 종료한다.
+          if (outcome === "cancelled") return;
           setStepStatus((prev) => ({ ...prev, [step.id]: "done" }));
           void track("pipeline_completed", { step: step.id });
           // 단계별 완료를 부모에 통지 — SessionContext가 setSteps 업데이트하여 사이드바 stepper ✓ 즉시 반영.
