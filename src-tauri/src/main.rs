@@ -467,9 +467,17 @@ async fn cmd_request_mic_permission() -> &'static str {
     session::request_mic_permission()
 }
 
+/// 상태 조회이지만 연동 이력(calendar_connected) 동기화를 겸한다(authorized="1", denied="0").
+/// 비공증 업데이트로 TCC가 리셋됐을 때 자동 재요청 대상인지 판별하는 재료.
 #[tauri::command]
 fn cmd_check_calendar_permission() -> &'static str {
-    session::calendar_permission_status()
+    session::calendar_permission_status_synced()
+}
+
+/// 캘린더 연동 이력 조회. not_determined(TCC 리셋)에서 true면 프론트가 자동으로 권한을 재요청한다.
+#[tauri::command]
+fn cmd_get_calendar_connected() -> bool {
+    session::read_calendar_connected()
 }
 
 #[tauri::command]
@@ -1816,6 +1824,7 @@ fn main() {
             cmd_stop_mic_capture,
             cmd_mic_level,
             cmd_check_calendar_permission,
+            cmd_get_calendar_connected,
             cmd_check_system_audio_permission,
             cmd_request_system_audio_permission,
             cmd_start_system_audio_capture,

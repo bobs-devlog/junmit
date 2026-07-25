@@ -363,6 +363,49 @@ pub fn write_attendee_hint_seen(seen: bool) -> Result<(), String> {
         .map_err(|e| format!("attendee_hint_seen 쓰기 실패: {e}"))
 }
 
+/// 캘린더 연동 이력. 비공증 빌드는 업데이트마다 서명이 바뀌어 TCC가 리셋되므로(권한이
+/// not_determined로 복귀), "이전에 연동했던 사용자"인지를 앱이 스스로 기억해야
+/// 재실행 시 자동으로 권한을 다시 요청할 수 있다(마이크와 같은 경험).
+/// **"1"=연동 이력 있음(권한 리셋 시 자동 재요청 대상), "0"=이력 없음/거부(버튼으로만 연동).**
+fn calendar_connected_path() -> PathBuf {
+    app_data_dir().join("calendar_connected")
+}
+
+pub fn read_calendar_connected() -> bool {
+    match fs::read_to_string(calendar_connected_path()) {
+        Ok(s) => s.trim() == "1",
+        // 부재 = 이 파일 도입 전 사용자. 과거 세션 중 캘린더에서 만든 회의가 있으면
+        // 연동 이력으로 간주해 1회 부트스트랩(이번 업데이트로 권한이 이미 리셋된 기존 연동자 구제).
+        Err(_) => {
+            let connected = has_calendar_sourced_session(&output_dir());
+            let _ = write_calendar_connected(connected);
+            connected
+        }
+    }
+}
+
+fn has_calendar_sourced_session(output_dir: &std::path::Path) -> bool {
+    let Ok(entries) = fs::read_dir(output_dir) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        fs::read_to_string(entry.path().join("meeting.json"))
+            .ok()
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+            .map(|meta| meta.get("source").and_then(|s| s.as_str()) == Some("calendar"))
+            .unwrap_or(false)
+    })
+}
+
+pub fn write_calendar_connected(connected: bool) -> Result<(), String> {
+    let path = calendar_connected_path();
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    fs::write(&path, if connected { "1" } else { "0" })
+        .map_err(|e| format!("calendar_connected 쓰기 실패: {e}"))
+}
+
 // 워크스페이스 신뢰 베이크(ensure_antigravity_trust)는 /meeting·/assist spawn에 필요하므로 유지.
 
 /// codex 스킬 실행 전용 CODEX_HOME — 사용자 개인 `~/.codex`(플러그인·hooks·trust 가득)와
@@ -1291,6 +1334,29 @@ pub fn calendar_permission_status() -> &'static str {
         3 => "authorized",
         _ => "not_determined",
     }
+}
+
+/// 권한 상태 조회 + 연동 이력(calendar_connected) 동기화: authorized는 "1",
+/// denied/restricted(프롬프트 거부·시스템 설정에서 끔)는 "0"으로 기록해 자동 재요청을 멈춘다.
+/// not_determined는 판단 보류(TCC 리셋 직후일 수 있음. 이력 유지가 자동 재요청의 근거).
+/// dev 빌드는 동기화 제외: .app 번들이 아니라 캘린더 권한이 늘 거부로 보이는데(README),
+/// 데이터 디렉토리를 release와 공유하므로 dev의 거짓 denied가 연동 이력을 "0"으로 밟으면
+/// release의 자동 재요청이 무력화된다.
+pub fn calendar_permission_status_synced() -> &'static str {
+    let status = calendar_permission_status();
+    if cfg!(debug_assertions) {
+        return status;
+    }
+    match status {
+        "authorized" => {
+            let _ = write_calendar_connected(true);
+        }
+        "denied" | "restricted" => {
+            let _ = write_calendar_connected(false);
+        }
+        _ => {}
+    }
+    status
 }
 
 // ── 시스템 오디오 캡처 (CoreAudio Process Tap) ────────────────────────────
@@ -2618,6 +2684,37 @@ mod tests {
         let (staging_dir, session) = temp_dirs("missing");
         let dst = claim_staging(&staging_dir.join("recording_mic_staging.wav"), &session);
         assert!(!dst.exists());
+    }
+
+    #[test]
+    fn calendar_sourced_session_detected() {
+        // 연동 이력 부트스트랩: 캘린더에서 만든 세션이 하나라도 있어야 true.
+        let (output_dir, _) = temp_dirs("cal-detect");
+        let manual = output_dir.join("2026-07-01_10-00-00_수동회의");
+        fs::create_dir_all(&manual).unwrap();
+        fs::write(manual.join("meeting.json"), r#"{"source":"manual"}"#).unwrap();
+        assert!(!has_calendar_sourced_session(&output_dir));
+
+        let calendar = output_dir.join("2026-07-02_10-00-00_캘린더회의");
+        fs::create_dir_all(&calendar).unwrap();
+        fs::write(calendar.join("meeting.json"), r#"{"source":"calendar"}"#).unwrap();
+        assert!(has_calendar_sourced_session(&output_dir));
+    }
+
+    #[test]
+    fn calendar_sourced_session_tolerates_broken_entries() {
+        // meeting.json 부재·깨진 JSON·source 누락(옛 세션)은 조용히 건너뛰고,
+        // output 디렉토리 자체가 없으면(첫 실행) false.
+        let (output_dir, _) = temp_dirs("cal-broken");
+        fs::create_dir_all(output_dir.join("no-meta")).unwrap();
+        let broken = output_dir.join("broken");
+        fs::create_dir_all(&broken).unwrap();
+        fs::write(broken.join("meeting.json"), "not json").unwrap();
+        let no_source = output_dir.join("no-source");
+        fs::create_dir_all(&no_source).unwrap();
+        fs::write(no_source.join("meeting.json"), r#"{"title":"옛 세션"}"#).unwrap();
+        assert!(!has_calendar_sourced_session(&output_dir));
+        assert!(!has_calendar_sourced_session(&output_dir.join("does-not-exist")));
     }
 
     #[test]

@@ -114,7 +114,20 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
     }
   };
 
+  // 안내 배너의 [캘린더 연동] + 연동 이력자 자동 재요청 공용. not_determined에서
+  // cmd_fetch_calendar가 OS 다이얼로그를 띄운다. 응답 후 권한을 재조회해 배너를
+  // 전환(허용→일정 목록, 거부→차단 배너)하고 연동 이력도 동기화한다(authorized="1", denied="0").
+  const connectCalendar = async () => {
+    setIsLoading(true);
+    await loadEvents();
+    const status = await invoke<string>("cmd_check_calendar_permission").catch(() => "unknown");
+    setCalPermission(status);
+  };
+
   // 마운트: 권한을 먼저 조회해 authorized일 때만 fetch(= not_determined에서 자동 OS 다이얼로그 회피).
+  // 예외: not_determined이어도 연동 이력이 있으면(비공증 업데이트로 서명이 바뀌어 TCC 리셋)
+  // 자동으로 재요청한다. 마이크처럼 버튼 없이 실행 직후 프롬프트 한 번으로 연동이 복원되고,
+  // 거부하면 이력이 "0"으로 꺼져 다음부턴 버튼 경로만 남는다.
   // 비authorized면 수동 입력 가능하게 두고 상태별 안내 배너만 노출. "unknown"(조회 실패)은 기존 폴백.
   useEffect(() => {
     void (async () => {
@@ -122,21 +135,19 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
       setCalPermission(status);
       if (status === "authorized" || status === "unknown") {
         await loadEvents();
-      } else {
-        enterManualMode();
-        setIsLoading(false);
+        return;
       }
+      if (status === "not_determined") {
+        const wasConnected = await invoke<boolean>("cmd_get_calendar_connected").catch(() => false);
+        if (wasConnected) {
+          await connectCalendar();
+          return;
+        }
+      }
+      enterManualMode();
+      setIsLoading(false);
     })();
   }, []);
-
-  // 안내 배너의 [캘린더 연동] — not_determined에서 cmd_fetch_calendar가 OS 다이얼로그를 띄운다.
-  // 응답 후 권한을 재조회해 배너를 전환(허용→일정 목록, 거부→차단 배너).
-  const connectCalendar = async () => {
-    setIsLoading(true);
-    await loadEvents();
-    const status = await invoke<string>("cmd_check_calendar_permission").catch(() => "unknown");
-    setCalPermission(status);
-  };
 
   const openSettings = (url: string) => {
     invoke("cmd_open_path", { path: url }).catch(() => {});
