@@ -227,7 +227,10 @@ export default function MeetingTypeDetailScreen() {
             /* ── 보기 ── */
             <>
               <header className={styles.mtHeader}>
-                <h1 className={styles.mtTitle}>{option.label}</h1>
+                <h1 className={styles.mtTitle}>
+                  {option.emoji && <span className={styles.mtEmoji}>{option.emoji}</span>}
+                  {option.label}
+                </h1>
                 <p className={styles.mtDesc}>{option.description}</p>
               </header>
               <div className={styles.mtActions}>

@@ -1,6 +1,7 @@
 ---
 name: retrospective
 label: 회고
+emoji: 🔄
 description: 스프린트·프로젝트 회고
 title_keywords: 회고, kpt, retro, retrospective
 summary: |

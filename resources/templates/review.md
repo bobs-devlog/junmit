@@ -1,6 +1,7 @@
 ---
 name: review
 label: 리뷰
+emoji: 🔍
 description: 기획·디자인 등 산출물 검토
 title_keywords: 리뷰, review, 검토
 summary: |

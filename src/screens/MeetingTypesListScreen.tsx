@@ -80,7 +80,10 @@ export default function MeetingTypesListScreen() {
             >
               <div className={styles.mtCardHead}>
                 <div className={styles.mtCardMeta}>
-                  <span className={styles.mtCardLabel}>{opt.label}</span>
+                  <span className={styles.mtCardLabel}>
+                    {opt.emoji && <span className={styles.mtEmoji}>{opt.emoji}</span>}
+                    {opt.label}
+                  </span>
                   <span className={styles.mtCardDesc}>{opt.description}</span>
                 </div>
               </div>

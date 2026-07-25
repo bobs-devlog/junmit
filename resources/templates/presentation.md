@@ -1,6 +1,7 @@
 ---
 name: presentation
 label: 발표/세미나
+emoji: 📊
 description: 발표·공유 + 논의
 title_keywords: 발표, 세미나
 summary: |

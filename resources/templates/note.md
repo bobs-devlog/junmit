@@ -1,6 +1,7 @@
 ---
 name: note
 label: 일반 회의
+emoji: 💬
 description: 정기 회의·논의 등
 title_keywords: 위클리, weekly, 스크럼, scrum, 데일리, daily, 주간
 summary: |

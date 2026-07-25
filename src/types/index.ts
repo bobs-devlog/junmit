@@ -151,6 +151,8 @@ export interface MeetingTypeOption {
   id: string;
   label: string;
   description: string;
+  // UI 표시용 아이콘 (frontmatter `emoji`, 선택). label과 분리 — label은 LLM 프롬프트·안내 문구로도 쓰인다.
+  emoji?: string;
 }
 
 // 세션 디렉토리의 `meeting.json` — 회의 메타데이터의 단일 진실 원천.

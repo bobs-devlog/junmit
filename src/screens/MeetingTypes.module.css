@@ -341,6 +341,11 @@
   color: var(--text-primary);
 }
 
+/* 목록 카드 라벨·상세 제목 공용 이모지 슬롯 */
+.mt-emoji {
+  margin-right: 6px;
+}
+
 .mt-card-desc {
   font-size: 12px;
   color: var(--text-secondary);

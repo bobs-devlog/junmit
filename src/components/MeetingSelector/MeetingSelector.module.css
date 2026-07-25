@@ -147,6 +147,10 @@
   font-weight: 600;
 }
 
+.ms-type-emoji {
+  margin-right: 5px;
+}
+
 .ms-type-desc {
   font-size: 11px;
   color: var(--text-secondary);

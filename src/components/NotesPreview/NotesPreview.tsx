@@ -16,6 +16,7 @@ const AUTO_OPTION: MeetingTypeOption = {
   id: "auto",
   label: "자동 판단",
   description: "AI가 내용 보고 판단",
+  emoji: "✨",
 };
 
 // templates 외 특수 옵션 — 정형 템플릿 없이 LLM이 회의 흐름에 맞춰 자유롭게 작성.
@@ -24,6 +25,7 @@ const FREE_FORM_OPTION: MeetingTypeOption = {
   id: "free-form",
   label: "자유 형식",
   description: "정형 템플릿 없이 회의 흐름에 맞춰 작성",
+  emoji: "📝",
 };
 
 interface CopyButtonProps {
@@ -226,7 +228,8 @@ export default function NotesPreview({
             >
               {typeOptions.map((opt) => (
                 <option key={opt.id} value={opt.id}>
-                  유형: {opt.label}
+                  {opt.emoji ? `${opt.emoji} ` : ""}
+                  {opt.label}
                 </option>
               ))}
             </select>

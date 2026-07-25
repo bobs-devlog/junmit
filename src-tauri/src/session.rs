@@ -1737,6 +1737,21 @@ pub struct MeetingTypeOption {
     pub id: String,
     pub label: String,
     pub description: String,
+    /// UI 표시용 아이콘. label과 분리된 필드 — label은 LLM 프롬프트·안내 문구로 새는 값이라 이모지를 섞지 않는다.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
+}
+
+/// frontmatter `emoji` 값 정리. 게이트를 안 거친 옛 파일의 장문 값이 버튼 레이아웃을 깨지 않게
+/// 코드포인트 상한으로 거른다 (ZWJ 시퀀스 허용 폭 — 👨‍👩‍👧‍👦 = 7).
+const EMOJI_MAX_CODEPOINTS: usize = 8;
+
+fn normalize_emoji(value: Option<&String>) -> Option<String> {
+    let trimmed = value?.trim();
+    if trimmed.is_empty() || trimmed.chars().count() > EMOJI_MAX_CODEPOINTS {
+        return None;
+    }
+    Some(trimmed.to_string())
 }
 
 /// 사용자 templates 디렉토리에서 가이드 목록 + frontmatter 메타를 파싱해 UI 옵션 생성.
@@ -1761,7 +1776,8 @@ pub fn list_meeting_types() -> Result<Vec<MeetingTypeOption>, String> {
         let id = fm.get("name").cloned().unwrap_or_else(|| file_stem.to_string());
         let label = fm.get("label").cloned().unwrap_or_else(|| id.clone());
         let description = fm.get("description").cloned().unwrap_or_default();
-        options.push(MeetingTypeOption { id, label, description });
+        let emoji = normalize_emoji(fm.get("emoji"));
+        options.push(MeetingTypeOption { id, label, description, emoji });
     }
 
     options.sort_by(|a, b| a.id.cmp(&b.id));
@@ -1865,6 +1881,12 @@ fn validate_template_frontmatter(content: &str) -> Result<String, String> {
     }
     if fm.get("description").is_none() {
         return Err("frontmatter에 description 필드가 없습니다".into());
+    }
+    // emoji는 선택 필드. 값이 있는데 상한을 넘으면 저장 시점에 알려준다 (목록에선 조용히 드롭되므로).
+    if let Some(emoji) = fm.get("emoji") {
+        if !emoji.trim().is_empty() && emoji.trim().chars().count() > EMOJI_MAX_CODEPOINTS {
+            return Err(format!("frontmatter emoji가 너무 깁니다 (최대 {EMOJI_MAX_CODEPOINTS}자, 이모지 1개 권장)"));
+        }
     }
     if !has_summary_block(content) {
         return Err("frontmatter에 summary: | 블록이 없거나 비어 있습니다 (auto 매칭에 필수)".into());
@@ -2596,5 +2618,33 @@ mod tests {
         let (staging_dir, session) = temp_dirs("missing");
         let dst = claim_staging(&staging_dir.join("recording_mic_staging.wav"), &session);
         assert!(!dst.exists());
+    }
+
+    #[test]
+    fn frontmatter_emoji_parsed_and_normalized() {
+        let fm = parse_frontmatter("---\nname: note\nlabel: 일반 회의\nemoji: 💬\n---\n");
+        assert_eq!(normalize_emoji(fm.get("emoji")), Some("💬".to_string()));
+        // ZWJ 시퀀스(코드포인트 7개)는 상한 안 — 통과
+        assert_eq!(
+            normalize_emoji(Some(&"👨‍👩‍👧‍👦".to_string())),
+            Some("👨‍👩‍👧‍👦".to_string())
+        );
+        // 게이트 안 거친 옛 파일의 장문 값은 드롭 (레이아웃 보호)
+        assert_eq!(normalize_emoji(Some(&"이모지가 아니라 문장".to_string())), None);
+        assert_eq!(normalize_emoji(Some(&"  ".to_string())), None);
+        assert_eq!(normalize_emoji(None), None);
+    }
+
+    #[test]
+    fn template_gate_rejects_overlong_emoji_only() {
+        let template = |emoji_line: &str| {
+            format!(
+                "---\nname: kickoff\nlabel: 킥오프\n{emoji_line}description: 설명\nsummary: |\n  요약\n---\n\n## 예시 회의록\n샘플\n"
+            )
+        };
+        assert!(validate_template_frontmatter(&template("emoji: 🚀\n")).is_ok());
+        assert!(validate_template_frontmatter(&template("")).is_ok(), "emoji는 선택 필드");
+        let err = validate_template_frontmatter(&template("emoji: 아홉글자를넘는문장값\n")).unwrap_err();
+        assert!(err.contains("emoji"), "emoji 상한 위반을 알려야 함: {err}");
     }
 }

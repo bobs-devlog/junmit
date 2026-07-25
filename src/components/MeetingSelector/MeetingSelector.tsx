@@ -38,6 +38,7 @@ const AUTO_OPTION: MeetingTypeOption = {
   id: "auto",
   label: "자동 판단",
   description: "AI가 내용 보고 판단",
+  emoji: "✨",
 };
 
 interface MeetingSelectorProps {
@@ -567,7 +568,10 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
                   className={clsx(styles.msType, meetingType === t.id && styles.active)}
                   onClick={() => setMeetingType(t.id)}
                 >
-                  <span className={styles.msTypeLabel}>{t.label}</span>
+                  <span className={styles.msTypeLabel}>
+                    {t.emoji && <span className={styles.msTypeEmoji}>{t.emoji}</span>}
+                    {t.label}
+                  </span>
                   <span className={styles.msTypeDesc}>{t.description}</span>
                 </button>
               ))}
