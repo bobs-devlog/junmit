@@ -1015,6 +1015,92 @@ pub fn write_vocabulary(vocab: &Vocabulary) -> Result<(), String> {
     fs::write(&path, json).map_err(|e| format!("vocabulary 쓰기 실패: {e}"))
 }
 
+/// 화자 사전(화자 음성 DB): 회의 간 축적되는 인물별 임베딩 샘플(생체정보 성격, 이 Mac 로컬 전용).
+/// 사용자가 화자 매핑을 확정할 때 프론트가 세션 speaker_embeddings.json에서 벡터를 복사해
+/// upsert하고, 화자분리(pyannote_diarize.py)가 읽어 다음 회의의 이름 추정을 프리필한다.
+/// 샘플 키는 (session_id, speaker)라서 이름 변경 시 전 인물에서 제거 후 새 인물에 붙는 이동이
+/// 결정론으로 성립한다. 인물 키가 name 문자열이라 동명이인은 한 사람으로 합쳐진다(단독 사용자
+/// 전제의 수용된 한계). `{ version, ... }` 객체 래퍼(vocabulary와 같은 무중단 확장 여지).
+fn speaker_db_path() -> PathBuf {
+    app_data_dir().join("speaker_db.json")
+}
+
+#[derive(Serialize, Deserialize, Default, Clone)]
+pub struct SpeakerSample {
+    pub session_id: String,
+    pub speaker: String,
+    #[serde(default)]
+    pub capture_mode: String,
+    #[serde(default)]
+    pub date: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub vector: Vec<f64>,
+}
+
+#[derive(Serialize, Deserialize, Default, Clone)]
+pub struct SpeakerPerson {
+    pub name: String,
+    #[serde(default)]
+    pub samples: Vec<SpeakerSample>,
+}
+
+#[derive(Serialize, Deserialize, Default, Clone)]
+pub struct SpeakerDb {
+    #[serde(default)]
+    pub version: u32,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub dim: u32,
+    #[serde(default)]
+    pub people: Vec<SpeakerPerson>,
+}
+
+pub fn read_speaker_db() -> SpeakerDb {
+    fs::read_to_string(speaker_db_path())
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+pub fn write_speaker_db(db: &SpeakerDb) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(db)
+        .map_err(|e| format!("speaker_db 직렬화 실패: {e}"))?;
+    let path = speaker_db_path();
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    fs::write(&path, json).map_err(|e| format!("speaker_db 쓰기 실패: {e}"))
+}
+
+/// 화자 자동 인식 토글 (keep_recording과 같은 센티넬 관례).
+/// `speaker_profile_off` **존재 = OFF**, 부재 = ON(기본). OFF면 pyannote_diarize.py가
+/// 임베딩 기록·매칭을 통째로 건너뛰고(같은 파일명 리터럴을 읽음) 프론트도 등록을 건너뛴다.
+fn speaker_profile_off_path() -> PathBuf {
+    app_data_dir().join("speaker_profile_off")
+}
+
+pub fn read_speaker_profile_enabled() -> bool {
+    !speaker_profile_off_path().exists()
+}
+
+pub fn write_speaker_profile_enabled(enabled: bool) -> Result<(), String> {
+    let path = speaker_profile_off_path();
+    if enabled {
+        if path.exists() {
+            fs::remove_file(&path).map_err(|e| format!("화자 자동 인식 토글 해제 실패: {e}"))?;
+        }
+        Ok(())
+    } else {
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        fs::write(&path, "").map_err(|e| format!("화자 자동 인식 토글 저장 실패: {e}"))
+    }
+}
+
 /// 표준 macOS 앱 로그 위치 — `~/Library/Logs/app.junmit/`.
 /// Console.app에서 자동 인식되어 진단 편함.
 pub fn log_dir() -> PathBuf {
@@ -2253,8 +2339,9 @@ pub fn reset_session_to_recording(session_path: &str) -> Result<(), String> {
 /// `/meeting`(AI 후보정·회의록) 산출물만 삭제한다. 회의록 작성 단계를 깨끗한 상태로
 /// 다시 돌릴 때 사용(느린 전사·화자분리를 재실행하지 않아 defer 경로 테스트에 유용).
 pub fn reset_session_to_diarized(session_path: &str) -> Result<(), String> {
-    // 보존: 녹음 시점 보존 목록 + 전사(segments/whisper/result)·화자분리(diarize/recording/transcript)
-    // 산출물 + 처리 로그. 삭제: transcript_corrected·*_edits·speaker_mapping·meeting-notes(.bak) 등.
+    // 보존: 녹음 시점 보존 목록 + 전사(segments/whisper/result)·화자분리(diarize/recording/transcript/
+    // similarity/embeddings) 산출물 + 처리 로그. 삭제: transcript_corrected·*_edits·speaker_mapping·
+    // meeting-notes(.bak) 등. embeddings는 화자분리 때만 생성 가능(wav 삭제)해 지우면 복구 불가.
     reset_session_keeping(
         session_path,
         &[
@@ -2268,6 +2355,8 @@ pub fn reset_session_to_diarized(session_path: &str) -> Result<(), String> {
             "diarize.json",
             "recording.json",
             "transcript.txt",
+            "speaker_similarity.json",
+            "speaker_embeddings.json",
         ],
     )
 }

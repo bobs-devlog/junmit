@@ -9,6 +9,7 @@ import HistoryScreen from "@/screens/HistoryScreen";
 import RecordingScreen from "@/screens/RecordingScreen";
 import SessionScreen from "@/screens/SessionScreen";
 import VocabularyScreen from "@/screens/VocabularyScreen";
+import SpeakerProfileScreen from "@/screens/SpeakerProfileScreen";
 import MeetingTypesListScreen from "@/screens/MeetingTypesListScreen";
 import MeetingTypeCreateScreen from "@/screens/MeetingTypeCreateScreen";
 import MeetingTypeDetailScreen from "@/screens/MeetingTypeDetailScreen";
@@ -44,6 +45,7 @@ export const router = createMemoryRouter(
             { path: "/recording", element: <RecordingScreen /> },
             { path: "/session", element: <SessionScreen /> },
             { path: "/vocabulary", element: <VocabularyScreen /> },
+            { path: "/speaker-profiles", element: <SpeakerProfileScreen /> },
             { path: "/meeting-types", element: <MeetingTypesListScreen /> },
             { path: "/meeting-types/new", element: <MeetingTypeCreateScreen /> },
             { path: "/meeting-types/:id", element: <MeetingTypeDetailScreen /> },

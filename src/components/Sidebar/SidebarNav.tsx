@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { path: "/", label: "새 회의", icon: "📅" },
   { path: "/history", label: "회의 기록", icon: "🕘" },
   { path: "/vocabulary", label: "용어 사전", icon: "📖" },
+  { path: "/speaker-profiles", label: "화자 사전", icon: "🎙" },
   { path: "/meeting-types", label: "회의 유형", icon: "🗂" },
   { path: "/settings", label: "설정", icon: "⚙️" },
 ] as const;

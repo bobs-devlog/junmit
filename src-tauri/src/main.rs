@@ -431,6 +431,30 @@ fn cmd_write_vocabulary(vocab: session::Vocabulary) -> Result<(), String> {
     session::write_vocabulary(&vocab)
 }
 
+/// 화자 사전(음성 DB) 조회 (관리 화면 목록 + 화자 확정 시 등록의 read 단계).
+#[tauri::command]
+fn cmd_read_speaker_db() -> session::SpeakerDb {
+    session::read_speaker_db()
+}
+
+/// 화자 사전(음성 DB) 저장 (등록/이동/삭제 후 전체 upsert).
+#[tauri::command]
+fn cmd_write_speaker_db(db: session::SpeakerDb) -> Result<(), String> {
+    session::write_speaker_db(&db)
+}
+
+/// 화자 자동 인식 토글 조회. 센티넬 부재 = ON(기본).
+#[tauri::command]
+fn cmd_get_speaker_profile_enabled() -> bool {
+    session::read_speaker_profile_enabled()
+}
+
+/// 화자 자동 인식 토글 저장 (센티넬 파일 생성/제거).
+#[tauri::command]
+fn cmd_set_speaker_profile_enabled(enabled: bool) -> Result<(), String> {
+    session::write_speaker_profile_enabled(enabled)
+}
+
 #[tauri::command]
 fn cmd_check_mic_permission() -> &'static str {
     session::mic_permission_status()
@@ -1782,6 +1806,10 @@ fn main() {
             cmd_write_attendee_groups,
             cmd_read_vocabulary,
             cmd_write_vocabulary,
+            cmd_read_speaker_db,
+            cmd_write_speaker_db,
+            cmd_get_speaker_profile_enabled,
+            cmd_set_speaker_profile_enabled,
             cmd_check_mic_permission,
             cmd_request_mic_permission,
             cmd_start_mic_capture,
@@ -1841,5 +1869,23 @@ mod tests {
         // 프론트 invoke<"completed" | "cancelled"> 계약의 실측 근거.
         assert_eq!(serde_json::to_string(&PipelineRun::Completed).unwrap(), "\"completed\"");
         assert_eq!(serde_json::to_string(&PipelineRun::Cancelled).unwrap(), "\"cancelled\"");
+    }
+
+    #[test]
+    fn speaker_db_parses_leniently_and_roundtrips() {
+        // 빈/부분 JSON도 Default로 관대하게 파싱: python(pyannote_diarize.py)·프론트가 같은
+        // 파일을 읽으므로 필드 누락이 크래시로 이어지면 안 된다.
+        let empty: session::SpeakerDb = serde_json::from_str("{}").unwrap();
+        assert!(empty.people.is_empty());
+
+        let db: session::SpeakerDb = serde_json::from_str(
+            r#"{ "version": 1, "people": [ { "name": "Bobs", "samples": [
+                { "session_id": "s1", "speaker": "SPEAKER_00", "vector": [0.1, -0.2] } ] } ] }"#,
+        )
+        .unwrap();
+        assert_eq!(db.people[0].samples[0].vector.len(), 2);
+        let json = serde_json::to_string(&db).unwrap();
+        let back: session::SpeakerDb = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.people[0].name, "Bobs");
     }
 }

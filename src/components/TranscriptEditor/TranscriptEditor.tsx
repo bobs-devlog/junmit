@@ -14,6 +14,7 @@ import type { SpeakerState } from "@/utils/speakerMapping";
 import { reassignLines, restoreSnapshot } from "@/utils/speakerCorrection";
 import type { CorrectionSnapshot } from "@/utils/speakerCorrection";
 import { buildSpeakerLabels, buildSpeakerNumbers } from "@/utils/meetingNotes";
+import { enrollSpeakerVoice, unenrollSpeakerVoice } from "@/utils/speakerDb";
 import { loadMeetingMeta } from "@/utils/meetingMeta";
 import { loadAttendees } from "@/utils/attendees";
 import type { SpeakerMapping } from "@/types";
@@ -488,7 +489,15 @@ export default function TranscriptEditor({
     try {
       await saveSpeakerMapping(sessionPath, speaker, { name, confirmed });
       // meeting-notes.md는 SessionViewer가 표시 시점에 치환하므로 파일 수정 없이 매핑만 저장.
-      toast.success(name ? `✓ '${name}' 확정` : "✓ 미확인으로 되돌림");
+      if (name) {
+        const enrolled = await enrollSpeakerVoice(sessionPath, speaker, name);
+        toast.success(
+          enrolled ? `✓ '${name}' 확정 (다음 회의부터 이 목소리를 알아봐요)` : `✓ '${name}' 확정`
+        );
+      } else {
+        await unenrollSpeakerVoice(sessionPath, speaker);
+        toast.success("✓ 미확인으로 되돌림");
+      }
     } catch (e) {
       toast.error(`저장 실패: ${e}`);
     }
@@ -502,7 +511,10 @@ export default function TranscriptEditor({
     setMapping({ ...mapping, [speaker]: { ...mapping[speaker], name, confirmed: true } });
     try {
       await saveSpeakerMapping(sessionPath, speaker, { confirmed: true });
-      toast.success(`✓ '${name}' 확정`);
+      const enrolled = await enrollSpeakerVoice(sessionPath, speaker, name);
+      toast.success(
+        enrolled ? `✓ '${name}' 확정 (다음 회의부터 이 목소리를 알아봐요)` : `✓ '${name}' 확정`
+      );
     } catch (e) {
       toast.error(`저장 실패: ${e}`);
     }
@@ -517,6 +529,7 @@ export default function TranscriptEditor({
     });
     try {
       await saveSpeakerMapping(sessionPath, speaker, { name: "", confirmed: false });
+      await unenrollSpeakerVoice(sessionPath, speaker);
       toast.success("미확인으로 되돌렸어요");
     } catch (e) {
       toast.error(`저장 실패: ${e}`);

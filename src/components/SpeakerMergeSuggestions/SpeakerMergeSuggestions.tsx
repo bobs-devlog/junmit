@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "@/contexts/SessionContext";
 import { loadSpeakerMapping, saveSpeakerMapping } from "@/utils/speakerMapping";
+import { enrollSpeakerVoice } from "@/utils/speakerDb";
 import { loadSpeakerSimilarity, dismissSimilarityPair, pairKey } from "@/utils/speakerSimilarity";
 import { loadAttendees } from "@/utils/attendees";
 import { extractSpeakerLabels } from "@/utils/transcript";
@@ -131,8 +132,15 @@ export default function SpeakerMergeSuggestions({
         [c.a]: { name, reason: prev[c.a]?.reason ?? "", confirmed: true },
         [c.b]: { name, reason: prev[c.b]?.reason ?? "", confirmed: true },
       }));
+      // 두 화자 모두 사용자 확정이므로 화자 사전에도 각각 등록 (같은 인물의 샘플 2개).
+      const enrolledA = await enrollSpeakerVoice(sessionPath, c.a, name);
+      const enrolledB = await enrollSpeakerVoice(sessionPath, c.b, name);
       onMerged(); // 활성 탭 remount → 회의록·전사본·화자매칭이 같은 이름으로 표시.
-      toast.success(`✓ '${name}'(으)로 합쳤어요 — 회의록·전사본에 같은 이름으로 표시돼요`);
+      toast.success(
+        enrolledA || enrolledB
+          ? `✓ '${name}'(으)로 합쳤어요 (다음 회의부터 이 목소리를 알아봐요)`
+          : `✓ '${name}'(으)로 합쳤어요 — 회의록·전사본에 같은 이름으로 표시돼요`
+      );
     } catch (e) {
       toast.error(`합치기 실패: ${e}`);
     }

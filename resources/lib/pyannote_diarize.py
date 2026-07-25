@@ -157,6 +157,13 @@ print(f"pyannote.audio: {len(segments)} segments, {len(speakers)} speakers → {
 SIMILARITY_THRESHOLD = 0.75
 EMBED_MIN_DUR = 0.8
 EMBED_TOP_N = 8
+# 화자 사전(화자 DB) 매칭 임계. 세션 간 비교라 세션 내(위 0.75 근거: 동일인 0.83/타인 0.55)보다
+# 변동이 크다. margin은 1·2위 "인물" 간 격차(비슷한 목소리 오매칭 방지, 미달 시 후보 힌트만).
+SPEAKER_DB_THRESHOLD = 0.75
+SPEAKER_DB_MARGIN = 0.05
+EMBED_MODEL_ID = "pyannote-community-1"
+PROFILE_OFF_SENTINEL = "speaker_profile_off"  # Rust session.rs와 공유하는 리터럴
+speaker_vecs = {}  # 합치기 제안·화자 DB 두 블록이 공유 (try 실패 시에도 정의 보장)
 similarity_path = os.path.join(os.path.dirname(output_path), "speaker_similarity.json")
 try:
     import numpy as np
@@ -172,7 +179,6 @@ try:
     for s in segments:
         by_speaker.setdefault(s["speaker_id"], []).append((s["start"], s["end"]))
 
-    speaker_vecs = {}
     for spk, segs in by_speaker.items():
         # 길이 내림차순, ≥0.8초만, 상위 8개
         long_segs = sorted(
@@ -219,3 +225,173 @@ try:
 except Exception as e:
     # 유사도 계산 실패는 화자분리 자체를 막지 않는다 (합치기 제안은 부가 기능).
     print(f"pyannote.audio: 합치기 후보 계산 생략 ({e})", file=sys.stderr)
+
+# ── 화자 사전(화자 DB): 세션 임베딩 영속화 + 알려진 목소리 프리필 ─────────
+# recording.wav는 diarize 성공 직후 Rust가 삭제하므로(프라이버시 기본) 임베딩 산출·영속화는
+# 여기가 유일한 시점이다. ① 화자별 대표 벡터를 speaker_embeddings.json으로 남기고(사용자가
+# 매핑을 확정할 때 앱이 전역 DB에 등록하는 재료), ② 전역 speaker_db.json(이전 회의에서 확정된
+# 목소리들)과 대조해 speaker_mapping.json에 이름을 추정(confirmed 없음 = 앱 UI의 guess 상태)으로
+# 프리필한다. 이름을 박지 않고 후보 힌트만 남기는 두 경우: ⓐ 1·2위 인물이 근접(margin 미달)
+# ⓑ 참석자 명단이 있는데 매칭 인물이 명단 밖(그 사람이 참석했을 사전 확률이 낮음 — 명단이
+# 불완전했다면 사용자가 힌트에서 원클릭 확정). 그럴듯한 오매칭보다 미확인이 낫다(화자 매핑
+# 원칙과 동일). 실패는 화자분리를 막지 않는다.
+try:
+    import numpy as np
+
+    app_data_dir = os.environ.get("APP_DATA_DIR", "")
+    session_dir = os.path.dirname(output_path)
+    if not app_data_dir:
+        raise RuntimeError("APP_DATA_DIR 미설정")
+    if os.path.exists(os.path.join(app_data_dir, PROFILE_OFF_SENTINEL)):
+        print("pyannote.audio: 화자 자동 인식 꺼짐, 임베딩 기록·매칭 생략", file=sys.stderr)
+    elif speaker_vecs:
+        try:
+            with open(os.path.join(session_dir, "meeting.json")) as f:
+                meeting_meta = json.load(f)
+        except Exception:
+            meeting_meta = {}
+        capture_mode = meeting_meta.get("capture_mode") or "mic"
+        attendees = [
+            a.strip() for a in (meeting_meta.get("attendees") or [])
+            if isinstance(a, str) and a.strip()
+        ]
+
+        def in_attendees(name):
+            """느슨한 명단 대조: 대소문자 무시 + 토큰 단위 일치("Wayne" ↔ "Wayne Kim").
+            정확 일치를 요구하면 표기 차이로 진짜 참석자가 명단 밖으로 오판된다. 반대로
+            여기서 놓쳐도 결과는 힌트 강등뿐이라(이름이 숨거나 틀리게 박히지 않음) 안전."""
+            name_norm = name.strip().lower()
+            name_tokens = set(name_norm.split())
+            for attendee in attendees:
+                attendee_norm = attendee.lower()
+                attendee_tokens = set(attendee_norm.split())
+                if (
+                    name_norm == attendee_norm
+                    or name_norm in attendee_tokens
+                    or attendee_norm in name_tokens
+                ):
+                    return True
+            return False
+
+        dim = int(next(iter(speaker_vecs.values())).shape[0])
+        emb_payload = {
+            "model": EMBED_MODEL_ID,
+            "dim": dim,
+            "capture_mode": capture_mode,
+            "speakers": {
+                f"SPEAKER_{spk:02d}": [round(float(x), 6) for x in vec]
+                for spk, vec in speaker_vecs.items()
+            },
+        }
+        with open(os.path.join(session_dir, "speaker_embeddings.json"), "w") as f:
+            json.dump(emb_payload, f, ensure_ascii=False)
+        print(f"pyannote.audio: 화자 임베딩 {len(speaker_vecs)}명 → speaker_embeddings.json",
+              file=sys.stderr)
+
+        db_path = os.path.join(app_data_dir, "speaker_db.json")
+        people = []
+        if os.path.exists(db_path):
+            with open(db_path) as f:
+                people = json.load(f).get("people", [])
+        # 대소문자 변형("bobs"/"Bobs")이 남아 있으면 같은 목소리끼리 margin 경합으로
+        # 프리필이 조용히 보류된다. 등록(프론트)이 접어서 저장하지만 매칭도 방어적으로 접는다.
+        folded = {}
+        for person in people:
+            key = (person.get("name") or "").strip().lower()
+            if not key:
+                continue
+            merged = folded.setdefault(key, {"name": person.get("name", "").strip(), "samples": []})
+            merged["samples"].extend(person.get("samples", []))
+        people = list(folded.values())
+
+        prefill = {}
+        for spk, vec in speaker_vecs.items():
+            # 인물별 점수 = 그 인물 샘플들과의 최대 코사인. 환경(마이크/시스템 오디오)이 다른
+            # 샘플이 섞여 있어도 가장 가까운 조건의 샘플이 그 인물을 대변한다(멀티 엔롤먼트).
+            scores = []  # (best_cos, name, best_sample)
+            for person in people:
+                best = None
+                for sample in person.get("samples", []):
+                    sample_vec = np.asarray(sample.get("vector", []), dtype=np.float32)
+                    if sample_vec.shape[0] != dim:
+                        continue  # 모델/차원 불일치 샘플은 비교 불가라 skip
+                    cos = float(np.dot(vec, sample_vec))  # 양쪽 다 L2 정규화 저장
+                    if best is None or cos > best[0]:
+                        best = (cos, sample)
+                if best is not None:
+                    scores.append((best[0], person.get("name", ""), best[1]))
+            scores.sort(reverse=True, key=lambda t: t[0])
+            if not scores or scores[0][0] < SPEAKER_DB_THRESHOLD:
+                continue
+            label = f"SPEAKER_{spk:02d}"
+            top_cos, top_name, top_sample = scores[0]
+            if len(scores) >= 2 and top_cos - scores[1][0] < SPEAKER_DB_MARGIN:
+                # 2위 인물과 근접: 자동 확정 대신 후보 힌트(이름 없는 reason)만.
+                # 앱은 미확인 화자의 reason을 "AI 힌트" 팝오버로 보여준다.
+                second_cos, second_name, _ = scores[1]
+                prefill[label] = {
+                    "name": "",
+                    "reason": (
+                        f"지난 회의 목소리 후보: {top_name}({top_cos * 100:.0f}%)·{second_name}({second_cos * 100:.0f}%)와 "
+                        "비슷해 자동 확정 보류"
+                    ),
+                }
+                continue
+            if attendees and not in_attendees(top_name):
+                # 3단 규칙 ⓑ: 명단이 있는데 명단 밖 인물 → 이름 대신 후보 힌트로 강등.
+                prefill[label] = {
+                    "name": "",
+                    "reason": (
+                        f"지난 회의 목소리 후보: {top_name} 음성과 유사 (음성 유사도 {top_cos * 100:.0f}%), "
+                        "이번 참석자 명단에 없어 자동 확정 보류"
+                    ),
+                }
+                continue
+            src_date = top_sample.get("date", "")
+            src_title = top_sample.get("title", "")
+            prefill[label] = {
+                "name": top_name,
+                "reason": (
+                    f"지난 회의 목소리 일치: {src_date} '{src_title}'의 {top_name} 음성과 유사 "
+                    f"(음성 유사도 {top_cos * 100:.0f}%)"
+                ),
+            }
+
+        if prefill:
+            mapping_path = os.path.join(session_dir, "speaker_mapping.json")
+            top = {}  # 래퍼의 형제 필드(_quality_warning 등)도 보존해야 해서 최상위째 유지
+            existing = {}
+            if os.path.exists(mapping_path):
+                # 재처리(세션 리셋 후 diarize 재실행) 방어: 이름 있는 기존 엔트리는 절대 덮지 않음.
+                try:
+                    with open(mapping_path) as f:
+                        loaded = json.load(f)
+                    if isinstance(loaded, dict):
+                        if isinstance(loaded.get("speaker_mapping"), dict):
+                            top = loaded
+                            existing = loaded["speaker_mapping"]
+                        else:
+                            existing = loaded  # 래퍼 없는 구형 형태
+                except Exception:
+                    pass
+            for label, entry in prefill.items():
+                current = existing.get(label)
+                has_name = (
+                    isinstance(current, dict) and (current.get("name") or "").strip()
+                ) or (isinstance(current, str) and current.strip())
+                if not has_name:
+                    existing[label] = entry
+            top["speaker_mapping"] = existing
+            with open(mapping_path, "w") as f:
+                json.dump(top, f, ensure_ascii=False, indent=2)
+            named = sum(1 for e in prefill.values() if e["name"])
+            hinted = len(prefill) - named
+            print(
+                f"pyannote.audio: 화자 사전 매칭: 이름 프리필 {named}명, 후보 힌트 {hinted}명 "
+                "→ speaker_mapping.json",
+                file=sys.stderr,
+            )
+        else:
+            print("pyannote.audio: 화자 사전 매칭 없음", file=sys.stderr)
+except Exception as e:
+    print(f"pyannote.audio: 화자 사전 처리 생략 ({e})", file=sys.stderr)

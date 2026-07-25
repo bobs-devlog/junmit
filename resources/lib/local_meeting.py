@@ -328,9 +328,11 @@ def hints_mapping(session, transcript):
 
 def resolve_speakers(transcript, attendees_list, session):
     """speaker_mapping 엔트리 생성 — 우선순위:
-    ① 기존 매핑의 이름(재작성 시 사용자 지정 보존 — claude 재작성 모드가 1단계 skip으로
+    ① 기존 매핑의 확정/지정 이름(재작성 시 사용자 지정 보존 — claude 재작성 모드가 1단계 skip으로
        매핑을 유지하는 것과 등가. 덮어쓰면 사용자가 지정한 이름이 전량 소실된다)
-    ② 녹음 힌트(결정론, 녹음 화면 참석자 칩 탭) ③ 나머지는 빈 이름("참석자 N" → 앱에서 지정/수정).
+    ② 녹음 힌트(결정론, 녹음 화면 참석자 칩 탭) — 미확정 화자 사전 프리필("지난 회의 목소리 일치"
+       reason, 화자분리 단계가 작성)보다 우선한다(사용자 직접 입력 > 임베딩 추정)
+    ③ 화자 사전 프리필 유지 ④ 나머지는 빈 이름("참석자 N" → 앱에서 지정/수정).
     주: LLM 화자 제안(고품질판 전용, +~1.5분)은 2026-07 실측 후 제거 — 영문 닉네임 조직 ×
     한국어 회의에선 이름 단서가 전사에서 살아남지 못해 채택 0/2, 기대값이 비용을 못 넘음.
     전사에 이름이 살아나는 개선(참석자 이름의 용어 사전 등록)이 확인되면 재도입 검토."""
@@ -339,13 +341,32 @@ def resolve_speakers(transcript, attendees_list, session):
     try:
         prev = json.loads((session / "speaker_mapping.json").read_text())["speaker_mapping"]
         for sp, v in prev.items():
-            if sp in entries and (v.get("name") or "").strip():
-                entries[sp] = {"name": v["name"].strip(), "reason": v.get("reason", "")}
+            if sp not in entries or not isinstance(v, dict):
+                continue
+            if (v.get("name") or "").strip():
+                entry = {"name": v["name"].strip(), "reason": v.get("reason", "")}
+                if v.get("confirmed") is not None:  # 확정 상태 유실 방지 (앱 UI 3상태 표시)
+                    entry["confirmed"] = v["confirmed"]
+                entries[sp] = entry
+            elif (v.get("reason") or "").strip():
+                # 이름 없는 후보 힌트("지난 회의 목소리 후보: …") 등 reason만 있는 엔트리도 보존
+                entries[sp] = {"name": "", "reason": v["reason"]}
     except Exception:
         pass
     for sp, name in hints_mapping(session, transcript).items():
-        if name in attendees_list and sp in entries and not entries[sp]["name"]:
-            entries[sp] = {"name": name, "reason": "녹음 중 화자 힌트"}
+        if name not in attendees_list or sp not in entries:
+            continue
+        cur = entries[sp]
+        overridable = not cur["name"] or (
+            not cur.get("confirmed") and cur.get("reason", "").startswith("지난 회의 목소리 일치")
+        )
+        if overridable:
+            reason = "녹음 중 화자 힌트"
+            prev_reason = cur.get("reason", "")
+            if prev_reason.startswith("지난 회의 목소리"):
+                # 음성 근거 병기 — 같은 이름이면 상호 확인, 다른 이름이면 사용자 판단 재료
+                reason += "\n" + prev_reason
+            entries[sp] = {"name": name, "reason": reason}
     return entries
 
 

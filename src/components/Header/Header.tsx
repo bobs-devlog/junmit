@@ -122,6 +122,7 @@ function getTitle(pathname: string, meetingTitle: string | undefined): string | 
   if (pathname === "/") return "새 회의";
   if (pathname === "/history") return "회의 기록";
   if (pathname === "/vocabulary") return "용어 사전";
+  if (pathname === "/speaker-profiles") return "화자 사전";
   if (pathname === "/recording" || pathname === "/session") {
     return meetingTitle ?? null;
   }
