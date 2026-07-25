@@ -12,8 +12,8 @@
   flex-shrink: 0;
   /* drawer panel-header와 동일 min-height — 두 헤더가 가로로 나란히 정렬되어야 시각적 일관성. */
   min-height: 38px;
-  /* 우측 padding — WorkArea가 CSS variable로 drawer 상태별 조절.
-     closed: 80px (AI 토글 영역 비워둠) / open: 0 (panel-header가 토글 영역 처리). */
+  /* 우측 padding: WorkArea가 CSS variable로 drawer 상태별 조절.
+     closed=토글 영역 비워둠 / open=경계선 밀착 방지 여백만. 값은 TerminalWorkspace 소유. */
   padding-right: var(--sv-toolbar-right, 80px);
 }
 

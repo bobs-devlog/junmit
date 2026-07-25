@@ -9,14 +9,14 @@
   min-width: 0;
   transition: grid-template-columns 180ms ease;
   position: relative; /* AI 토글 버튼의 absolute 기준 */
-  /* sv-toolbar 우측 padding 제어 — drawer closed 시 토글 영역 비워두고,
-     drawer open 시엔 panel-header가 토글 영역 처리하므로 padding 불필요 (탭 영역 ↑). */
+  /* sv-toolbar 우측 padding 제어: drawer closed 시 토글 영역(58px)을 비워두고,
+     open 시엔 토글이 panel-header 몫이라 경계선 밀착 방지 여백(8px)만 남김. */
   --sv-toolbar-right: 58px;
 }
 
 .work-area.drawer-open {
   grid-template-columns: 1fr var(--app-panel-width, 460px);
-  --sv-toolbar-right: 0;
+  --sv-toolbar-right: 8px;
 }
 
 /* drag 중엔 grid transition 끄기 — 마우스에 즉시 반응 */
