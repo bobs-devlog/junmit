@@ -308,7 +308,11 @@ TIME_RE = re.compile(r"\[(SPEAKER_\d{2})\s+(\d+):(\d{2})\]")
 
 def hints_mapping(session, transcript):
     """녹음 중 사용자가 찍은 화자 힌트(notes.json) → {SPEAKER_XX: name} (결정론적, 최우선).
-    각 힌트 시각 t의 [t-10, t+2]초 윈도우에서 지배 화자를 그 이름으로 본다."""
+    탭 순간에 말하던 사람 = 힌트 시각 직전에 시작한 발화 라인의 화자(사용자는 발화가
+    시작된 뒤 칩을 누른다). 직전 라인이 30초 넘게 전이면 침묵 뒤 오귀속 위험이라 무효,
+    직후 2초 내 시작 라인으로 폴백. 윈도우 다수결로 되돌리지 말 것: 경계 동점에서 임의
+    화자를 고르는 오매핑이 있다. 이름이 다른 힌트가 같은 화자로 풀리면 그 화자는 매핑하지
+    않는다(과병합 신호, speaker-mapping sub-agent 충돌 규칙과 동일)."""
     try:
         notes = json.loads((session / "notes.json").read_text()).get("notes", [])
     except Exception:
@@ -317,12 +321,29 @@ def hints_mapping(session, transcript):
              for n in notes if n.get("kind") == "speaker" and n.get("speaker")]
     if not hints:
         return {}
-    lines = [(int(mm) * 60 + int(ss), sp) for (sp, mm, ss) in TIME_RE.findall(transcript)]
+    # 같은 초에 시작하는 라인들은 전사 순서를 유지해야 "직전 라인"이 실제 마지막 발화가 된다
+    # (튜플 정렬은 동초에서 화자 문자열로 재배열). 안정 정렬 + 초만 키로.
+    lines = sorted(
+        ((int(mm) * 60 + int(ss), sp) for (sp, mm, ss) in TIME_RE.findall(transcript)),
+        key=lambda line: line[0],
+    )
     res = {}
+    conflicted = set()
     for t, name in hints:
-        window = [sp for (sec, sp) in lines if t - 10 <= sec <= t + 2]
-        if window:
-            res[max(set(window), key=window.count)] = name
+        before = [(sec, sp) for sec, sp in lines if sec <= t and t - sec <= 30]
+        after = [(sec, sp) for sec, sp in lines if t < sec <= t + 2]
+        if before:
+            speaker = before[-1][1]
+        elif after:
+            speaker = after[0][1]
+        else:
+            continue
+        if speaker in res and res[speaker] != name:
+            conflicted.add(speaker)
+            continue
+        res[speaker] = name
+    for speaker in conflicted:
+        res.pop(speaker, None)
     return res
 
 
@@ -364,7 +385,7 @@ def resolve_speakers(transcript, attendees_list, session):
             reason = "녹음 중 화자 힌트"
             prev_reason = cur.get("reason", "")
             if prev_reason.startswith("지난 회의 목소리"):
-                # 음성 근거 병기 — 같은 이름이면 상호 확인, 다른 이름이면 사용자 판단 재료
+                # 음성 근거 병기: 같은 이름이면 상호 확인, 다른 이름이면 사용자 판단 재료
                 reason += "\n" + prev_reason
             entries[sp] = {"name": name, "reason": reason}
     return entries
