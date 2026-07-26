@@ -114,7 +114,7 @@ summary: |
 
 ## Action Items 처리
 
-분기 규칙은 `.claude/skills/meeting/notes-rules.md`의 "Action Items `@assignee` 분기" 참고. 회의록 유형은 기한(due)이 명시되는 경우가 많으므로 `(기한: {due})` 형식 활용.
+승격 기준·기한·`@assignee` 분기는 `.claude/skills/meeting/notes-rules.md`의 "Action Items" 참고. 일반 회의는 기한이 발화로 명시되는 경우가 많으므로 `(기한: {due})`를 적극 활용 (명시된 기한만).
 
 ---
 
