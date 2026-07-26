@@ -98,6 +98,33 @@ def emit(msg=""):
     print(msg, flush=True)
 
 
+# ---- 진행 단계 마커 (@@progress) ----
+# 파이프(앱)면 자가완결 JSON 한 줄(단계 계획 전체 + 현재 단계: 프론트가 무상태로 재구성),
+# tty(직접 실행)면 사람용 한국어 줄.
+_STAGES = []
+
+
+def plan_stages(needs_classify):
+    global _STAGES
+    _STAGES = [("load", "모델 로딩")]
+    if needs_classify:
+        _STAGES.append(("classify", "회의 유형 파악"))
+    _STAGES += [("speakers", "화자 목록 정리"),
+                ("draft", "회의록 작성"),
+                ("verify", "전사 대조 다듬기")]
+
+
+def emit_progress(current, hint=None):
+    if sys.stdout.isatty():
+        label = next((l for k, l in _STAGES if k == current), current)
+        emit(f"   {label} 중…" + (f" ({hint})" if hint else ""))
+        return
+    payload = {"stages": [{"key": k, "label": l} for k, l in _STAGES], "current": current}
+    if hint:
+        payload["hint"] = hint
+    emit("@@progress " + json.dumps(payload, ensure_ascii=False))
+
+
 def fail(msg):
     emit(f"\n❌ {msg}")
     signal({"type": "phase_error", "msg": msg})
@@ -217,7 +244,7 @@ def write_note_mapreduce(gen, tok, session, raw, attendees):
                      + "\n  ".join(memos) + "\n")
     partials = []
     for i, ch in enumerate(chunks):
-        emit(f"   긴 회의 — 구간 {i + 1}/{len(chunks)} 요약 중…")
+        emit_progress("draft", hint=f"구간 {i + 1}/{len(chunks)} 요약 중")
         user = (
             "아래 회의 전사 구간의 핵심을 간결한 항목으로 정리하세요.\n"
             "- 논의 요점·결정·할 일 중심. 출석·인사·잡담 제외.\n"
@@ -241,7 +268,7 @@ def write_note_mapreduce(gen, tok, session, raw, attendees):
     merged = "\n\n".join(p for p in partials if p)
     if not merged.strip():
         return ""
-    emit("   구간 요약을 모아 회의록 작성 중…")
+    emit_progress("draft", hint="구간 요약을 모아 통합 중")
     try:
         note = gen(NOTE_SYS, build_note_prompt(session, merged, reduce=True),
                    max_tokens=NOTE_MAX_TOKENS, temp=0.25, echo=True)
@@ -740,7 +767,11 @@ def main():
         signal({"type": "phase_done"})
         return
 
-    emit("   모델 로딩 중…")
+    mtype = meta.get("type", "auto")
+    needs_classify = mtype == "auto" or not (TEMPLATES / f"{mtype}.md").exists()
+    plan_stages(needs_classify)
+
+    emit_progress("load")
     try:
         gen, tok = make_generator()
     except Exception as e:
@@ -751,9 +782,8 @@ def main():
     # 0) 회의 유형 — auto(자동 판단)거나 가이드가 삭제된 유형이면 분류 생성 1회로 판별.
     #    실패하면 자유 구성 폴백 (meeting.json은 건드리지 않음 — 유형 변경은 앱 UI 소관).
     global _RESOLVED_TYPE
-    mtype = meta.get("type", "auto")
-    if mtype == "auto" or not (TEMPLATES / f"{mtype}.md").exists():
-        emit("   회의 유형 파악 중…")
+    if needs_classify:
+        emit_progress("classify")
         _RESOLVED_TYPE = keyword_type(meta.get("title", "")) or classify_type(gen, tok, raw)
         if _RESOLVED_TYPE:
             label = next((l for n, l, _ in template_candidates() if n == _RESOLVED_TYPE),
@@ -764,7 +794,7 @@ def main():
             emit("   회의 유형: 자유 형식으로 작성")
 
     # 1) 화자 매핑 준비 — 기존 매핑 보존 + 녹음 힌트(결정론). LLM 제안은 제거(resolve_speakers 주 참조).
-    emit("   화자 목록 정리 중…")
+    emit_progress("speakers")
     try:
         entries = resolve_speakers(raw, meta.get("attendees", []), session)
         write_speaker_mapping(session, entries)
@@ -775,6 +805,7 @@ def main():
         emit(f"   (화자 정리 생략 — {e})")
 
     # 2) 회의록 초안 — 짧으면 단일샷, 길면 map-reduce
+    emit_progress("draft")
     is_long = len(tok.encode(raw)) > LONG_NOTE_TOKENS
     if is_long:
         # ⚠️ 없이 — 긴 회의 분할은 정상 동작이지 경고가 아니다.
@@ -783,7 +814,8 @@ def main():
     else:
         out = ""
     if not out.strip():
-        emit("   회의록 작성 중…")
+        # 같은 단계 재선언(무해): map-reduce 폴백 진입 시 남은 구간 hint를 지운다.
+        emit_progress("draft")
         source = raw
         if is_long:
             # map-reduce 실패 시 최후 fallback — 예산 내로 절단해 단일샷
@@ -795,7 +827,7 @@ def main():
             fail(f"회의록 생성 중 오류가 발생했습니다: {e}")
 
     # 3) 자기검증 — 전사 대조로 시제·상태·누락 교정 (오타 교정 겸함, 사용자 메모 반영 포함)
-    emit("   전사와 대조해 다듬는 중…")
+    emit_progress("verify")
     out = verify_note(gen, tok, out, raw, vocab, memos=user_memos(session))
 
     # 4) 결정론 후처리 + 헤더 주입

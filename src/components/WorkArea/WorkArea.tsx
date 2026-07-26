@@ -62,10 +62,10 @@ interface WorkAreaProps {
   // headless(claude -p) 실행 중/직후 — 터미널 대신 구조화 진행 패널(headless:event 스트림) 표시.
   // localBackend와 배타적이진 않지만(둘 다 진행 패널) headless가 우선 — SessionContext가 관리.
   headlessBackend?: boolean;
-  // 회의록 검증 토글(meeting.json notes_verification, 기본 ON) — 진행 패널의 단계 분모 결정.
+  // 회의록 검증 토글(meeting.json notes_verification, 기본 ON) — 진행 패널의 검증 단계 행 유무 결정.
   verifyEnabled?: boolean;
-  // AI 다듬기 토글(meeting.json ai_polish, 기본 ON) — 진행 패널의 다듬기 단계 유무 결정.
-  // OFF면 Correcting 동안에도 준비 단계로 표시(다듬기 단계 자체가 없음).
+  // AI 다듬기 토글(meeting.json ai_polish, 기본 ON) — 진행 패널의 다듬기 단계 행 유무 결정.
+  // OFF면 Correcting 동안에도 정보 확인 단계로 표시(다듬기 단계 자체가 없음).
   polishEnabled?: boolean;
   // 무음("발화 없음")으로 diarize·회의록을 건너뛴 세션 — SessionViewer가 전용 빈 상태 표시.
   noSpeech?: boolean;
@@ -109,9 +109,9 @@ export default function WorkArea({
   onEscape,
   onRetypeNotes,
 }: WorkAreaProps) {
-  // headless 작업 중엔 헤더를 총괄 문구로 고정 — 구체 단계·경과·안내는 패널 상태 라인이
-  // **유일한 동적 표시**로 전담한다(AgentProgressPanel). 헤더에 시간·단계를 얹으면 같은 정보가
-  // 두 곳에서 동시에 움직여 산만하다. 완료 후엔 null로 비켜나 완료 띠(✓)가 동작.
+  // headless 작업 중엔 헤더를 총괄 문구로 고정 — 구체 단계·경과·안내는 패널의 단계
+  // 체크리스트가 **유일한 동적 표시**로 전담한다(AgentProgressPanel). 헤더에 시간·단계를
+  // 얹으면 같은 정보가 두 곳에서 동시에 움직여 산만하다. 완료 후엔 null로 비켜나 완료 띠(✓)가 동작.
   const headlessWorking =
     headlessBackend &&
     (activity === Activity.Correcting || activity === Activity.Composing || isVerifying);
@@ -160,7 +160,11 @@ export default function WorkArea({
             emptyState={emptyState}
           />
         ) : localBackend ? (
-          <LocalProgressPanel activity={activity} emptyState={emptyState} />
+          <LocalProgressPanel
+            activity={activity}
+            completed={completedActivity !== null}
+            emptyState={emptyState}
+          />
         ) : undefined
       }
     >

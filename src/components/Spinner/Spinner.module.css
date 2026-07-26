@@ -15,3 +15,10 @@
     transform: rotate(360deg);
   }
 }
+
+/* 동작 줄이기: 회전만 멈춘다(currentColor 호가 정지로 남아 진행/대기 구분 유지). */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}

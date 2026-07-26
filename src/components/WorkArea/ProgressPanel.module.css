@@ -1,0 +1,235 @@
+.panel {
+  /* 부모(panel-body)가 가로 flex 컨테이너 — flex:1 없이는 패널 폭이 내용물의 최대 줄
+     길이로 잡혀 구분선(border)이 드로어 우측 끝까지 못 간다. */
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg, transparent);
+}
+
+/* 단계 체크리스트 카드. 스크롤 밖 고정: 로그가 길어도 진행 위치가 항상 보인다.
+   전폭 구분선 + 굵은 글자는 드로어 헤더의 시각 문법과 헷갈려, 여백 안의 둥근 카드로 계층을 가른다. */
+.status {
+  flex: none;
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+}
+
+.stageRow {
+  display: flex;
+  align-items: baseline;
+  padding: 1px 0;
+  font-size: 13px;
+}
+
+/* 아이콘 칸은 가운데 정렬(사이드바 스테퍼와 동일): 점·✓·스피너의 축을 맞춘다. */
+.stageIcon {
+  flex: none;
+  width: 20px;
+  text-align: center;
+}
+
+.stageRunning {
+  font-weight: 600;
+  color: var(--text-primary, #e8eaf0);
+  /* 행 remount(key=state) 시 색 플래시. 패널 첫 표시에도 한 번 재생(무해). */
+  animation: stage-label-flash 1.4s ease-out;
+}
+
+@keyframes stage-label-flash {
+  from {
+    color: var(--accent, #4cc9f0);
+  }
+}
+
+.stageDone {
+  color: var(--text-secondary, #a8adb8);
+}
+
+/* 완료 체크만 성공색(행 전체 초록은 목록을 시끄럽게 한다). */
+.stageDone .stageIcon {
+  color: var(--success, #70f0a0);
+}
+
+.stagePending {
+  color: var(--text-tertiary, #6b7280);
+}
+
+.stageCanceled {
+  color: var(--text-tertiary, #6b7280);
+}
+
+.elapsed {
+  margin-left: 8px;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--text-tertiary, #6b7280);
+}
+
+/* 진행 행 아래 안내. 그 단계 동안 지속 노출(배너의 5초 소멸과 달리).
+   대기 행과 같은 회색이면 다섯 번째 단계처럼 읽혀, 액센트를 옅게 섞어 진행 행 소속을 표시. */
+.stageHint {
+  padding-left: 20px;
+  margin-bottom: 3px;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--accent, #4cc9f0) 35%, var(--text-tertiary, #6b7280));
+}
+
+.heartbeat {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  font-size: 12px;
+  color: var(--text-tertiary, #6b7280);
+}
+
+/* 라이브 점 — 상태 표시등 관례(초록 = 정상 동작 중). */
+.liveDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  vertical-align: 1px;
+  border-radius: 50%;
+  background: var(--success, #70f0a0);
+  animation: live-pulse 2s ease-in-out infinite;
+}
+
+/* 90초 침묵 변형 — 주의(amber) + 느린 맥박으로 문구("조용하지만 진행 중")와 일치.
+   빨강 금지 — 실패가 아니다. */
+.liveDotQuiet {
+  background: var(--warning, #f59e0b);
+  animation-duration: 3.5s;
+}
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* 로그 박스: 한 단 가라앉은 콘솔 영역. 경계가 없으면 체크 행과 sub-agent 행이 한 목록처럼 섞인다. */
+.logBox {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 12px 16px 14px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 14px 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-secondary, #a8adb8);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 결과 요약 텍스트(🎤·📋…) — 인용 스타일 왼쪽 레일. sub-agent 행(체크리스트 성격, 레일 없음)과
+   "AI가 낸 결과물"을 시각적으로 구분한다. 세로 간격은 margin이 아니라 padding으로 — margin은
+   줄 사이마다 레일(border)을 끊어 점선처럼 보이게 한다(연속 줄은 레일이 이어져야 한 블록). */
+.line {
+  margin: 0;
+  padding: 1px 0 1px 10px;
+  border-left: 2px solid rgba(255, 255, 255, 0.12);
+}
+
+/* 마지막 줄 강조: 작업 중엔 커서가 마지막 자식이라 유보되고, 종료 시점부터 마감 줄(✓·❌)에 적용. */
+.line:last-child {
+  color: var(--text-primary, #e8eaf0);
+}
+
+.agentRunning {
+  margin: 1px 0;
+  color: var(--text-primary, #e8eaf0);
+}
+
+.agentDone {
+  margin: 1px 0;
+  color: var(--text-secondary, #a8adb8);
+}
+
+.agentCanceled {
+  margin: 1px 0;
+  color: var(--text-tertiary, #6b7280);
+}
+
+.canceledTag {
+  color: var(--text-tertiary, #6b7280);
+}
+
+.agentIcon {
+  display: inline-block;
+  width: 18px;
+  text-align: center;
+}
+
+/* 작업 중 로그 끝에서 깜빡이는 라이브 커서. */
+.cursor {
+  display: inline-block;
+  width: 8px;
+  height: 14px;
+  margin: 2px 0 0 2px;
+  background: currentColor;
+  opacity: 0.6;
+  animation: cursor-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes cursor-pulse {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* 스크린리더 전용 텍스트: 아이콘의 상태를 비시각 사용자에게 전달. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 진행 스피너 틴트: 무채색 고리는 정지 상태에서 대기 표시와 안 갈려 색이 진행을 말한다. */
+.spinnerAccent {
+  color: var(--accent, #4cc9f0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stageRunning,
+  .liveDot {
+    animation: none;
+  }
+
+  .cursor {
+    animation: none;
+    opacity: 0.4;
+  }
+}
