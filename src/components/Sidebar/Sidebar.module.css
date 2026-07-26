@@ -218,6 +218,14 @@ button.nav-item-active {
   text-align: center;
 }
 
+/* 중단 버튼 아래 안심 캡션: 완료 단계 보존·재개 가능 안내 */
+.abort-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary, #9ca3af);
+}
+
 /* 회의록 작성 preflight의 로그인 만료 안내 — 작성 버튼 자리. persistent(토스트 아님)라
    자리 비웠다 복귀해도 남아있다. warning 톤으로 액션 필요를 알린다. */
 .login-expired {

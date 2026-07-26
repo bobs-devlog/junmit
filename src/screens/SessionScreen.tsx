@@ -91,8 +91,9 @@ export default function SessionScreen() {
     shouldBlock: () => activityRef.current !== Activity.Idle,
     confirm: {
       title: "진행 중인 작업이 있습니다",
-      body: "현재 작업을 중단하고 이동하시겠습니까?",
+      body: "현재 작업을 중단하고 이동하시겠습니까? 완료된 단계는 저장되며 '회의 기록'에서 재개할 수 있습니다.",
       confirmLabel: "이동",
+      cancelLabel: "계속 진행",
       danger: true,
     },
     cleanup: async () => {
@@ -285,10 +286,14 @@ export default function SessionScreen() {
   );
 
   const handleAbort = useCallback(async () => {
+    const isNotesPhase = activity === Activity.Correcting || activity === Activity.Composing;
     const ok = await confirm({
       title: "진행 중인 작업을 중단하시겠습니까?",
-      body: "현재 단계가 중단됩니다. 저장된 진행 상황은 '회의 기록'에서 재개할 수 있습니다.",
+      body: isNotesPhase
+        ? "지금까지 완료된 전사와 화자 분리 결과는 그대로 저장됩니다. 회의록 작성은 '회의 기록'에서 이 회의를 열어 다시 시작할 수 있습니다."
+        : "완료된 단계까지는 저장됩니다. '회의 기록'에서 이 회의를 열면 이어서 진행할 수 있습니다.",
       confirmLabel: "중단",
+      cancelLabel: "계속 진행",
       danger: true,
     });
     if (!ok) return;
@@ -299,7 +304,7 @@ export default function SessionScreen() {
     } catch {}
     resetSession();
     navigate("/", { replace: true });
-  }, [confirm, resetSession, navigate]);
+  }, [confirm, resetSession, navigate, activity]);
 
   return (
     <>

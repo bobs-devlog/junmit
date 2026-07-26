@@ -90,6 +90,7 @@ export default function RecordingScreen() {
       title: "녹음을 중단하시겠습니까?",
       body: "현재까지 녹음된 내용은 저장되지 않습니다.",
       confirmLabel: "중단",
+      cancelLabel: "계속 녹음",
       danger: true,
     },
     cleanup: async () => {
@@ -222,6 +223,7 @@ export default function RecordingScreen() {
       title: "녹음을 중단하시겠습니까?",
       body: "현재까지 녹음된 내용은 저장되지 않습니다.",
       confirmLabel: "중단",
+      cancelLabel: "계속 녹음",
       danger: true,
     });
     if (!ok) return;

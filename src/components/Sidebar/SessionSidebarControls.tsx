@@ -116,11 +116,16 @@ export default function SessionSidebarControls({
           })}
         </div>
 
-        {/* 자동 진행 중 — 중단 버튼 */}
+        {/* 자동 진행 중: 중단 버튼. 유실 공포는 누르기 전에 생기므로 캡션이 미리 안심시킨다. */}
         {isActiveWork && (
-          <button className="btn btn-danger" onClick={onAbort}>
-            중단
-          </button>
+          <>
+            <button className="btn btn-danger" onClick={onAbort}>
+              중단
+            </button>
+            <p className={styles.abortHint}>
+              중단해도 완료된 단계는 저장돼요. '회의 기록'에서 이어서 할 수 있어요.
+            </p>
+          </>
         )}
 
         {/* Idle — steps에 따라 다음 단계 액션 + 보조 액션 */}
