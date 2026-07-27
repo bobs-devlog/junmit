@@ -5,8 +5,9 @@
 # AGENTS.md에서 스캔하는 동일 규약(agy는 동봉 문서 실측, cwd→저장소 루트 walk-up 로드).
 #
 # 단일 소스 원칙: 사람이 편집하는 곳은 항상 resources/.claude/ 한 곳.
-# 이 스크립트가 스캔 경로(.agents/skills)와 지시 파일(AGENTS.md)을 파생 생성한다.
-# 산출물은 gitignored — 빌드(build-binaries.sh)와 dev 기동 시 재생성한다.
+# 이 스크립트가 스캔 경로(.agents/skills)와 지시 파일(AGENTS.md), 그리고 Codex 커스텀
+# 에이전트(.codex/agents/*.toml — .claude/agents 전체 파생)를 생성한다.
+# 산출물은 gitignored — app-dev/app-build(package.json)와 release.sh가 실행 전 재생성한다.
 #
 # CLI별 차이는 두 층으로 나눠 다룬다:
 #   1) 어휘 치환(sed, 아래 NEUTRALIZE) — 1:1 대응 도구·표현만.
@@ -63,6 +64,37 @@ for dir in "$SRC"/*/; do
   done
 done
 
+# Codex 커스텀 에이전트 TOML — .claude/agents/*.md 전체를 파생 생성 (스킬의 .agents 변환과 대칭).
+# codex에서 하위 에이전트별 설정(reasoning effort 상한 등)을 거는 유일한 통로가 커스텀 에이전트
+# 정의이고, spawn 경로를 "항상 커스텀 에이전트 이름으로" 하나로 통일하기 위해 전량 생성한다.
+# 절차 본문은 복사하지 않는다 — developer_instructions가 정본 .md를 읽도록 지시해 단일 소스 유지.
+# frontmatter `effort:`가 있는 에이전트만 model_reasoning_effort를 실어 번역한다
+# (Claude `max`는 codex 최고 티어 xhigh로), 없으면 부모 세션 effort 상속(기존과 동일).
+CODEX_DST="$RES_DIR/.codex/agents"
+rm -rf "$RES_DIR/.codex"
+mkdir -p "$CODEX_DST"
+for md in "$RES_DIR/.claude/agents"/*.md; do
+  front="$(sed -n '2,/^---$/p' "$md")"
+  name="$(basename "$md" .md)"
+  desc="$(printf '%s\n' "$front" | sed -n 's/^description: *//p' | head -1)"
+  effort="$(printf '%s\n' "$front" | sed -n 's/^effort: *//p' | head -1)"
+  [ "$effort" = "max" ] && effort="xhigh"
+  {
+    echo "name = \"$name\""
+    echo "description = \"$desc\""
+    [ -n "$effort" ] && echo "model_reasoning_effort = \"$effort\""
+    cat <<EOF
+developer_instructions = """
+당신은 $name 하위 에이전트입니다.
+작업 절차: 워크스페이스 루트의 .claude/agents/$name.md 를 읽고 그 지침 그대로 수행하세요
+(frontmatter의 model·effort·tools 값은 Claude 전용 설정이므로 무시 — codex 쪽 설정은 이 파일이 정의).
+호출자 prompt가 전달한 세션 디렉토리·작업 파라미터를 대상으로, 작업 정의가 지정한 산출물만 만듭니다
+(출력 파일 작성 또는 보고 — 그 외 파일은 수정하지 않습니다).
+"""
+EOF
+  } > "$CODEX_DST/$name.toml"
+done
+
 # AGENTS.md = 출력 규칙(CLAUDE.md 중립화) + CLI별 해석 규칙(구조 차이 전역 지시).
 {
   sed "${NEUTRALIZE[@]}" -e 's#`\.claude/skills/`#`.agents/skills/`#g' "$RES_DIR/.claude/CLAUDE.md"
@@ -82,12 +114,14 @@ Codex 도구명 표기입니다 — 자신이 어느 CLI인지에 따라 아래 
 ### Codex로 실행 시
 
 - **sub-agent / Agent tool 위임 지시**: Codex에서는 `multi_agent` 하위 에이전트로
-  위임하세요. 현재 junmit 검증 기준에서 앱에 노출된 `spawn_agent` 도구는 `agent_type`
-  인자를 받지 않으므로, Claude named agent 이름(text-correction·speaker-mapping·
-  speaker-label-correction 등)을 도구 인자로 직접 넣지 않습니다. 실행 중심 worker 역할은
-  prompt에 명시하고, 해당 작업 정의 `.claude/agents/<이름>.md`를 먼저 읽어 그대로 따르라고
-  지시합니다. project `.codex/agents` custom agent 이름도 현재 앱 경로에서는 안정 인식되지
-  않았으므로 spawn 인자로 사용하지 않습니다.
+  위임하세요. 모든 worker 작업은 워크스페이스 `.codex/agents/`에 같은 이름의 **커스텀
+  에이전트**로 정의되어 있습니다. spawn 요청 문구에 커스텀 에이전트 이름을 명시해 그 정의로
+  실행되게 하세요 (`spawn_agent` 도구는 `agent_type` 인자를 받지 않으므로 이름은 도구 인자가
+  아니라 요청 문구로 씁니다). prompt에는 세션 디렉토리 절대 경로와 작업별 파라미터(검증 담당
+  범위 등)만 전달합니다 — 작업 절차는 각 정의의 developer_instructions가 정본
+  `.claude/agents/<이름>.md`를 읽도록 이미 지시합니다. 커스텀 에이전트가 인식되지 않는
+  환경이면 기존 방식(worker 역할을 prompt에 명시하고 정본 .md를 먼저 읽어 그대로 따르라고
+  지시)으로 폴백하세요.
 - **병렬 spawn 지시**: 서로 다른 출력 파일만 쓰는 독립 작업은 같은 응답에서
   하위 에이전트를 모두 생성하고, 모두 끝날 때까지 기다린 뒤 결과를 종합하세요. `/meeting`
   1단계의 하위 에이전트 수는 **meeting.json의 ai_polish + type에 따라** 갈립니다 —
@@ -149,7 +183,7 @@ if leftover=$(grep -rn \
     -e 'agent_type: "worker"' \
     -e '## Codex 해석 규칙' \
     -e '^allowed-tools:' -e '^disable-model-invocation:' -e '^user-invocable:' \
-    "$DST" "$RES_DIR/AGENTS.md"); then
+    "$DST" "$RES_DIR/.codex" "$RES_DIR/AGENTS.md"); then
   echo "오류: 산출물에 claude 전용 표현이 남았습니다. NEUTRALIZE에 치환 규칙을 추가하세요:" >&2
   echo "$leftover" >&2
   exit 1
@@ -158,3 +192,4 @@ fi
 echo "생성 완료:"
 echo "  - $DST/{$(cd "$SRC" && ls -d */ | xargs -n1 basename | paste -sd, -)}"
 echo "  - $RES_DIR/AGENTS.md"
+echo "  - $CODEX_DST/{$(cd "$CODEX_DST" && ls | paste -sd, -)}"

@@ -49,6 +49,7 @@
       "../resources/bin": "bin",
       "../resources/models": "models",
       "../resources/.claude": ".claude",
+      "../resources/.codex": ".codex",
       "../resources/.agents": ".agents",
       "../resources/AGENTS.md": "AGENTS.md",
       "../resources/templates": "templates",

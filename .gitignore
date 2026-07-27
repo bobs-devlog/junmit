@@ -14,9 +14,10 @@ src-tauri/gen/
 resources/bin/
 models/
 
-# Codex 스킬 산출물 — gen-agent-skills.sh가 정본(.claude/skills)에서 파생 생성
+# Codex 스킬 산출물 — gen-agent-skills.sh가 정본(.claude/)에서 파생 생성
 resources/.agents/
 resources/AGENTS.md
+resources/.codex/
 
 # Session outputs
 output/
