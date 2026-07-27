@@ -64,23 +64,61 @@
   color: var(--text-tertiary, #6b7280);
 }
 
+/* 행에 두는 숫자는 이것 하나뿐 — 진행 카운터(n/N)는 아래 ✓ 목록과 중복이라 두지 않는다. */
 .elapsed {
-  margin-left: 8px;
+  margin-left: auto;
+  padding-left: 10px;
   font-weight: 400;
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
   color: var(--text-tertiary, #6b7280);
+  white-space: nowrap;
 }
 
-/* 진행 행 아래 안내. 그 단계 동안 지속 노출(배너의 5초 소멸과 달리).
-   대기 행과 같은 회색이면 다섯 번째 단계처럼 읽혀, 액센트를 옅게 섞어 진행 행 소속을 표시. */
-.stageHint {
+/* 대기 행과 같은 회색이면 또 하나의 단계처럼 읽혀, 액센트를 옅게 섞어 소속을 표시. */
+.stageDetail {
   padding-left: 20px;
   margin-bottom: 3px;
   font-size: 12px;
   color: color-mix(in srgb, var(--accent, #4cc9f0) 35%, var(--text-tertiary, #6b7280));
 }
 
-.heartbeat {
+/* 들여쓰기는 단계 아이콘 폭(20px)에 맞춘다 — 어긋나면 소속이 안 읽힌다. */
+.subTask {
+  display: flex;
+  align-items: baseline;
+  padding: 1px 0 1px 20px;
+  font-size: 12.5px;
+  color: var(--text-secondary, #a8adb8);
+}
+
+.subTaskIcon {
+  flex: none;
+  width: 16px;
+  text-align: center;
+}
+
+/* 스피너를 뺀 자리를 명암이 대신한다 — 같은 밝기면 ✓ 아이콘 하나로만 진행을 읽어야 한다. */
+.subTaskRunning {
+  color: var(--text-primary, #e8eaf0);
+}
+
+.subTaskRunning .subTaskIcon {
+  color: var(--text-tertiary, #6b7280);
+}
+
+.subTaskDone .subTaskIcon {
+  color: var(--success, #70f0a0);
+}
+
+.subTaskCanceled {
+  color: var(--text-tertiary, #6b7280);
+}
+
+.footer {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
   margin-top: 6px;
   padding-top: 6px;
   border-top: 1px solid rgba(255, 255, 255, 0.07);
@@ -88,13 +126,21 @@
   color: var(--text-tertiary, #6b7280);
 }
 
+.footerText {
+  min-width: 0;
+}
+
+/* 하트비트와 같은 회색이면 상태 문구로 섞여 읽혀, 액센트를 옅게 섞어 안내임을 표시. */
+.guide {
+  color: color-mix(in srgb, var(--accent, #4cc9f0) 35%, var(--text-tertiary, #6b7280));
+}
+
 /* 라이브 점 — 상태 표시등 관례(초록 = 정상 동작 중). */
 .liveDot {
-  display: inline-block;
+  flex: none;
   width: 6px;
   height: 6px;
-  margin-right: 6px;
-  vertical-align: 1px;
+  margin-top: 5px;
   border-radius: 50%;
   background: var(--success, #70f0a0);
   animation: live-pulse 2s ease-in-out infinite;
@@ -118,7 +164,7 @@
   }
 }
 
-/* 로그 박스: 한 단 가라앉은 콘솔 영역. 경계가 없으면 체크 행과 sub-agent 행이 한 목록처럼 섞인다. */
+/* 로그 박스: 한 단 가라앉은 콘솔 영역. 경계가 없으면 카드의 체크 행과 요약 줄이 한 목록처럼 섞인다. */
 .logBox {
   flex: 1;
   min-height: 0;
@@ -143,9 +189,8 @@
   word-break: break-word;
 }
 
-/* 결과 요약 텍스트(🎤·📋…) — 인용 스타일 왼쪽 레일. sub-agent 행(체크리스트 성격, 레일 없음)과
-   "AI가 낸 결과물"을 시각적으로 구분한다. 세로 간격은 margin이 아니라 padding으로 — margin은
-   줄 사이마다 레일(border)을 끊어 점선처럼 보이게 한다(연속 줄은 레일이 이어져야 한 블록). */
+/* 결과 요약 텍스트(🎤·📋…) — 인용 스타일 왼쪽 레일. 세로 간격은 margin이 아니라 padding으로
+   — margin은 줄 사이마다 레일(border)을 끊어 점선처럼 보이게 한다. */
 .line {
   margin: 0;
   padding: 1px 0 1px 10px;
@@ -157,29 +202,8 @@
   color: var(--text-primary, #e8eaf0);
 }
 
-.agentRunning {
-  margin: 1px 0;
-  color: var(--text-primary, #e8eaf0);
-}
-
-.agentDone {
-  margin: 1px 0;
-  color: var(--text-secondary, #a8adb8);
-}
-
-.agentCanceled {
-  margin: 1px 0;
-  color: var(--text-tertiary, #6b7280);
-}
-
 .canceledTag {
   color: var(--text-tertiary, #6b7280);
-}
-
-.agentIcon {
-  display: inline-block;
-  width: 18px;
-  text-align: center;
 }
 
 /* 작업 중 로그 끝에서 깜빡이는 라이브 커서. */

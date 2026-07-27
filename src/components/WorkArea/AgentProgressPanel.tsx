@@ -3,7 +3,14 @@ import { listen } from "@tauri-apps/api/event";
 import { Activity } from "@/constants";
 import { parseHeadlessLine } from "@/utils/headless";
 import ProgressPanel from "./ProgressPanel";
-import { capItems, type AgentState, type PanelItem, type Stage } from "./progressPanelModel";
+import {
+  capLines,
+  type AgentRow,
+  type AgentState,
+  type LogLine,
+  type Stage,
+  type SubTask,
+} from "./progressPanelModel";
 
 interface AgentProgressPanelProps {
   // 현재 활동성 — 작업(Correcting/Composing) 진입 시 이전 실행의 표시를 비운다.
@@ -21,55 +28,56 @@ interface AgentProgressPanelProps {
   emptyState: React.ReactNode;
 }
 
-// ── 로그 목록 갱신 헬퍼 (순수 함수: 목록 in → 목록 out) ─────────────────────
+// ── 목록 갱신 헬퍼 (순수 함수: 목록 in → 목록 out) ─────────────────────────
 // 리스너가 "이벤트 → 디스패치 한 줄"로 읽히도록 갱신 규칙을 이름 붙여 분리한다.
 
-// 진행 중(running) sub-agent 행 일괄 전환 — 정상 종료(done)와 취소·실패(canceled) 공용.
-function settleRunningAgents(items: PanelItem[], settledState: AgentState): PanelItem[] {
-  return items.map((item) =>
-    item.type === "agent" && item.state === "running" ? { ...item, state: settledState } : item
+function settleRunningAgents(agents: AgentRow[], settledState: AgentState): AgentRow[] {
+  return agents.map((agent) =>
+    agent.state === "running" ? { ...agent, state: settledState } : agent
   );
 }
 
 // 요약 텍스트 추가 — 직전과 동일한 줄 반복(모델 중복 출력)은 한 번만.
-function appendText(items: PanelItem[], text: string): PanelItem[] {
-  const last = items[items.length - 1];
-  if (last?.type === "text" && last.text === text) return items;
-  return capItems([...items, { type: "text", text }]);
+function appendLine(lines: LogLine[], text: string): LogLine[] {
+  if (lines[lines.length - 1]?.text === text) return lines;
+  return capLines([...lines, { type: "text", text }]);
 }
 
-// sub-agent 행 추가 — 같은 라벨의 병렬 형제(회의록 검증 2개 등)는 구분 없이 두 줄로 보이면
-// 중복 표시처럼 오해되므로, 충돌 시 도착 순서로 번호를 붙인다(첫 행 "… 1" 소급 개명 포함).
-function appendAgent(items: PanelItem[], id: string, baseLabel: string): PanelItem[] {
-  const siblingCount = items.filter(
-    (item) => item.type === "agent" && item.baseLabel === baseLabel
-  ).length;
+// 같은 라벨의 병렬 형제(회의록 검증 2개 등)는 구분 없이 두 줄이면 중복 표시로 오해되므로
+// 도착 순서로 번호를 붙인다(첫 행 "… 1" 소급 개명 포함). 형제 판정은 **같은 단계 안에서만** —
+// 표시가 단계별로 갈려 전역으로 세면 다른 단계의 "1"은 안 보인 채 "2"만 홀로 남는다.
+function appendAgent(
+  agents: AgentRow[],
+  id: string,
+  baseLabel: string,
+  stageKey: string
+): AgentRow[] {
+  const isSibling = (agent: AgentRow) =>
+    agent.stageKey === stageKey && agent.baseLabel === baseLabel;
+  const siblingCount = agents.filter(isSibling).length;
   const renamed =
     siblingCount === 1
-      ? items.map((item) =>
-          item.type === "agent" && item.baseLabel === baseLabel
-            ? { ...item, label: `${baseLabel} 1` }
-            : item
-        )
-      : items;
+      ? agents.map((agent) => (isSibling(agent) ? { ...agent, label: `${baseLabel} 1` } : agent))
+      : agents;
   const label = siblingCount > 0 ? `${baseLabel} ${siblingCount + 1}` : baseLabel;
-  return capItems([...renamed, { type: "agent", id, baseLabel, label, state: "running" }]);
+  return [...renamed, { id, baseLabel, label, state: "running", stageKey }];
 }
 
-// 성공 result 반영 — 본문이 스킬 마지막 요약과 동일한 여러 줄로 오므로(실측) 줄 단위로 나눠
-// 최근 항목에 이미 있는 줄은 거르고(이중 표시 방지), 진행 중 행은 완료로 정리한다.
-function applySuccessResult(items: PanelItem[], resultText: string): PanelItem[] {
-  const recentTexts = new Set(
-    items.slice(-8).flatMap((item) => (item.type === "text" ? [item.text] : []))
-  );
+function subtasksFor(agents: AgentRow[], stageKey: string): SubTask[] {
+  return agents
+    .filter((agent) => agent.stageKey === stageKey)
+    .map(({ id, label, state }) => ({ id, label, state }));
+}
+
+// result 본문은 스킬 마지막 요약과 같은 여러 줄로 온다(실측) — 줄 단위로 나눠 최근 줄에
+// 이미 있는 것은 거른다(이중 표시 방지).
+function appendResultLines(lines: LogLine[], resultText: string): LogLine[] {
+  const recentTexts = new Set(lines.slice(-8).map((line) => line.text));
   const freshLines = (resultText || "✓ 작업 완료")
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line && !recentTexts.has(line));
-  return capItems([
-    ...settleRunningAgents(items, "done"),
-    ...freshLines.map((text) => ({ type: "text", text }) as PanelItem),
-  ]);
+  return capLines([...lines, ...freshLines.map((text): LogLine => ({ type: "text", text }))]);
 }
 
 // 소요 예측("보통 N분")은 표기하지 않는다 — 실행 시간이 서버 상태·모델·재시도에 따라 같은
@@ -77,13 +85,14 @@ function applySuccessResult(items: PanelItem[], resultText: string): PanelItem[]
 // 모든 시간 표기는 측정된 사실(단계 경과·하트비트)만. 예측 도입은 pipeline.log의 headless
 // 시작/종료 타임스탬프 분포가 수렴함이 확인된 뒤에만.
 
-// 토글로 사전 확정되는 결정론 단계 목록. hint는 그 단계가 진행 중인 동안 지속 노출.
 function stagePlan(
   polishEnabled: boolean,
   verifyEnabled: boolean
 ): { key: string; label: string; hint?: string }[] {
   return [
     { key: "prepare", label: "회의 정보 확인" },
+    // 유일하게 사용자가 할 게 없는 구간(화자 매핑 편집은 다듬기 완료 후 열림)이라 행동
+    // 안내 대신 기대치 문구. 목록·경과는 남은 시간을 말하지 못해 이걸 대신하지 못한다.
     ...(polishEnabled
       ? [
           {
@@ -110,6 +119,15 @@ function stagePlan(
   ];
 }
 
+// agentStages의 currentKey와 달리 hasAgentStarted 게이트가 없다 — 첫 sub-agent가 뜨기 전엔
+// 표시가 prepare라, 표시 기준으로 찍으면 그 agent가 목록에서 빠진다.
+function spawnStageKey(activity: Activity, verifying: boolean): string {
+  if (verifying) return "verify";
+  if (activity === Activity.Correcting) return "correct";
+  if (activity === Activity.Composing) return "compose";
+  return "prepare";
+}
+
 // 앱 상태 기반 단계 도출. Correcting 초반(첫 sub-agent 시작 전)은 모델이 회의 정보를 읽는
 // 준비 구간이라 "회의 정보 확인"을 진행으로 표시한다(hasAgentStarted). 진행률 %는 총량을
 // 모르는 LLM 작업이라 불가: 단계 행 수가 표현 상한.
@@ -119,7 +137,8 @@ function agentStages(
   hasAgentStarted: boolean,
   polishEnabled: boolean,
   verifyEnabled: boolean,
-  completed: boolean
+  completed: boolean,
+  agents: AgentRow[]
 ): Stage[] {
   // verifying인데 verify 토글 OFF인 비정형 조합도 단계가 de facto 존재하므로 행을 만든다.
   const plan = stagePlan(polishEnabled, verifyEnabled || verifying);
@@ -135,7 +154,8 @@ function agentStages(
         ? "compose"
         : null;
   if (currentKey == null) {
-    // Idle: 정상 완료면 전 행 ✓ 유지, 취소·크래시면 카드를 접는다(로그가 경위를 말한다).
+    // 취소·크래시면 접고 로그에 맡긴다. 종료 줄을 자동으로 붙이는 수는 못 쓴다 —
+    // result가 verify 신호보다 늦게 올 수 있어 성공 실행에 "중단됨"을 찍는 오탐이 된다.
     return completed
       ? plan.map((stage) => ({ key: stage.key, label: stage.label, state: "done" as const }))
       : [];
@@ -146,6 +166,7 @@ function agentStages(
     label: stage.label,
     state: index < currentIndex ? "done" : index === currentIndex ? "running" : "pending",
     hint: index === currentIndex ? stage.hint : undefined,
+    subtasks: index === currentIndex ? subtasksFor(agents, stage.key) : undefined,
   }));
 }
 
@@ -162,10 +183,11 @@ export default function AgentProgressPanel({
   completed = false,
   emptyState,
 }: AgentProgressPanelProps) {
-  const [items, setItems] = useState<PanelItem[]>([]);
+  // 별도 상태인 이유는 AgentRow 주석 참고(합치면 상한·리렌더 문제가 생긴다).
+  const [lines, setLines] = useState<LogLine[]>([]);
+  const [agents, setAgents] = useState<AgentRow[]>([]);
   const prevWorkingRef = useRef(false);
-  // 이번 실행의 최종 result 수신 여부 — 작업 종료 시 미완 sub-agent 행의 완료/중단 판별 근거.
-  // (result 없이 끝남 = 취소·크래시 → "중단됨")
+  // result 없이 끝남 = 취소·크래시 → 미완 sub-agent를 "중단됨"으로 판별하는 근거.
   const resultSeenRef = useRef(false);
 
   // codex의 "보조 작업 가동 중" 신호(kind:"working") — codex는 sub-agent 행을 만들 수 없어
@@ -176,22 +198,30 @@ export default function AgentProgressPanel({
   const [lastEventAt, setLastEventAt] = useState<number | null>(null);
 
   const working = activity === Activity.Correcting || activity === Activity.Composing;
-  const hasAgentStarted = workUnderway || items.some((item) => item.type === "agent");
+  const hasAgentStarted = workUnderway || agents.length > 0;
   const stages = agentStages(
     activity,
     verifying,
     hasAgentStarted,
     polishEnabled,
     verifyEnabled,
-    completed
+    completed,
+    agents
   );
   const busy = stages.some((stage) => stage.state === "running");
+
+  // 리스너가 mount 1회라 props를 직접 읽으면 stale — ref로 흘린다.
+  const spawnStageKeyRef = useRef("prepare");
+  useEffect(() => {
+    spawnStageKeyRef.current = spawnStageKey(activity, verifying);
+  }, [activity, verifying]);
 
   // 작업 진입(rising edge) 시 이전 실행 표시 정리 — Idle 복귀 후에도 결과는 잔존시킨다
   // (LocalProgressPanel과 동일 체감: drawer를 닫기 전까지 마지막 상태 확인 가능).
   useEffect(() => {
     if (!prevWorkingRef.current && working) {
-      setItems([]);
+      setLines([]);
+      setAgents([]);
       setLastEventAt(null);
       setWorkUnderway(false);
       resultSeenRef.current = false;
@@ -199,12 +229,11 @@ export default function AgentProgressPanel({
     prevWorkingRef.current = working;
   }, [working]);
 
-  // 작업 종료 시 미완 sub-agent 행 정리 — result를 받은 정상 종료면 완료(✓), result 없이
-  // 끝났으면(취소·크래시) "중단됨"(—). 프로세스가 끝났으니 어느 쪽이든 스피너는 남지 않는다.
+  // 이 시점엔 진행 중 단계가 없어 화면은 그대로 — 상태만 실제와 맞춘다(죽은 코드 아님).
   const prevBusyRef = useRef(false);
   useEffect(() => {
     if (prevBusyRef.current && !busy) {
-      setItems((prev) => settleRunningAgents(prev, resultSeenRef.current ? "done" : "canceled"));
+      setAgents((prev) => settleRunningAgents(prev, resultSeenRef.current ? "done" : "canceled"));
     }
     prevBusyRef.current = busy;
   }, [busy]);
@@ -216,29 +245,24 @@ export default function AgentProgressPanel({
       setLastEventAt(Date.now()); // 파싱 결과와 무관한 생존 신호 — 하트비트 기준
       for (const parsed of parseHeadlessLine(event.payload)) {
         if (parsed.kind === "agentStart") {
-          setItems((prev) => appendAgent(prev, parsed.id, parsed.label));
+          setAgents((prev) => appendAgent(prev, parsed.id, parsed.label, spawnStageKeyRef.current));
         } else if (parsed.kind === "working") {
           setWorkUnderway(true);
         } else if (parsed.kind === "agentDone") {
-          setItems((prev) =>
-            prev.map((item) =>
-              item.type === "agent" && item.id === parsed.id ? { ...item, state: "done" } : item
-            )
+          setAgents((prev) =>
+            prev.map((agent) => (agent.id === parsed.id ? { ...agent, state: "done" } : agent))
           );
         } else if (parsed.kind === "text") {
-          setItems((prev) => appendText(prev, parsed.text));
+          setLines((prev) => appendLine(prev, parsed.text));
         } else if (parsed.kind === "result") {
           resultSeenRef.current = !parsed.isError;
           if (parsed.isError) {
-            // 에러 원문은 영문이어도 전부 표시(실패 원인 파악 우선) + 미완 행은 중단 처리.
-            setItems((prev) =>
-              appendText(
-                settleRunningAgents(prev, "canceled"),
-                `⚠ ${parsed.text || "작업이 실패했어요"}`
-              )
-            );
+            // 에러 원문은 영문이어도 전부 표시 — 실패 원인 파악이 우선.
+            setAgents((prev) => settleRunningAgents(prev, "canceled"));
+            setLines((prev) => appendLine(prev, `⚠ ${parsed.text || "작업이 실패했어요"}`));
           } else {
-            setItems((prev) => applySuccessResult(prev, parsed.text));
+            setAgents((prev) => settleRunningAgents(prev, "done"));
+            setLines((prev) => appendResultLines(prev, parsed.text));
           }
         }
       }
@@ -255,7 +279,7 @@ export default function AgentProgressPanel({
   return (
     <ProgressPanel
       stages={stages}
-      items={items}
+      items={lines}
       lastEventAt={lastEventAt}
       completed={completed}
       ariaLabel="AI 작업 진행 상황"

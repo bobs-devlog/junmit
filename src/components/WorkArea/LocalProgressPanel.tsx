@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Activity } from "@/constants";
 import ProgressPanel from "./ProgressPanel";
-import { capItems, type PanelItem, type Stage } from "./progressPanelModel";
+import { capLines, type LogLine, type Stage } from "./progressPanelModel";
 
 interface LocalProgressPanelProps {
   activity: Activity;
@@ -21,6 +21,8 @@ function isCounterText(text: string): boolean {
 }
 
 // @@progress 마커는 단계 계획 전체 + 현재 단계를 매번 자가완결로 싣는다(순서 유실에 안전).
+// 마커의 `hint`는 "구간 1/3 요약 중" 같은 **진행 세부**라 UI의 detail(단계 행 아래)로 간다 —
+// UI의 hint(카드 하단 행동 안내)와 이름만 같고 역할이 다르다. 마커 필드명은 wire 호환으로 유지.
 function parseProgressMarker(text: string): Stage[] | null {
   if (!text.startsWith("@@progress ")) return null;
   try {
@@ -37,7 +39,7 @@ function parseProgressMarker(text: string): Stage[] | null {
       key: String(stage.key),
       label: String(stage.label),
       state: index < currentIndex ? "done" : index === currentIndex ? "running" : "pending",
-      hint: index === currentIndex && typeof payload.hint === "string" ? payload.hint : undefined,
+      detail: index === currentIndex && typeof payload.hint === "string" ? payload.hint : undefined,
     }));
   } catch {
     return null;
@@ -54,7 +56,7 @@ export default function LocalProgressPanel({
   completed,
   emptyState,
 }: LocalProgressPanelProps) {
-  const [items, setItems] = useState<PanelItem[]>([]);
+  const [items, setItems] = useState<LogLine[]>([]);
   const [stages, setStages] = useState<Stage[]>([]);
   const [lastEventAt, setLastEventAt] = useState<number | null>(null);
 
@@ -84,16 +86,16 @@ export default function LocalProgressPanel({
                   },
                 ]
               : prev;
-          return capItems([...frozen, { type: "text", text: "✓ 회의록 작성 완료" }]);
+          return capLines([...frozen, { type: "text", text: "✓ 회의록 작성 완료" }]);
         });
-        setStages((prev) => prev.map((stage) => ({ ...stage, state: "done", hint: undefined })));
+        setStages((prev) => prev.map((stage) => ({ ...stage, state: "done", detail: undefined })));
       } else {
         setItems((prev) =>
           prev.filter((item) => !(item.type === "text" && isCounterText(item.text)))
         );
         setStages((prev) =>
           prev.map((stage) =>
-            stage.state === "running" ? { ...stage, state: "canceled", hint: undefined } : stage
+            stage.state === "running" ? { ...stage, state: "canceled", detail: undefined } : stage
           )
         );
       }
@@ -119,8 +121,8 @@ export default function LocalProgressPanel({
           const last = prev[prev.length - 1];
           const replaceCounter =
             isCounterText(text) && last?.type === "text" && isCounterText(last.text);
-          const nextItem: PanelItem = { type: "text", text };
-          return capItems(replaceCounter ? [...prev.slice(0, -1), nextItem] : [...prev, nextItem]);
+          const nextItem: LogLine = { type: "text", text };
+          return capLines(replaceCounter ? [...prev.slice(0, -1), nextItem] : [...prev, nextItem]);
         });
       } catch {}
     }).then((fn) => {

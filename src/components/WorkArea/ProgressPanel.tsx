@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import Spinner from "@/components/Spinner";
-import type { AgentState, PanelItem, Stage, StageState } from "./progressPanelModel";
+import type { AgentState, LogLine, Stage, StageState } from "./progressPanelModel";
 import styles from "./ProgressPanel.module.css";
 
 // 진행 패널 공용 셸(표시 전용). 이벤트 해석·단계 도출·아이템 갱신 규칙은 각 컨테이너 소관.
@@ -8,7 +8,8 @@ import styles from "./ProgressPanel.module.css";
 interface ProgressPanelProps {
   // 빈 배열이면 카드 숨김.
   stages: Stage[];
-  items: PanelItem[];
+  // 결과 요약 전용 — sub-agent는 Stage.subtasks로 간다.
+  items: LogLine[];
   // 마지막 이벤트 도착 시각(하트비트 기준).
   lastEventAt: number | null;
   // phase_done 정상 완료 여부. 완료 직후 빈 로그에서 빈 상태가 번쩍이는 것을 막는다.
@@ -18,10 +19,7 @@ interface ProgressPanelProps {
 }
 
 // 아이콘 래퍼가 aria-hidden이라 Spinner의 role=status 중복 낭독은 없다(srText가 전달).
-// 액센트는 체크리스트 진행 행에만: 대기 점(·)과의 구분용. sub-agent 행은 대기 상태가 없고
-// 병렬 여러 개가 동시에 돌아 색까지 띠면 과하다.
 const stageSpinner = <Spinner size={11} className={styles.spinnerAccent} />;
-const agentSpinner = <Spinner size={11} />;
 
 // 대기는 사이드바 스테퍼와 같은 점(·): 고리(○)는 스피너와 형태가 겹쳐 전부 대기처럼 읽힌다.
 const STAGE_STATE_VIEW: Record<
@@ -34,13 +32,13 @@ const STAGE_STATE_VIEW: Record<
   canceled: { className: styles.stageCanceled, icon: "—", srText: "중단됨" },
 };
 
-const AGENT_STATE_VIEW: Record<
+const SUBTASK_STATE_VIEW: Record<
   AgentState,
-  { className: string; icon: React.ReactNode; srText: string; suffix?: string }
+  { className: string; icon: string; srText: string; suffix?: string }
 > = {
-  running: { className: styles.agentRunning, icon: agentSpinner, srText: "진행 중" },
-  done: { className: styles.agentDone, icon: "✓", srText: "완료" },
-  canceled: { className: styles.agentCanceled, icon: "—", srText: "중단됨", suffix: " (중단됨)" },
+  running: { className: styles.subTaskRunning, icon: "◦", srText: "진행 중" },
+  done: { className: styles.subTaskDone, icon: "✓", srText: "완료" },
+  canceled: { className: styles.subTaskCanceled, icon: "—", srText: "중단됨", suffix: " (중단됨)" },
 };
 
 // 1분 미만은 초, 이후는 "m분 s초".
@@ -59,7 +57,7 @@ function formatHeartbeat(ms: number): string {
 
 /**
  * 진행 패널 셸: 체크리스트 카드(상단 고정) + 로그 박스(하단 스크롤).
- * 카드는 라이브 리전(role="log") 밖: 초당 갱신되는 경과가 낭독 폭주를 일으키지 않게.
+ * 카드는 라이브 리전(role="log") 밖: 갱신되는 경과가 낭독 폭주를 일으키지 않게.
  */
 export default function ProgressPanel({
   stages,
@@ -70,7 +68,8 @@ export default function ProgressPanel({
   emptyState,
 }: ProgressPanelProps) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
-  const busy = stages.some((stage) => stage.state === "running");
+  const runningStage = stages.find((stage) => stage.state === "running");
+  const busy = runningStage != null;
 
   // busy 동안만 1초 tick. 렌더에서 Date.now() 직접 호출은 impure라 state로 흘린다.
   const [now, setNow] = useState(() => Date.now());
@@ -92,7 +91,7 @@ export default function ProgressPanel({
 
   // 진행 단계 전환 시 경과 기준 리셋("렌더 중 상태 조정" 패턴). 기준을 tick state(now)로
   // 잡아 렌더 순수성 유지(오차 1초 이내 수용).
-  const runningKey = stages.find((stage) => stage.state === "running")?.key ?? null;
+  const runningKey = runningStage?.key ?? null;
   const [phaseStartedAt, setPhaseStartedAt] = useState(() => Date.now());
   const [prevRunningKey, setPrevRunningKey] = useState<string | null>(runningKey);
   if (runningKey !== prevRunningKey) {
@@ -133,50 +132,65 @@ export default function ProgressPanel({
                   )}
                   <span className={styles.srOnly}> {view.srText}</span>
                 </div>
-                {stage.state === "running" && stage.hint && (
-                  <div className={styles.stageHint}>{stage.hint}</div>
+                {stage.state === "running" && stage.detail && (
+                  <div className={styles.stageDetail}>{stage.detail}</div>
+                )}
+                {/* 카드가 아니라 이 묶음에만 aria-live — 경과가 같은 리전에 들면 초당 낭독된다.
+                    비어 있어도 렌더하는 건 리전이 내용보다 먼저 DOM에 있어야 첫 항목이 낭독되기 때문. */}
+                {stage.subtasks && (
+                  <div aria-live="polite">
+                    {stage.subtasks.map((task) => {
+                      const taskView = SUBTASK_STATE_VIEW[task.state];
+                      return (
+                        <div key={task.id} className={`${styles.subTask} ${taskView.className}`}>
+                          <span className={styles.subTaskIcon} aria-hidden="true">
+                            {taskView.icon}
+                          </span>
+                          {task.label}
+                          <span className={styles.srOnly}> {taskView.srText}</span>
+                          {taskView.suffix && (
+                            <span className={styles.canceledTag}>{taskView.suffix}</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </Fragment>
             );
           })}
-          {/* 하트비트: 90초 침묵 시 안내로 승격. 로그가 비어도 성립하는 완결 문장 사용. */}
-          {busy && lastEventAt != null && (
-            <div className={styles.heartbeat}>
-              <span
-                className={
-                  quietSilence ? `${styles.liveDot} ${styles.liveDotQuiet}` : styles.liveDot
-                }
-                aria-hidden="true"
-              />
-              {quietSilence
-                ? `조용하지만 진행 중이에요 · 마지막 신호 ${formatHeartbeat(silentMs)} (긴 내용을 처리하는 동안은 신호가 뜸할 수 있어요)`
-                : `AI가 계속 작업 중이에요 · 마지막 신호 ${formatHeartbeat(silentMs)}`}
+          {/* 하트비트는 90초 침묵 시 안내로 승격 — 로그가 비어도 성립하는 완결 문장 사용. */}
+          {(runningStage?.hint || (busy && lastEventAt != null)) && (
+            <div className={styles.footer}>
+              {busy && lastEventAt != null && (
+                <span
+                  className={
+                    quietSilence ? `${styles.liveDot} ${styles.liveDotQuiet}` : styles.liveDot
+                  }
+                  aria-hidden="true"
+                />
+              )}
+              <div className={styles.footerText}>
+                {runningStage?.hint && <div className={styles.guide}>{runningStage.hint}</div>}
+                {busy && lastEventAt != null && (
+                  <div>
+                    {quietSilence
+                      ? `조용하지만 진행 중이에요 · 마지막 신호 ${formatHeartbeat(silentMs)} (긴 내용을 처리하는 동안은 신호가 뜸할 수 있어요)`
+                      : `AI가 계속 작업 중이에요 · 마지막 신호 ${formatHeartbeat(silentMs)}`}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
       )}
       <div className={styles.logBox}>
         <div ref={bodyRef} className={styles.log} role="log">
-          {items.map((item, index) => {
-            if (item.type === "text") {
-              return (
-                <div key={index} className={styles.line}>
-                  {item.text}
-                </div>
-              );
-            }
-            const view = AGENT_STATE_VIEW[item.state];
-            return (
-              <div key={item.id} className={view.className}>
-                <span className={styles.agentIcon} aria-hidden="true">
-                  {view.icon}
-                </span>
-                {item.label}
-                <span className={styles.srOnly}> {view.srText}</span>
-                {view.suffix && <span className={styles.canceledTag}>{view.suffix}</span>}
-              </div>
-            );
-          })}
+          {items.map((item, index) => (
+            <div key={index} className={styles.line}>
+              {item.text}
+            </div>
+          ))}
           {busy && <div className={styles.cursor} aria-hidden="true" />}
         </div>
       </div>
