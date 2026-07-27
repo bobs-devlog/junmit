@@ -3,6 +3,7 @@ name: text-correction
 description: 회의 전사본의 음성 오인식·동음이의·용어 혼동을 vocabulary와 attendees 기준으로 문맥 교정. /meeting 1단계에서 speaker-label-correction과 병렬 spawn되는 sub-agent 버전.
 tools: Read, Write, Bash
 model: opus
+effort: high
 ---
 
 # 회의 전사본 텍스트 교정 (sub-agent)
