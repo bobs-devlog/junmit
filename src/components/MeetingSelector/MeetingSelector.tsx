@@ -45,12 +45,20 @@ interface MeetingSelectorProps {
   onSelect: (meeting: Meeting) => void;
 }
 
+// crypto.randomUUID 대신 카운터 — secure context 전용이라 release(tauri:// 스킴) 가용성 보장 없음.
+let attendeeUidCounter = 0;
+const makeAttendeeUid = () => `att-${++attendeeUidCounter}`;
+
 // 작업 중 참석자 — 인덱스로 식별(동명 안전). email은 캘린더 유래만 보유(수동 추가는 null).
 // source로 "확정(cache/name/수동) vs 추정(heuristic/email)"을 UI에 구분 표시.
 interface AttendeeItem {
+  /** React key용 — 인덱스 key는 행 삭제 시 포커스·클릭이 다른 행에 귀속된다. 핸들러는 인덱스 기반. */
+  uid: string;
   name: string;
   email: string | null;
   source: NameSource;
+  /** 추정 행의 최초 추정값 — 수정 여부(name !== originalGuess) 판정 기준. 확정 행엔 없음. */
+  originalGuess?: string;
 }
 
 export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
@@ -295,7 +303,13 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
     setAttendees(
       evt.attendees.map((a) => {
         const r = resolveAttendeeName(a.email, a.name, nameCache);
-        return { name: r.name, email: a.email, source: r.source };
+        return {
+          uid: makeAttendeeUid(),
+          name: r.name,
+          email: a.email,
+          source: r.source,
+          ...(isGuessed(r.source) ? { originalGuess: r.name } : {}),
+        };
       })
     );
     setIsManualMode(false);
@@ -330,42 +344,87 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
   const addAttendee = (name: string) => {
     if (name && !attendees.some((a) => a.name === name)) {
       // 수동 입력은 사용자가 직접 적은 확정 이름 → "추정" 표시 안 함.
-      setAttendees((prev) => [...prev, { name, email: null, source: "name" }]);
+      setAttendees((prev) => [
+        ...prev,
+        { uid: makeAttendeeUid(), name, email: null, source: "name" },
+      ]);
     }
   };
 
-  // 인라인 편집 — 표시 이름 변경 → 확정(source 승격, "추정" 표시 해제).
-  // 캘린더 참석자(이메일 보유)는 캐시에 upsert해 다음 회의부터 자동 적용.
-  const renameAttendee = (index: number, newName: string) => {
-    const trimmed = newName.trim();
-    if (!trimmed) return;
-    const target = attendees[index];
-    if (!target || trimmed === target.name) return;
+  // 추정 행 타이핑 — 캐시 귀속 없이 이번 회의 값만 갱신.
+  const updateAttendeeName = (index: number, name: string) => {
+    setAttendees((prev) => prev.map((a, i) => (i === index ? { ...a, name } : a)));
+  };
 
-    const nextSource: NameSource = target.email ? "cache" : "name";
-    setAttendees((prev) =>
-      prev.map((a, i) => (i === index ? { ...a, name: trimmed, source: nextSource } : a))
-    );
-
-    if (target.email) {
-      const nextCache = { ...nameCache, [target.email]: trimmed };
+  // 토스트는 단일 슬롯이라 마지막 액션만 되돌릴 수 있음 — 되돌리기는 스냅샷 복원으로 단순화.
+  const applyWithUndo = (
+    nextAttendees: AttendeeItem[],
+    cacheEntries: NameCache,
+    message: string
+  ) => {
+    const prevAttendees = attendees;
+    const prevCache = nameCache;
+    const cacheChanged = Object.keys(cacheEntries).length > 0;
+    setAttendees(nextAttendees);
+    if (cacheChanged) {
+      const nextCache = { ...nameCache, ...cacheEntries };
       setNameCache(nextCache);
       saveNameCache(nextCache);
-      // 수정도 캐시 저장되므로 확정과 동일하게 toast로 알린다.
-      toast.success(`'${trimmed}' 이름을 저장했어요 — 다음 회의부터 자동으로 채워집니다.`);
+    }
+    toast.success(message, {
+      duration: 6000,
+      action: {
+        label: "되돌리기",
+        onClick: () => {
+          setAttendees(prevAttendees);
+          if (cacheChanged) {
+            setNameCache(prevCache);
+            saveNameCache(prevCache);
+          }
+        },
+      },
+    });
+  };
+
+  // 중복 이름을 막거나 합치지 않는다(동명이인 가능) — 같은 표기 중복은 시작 시 dedup이 정리.
+  const commitAttendeeName = (index: number, rawName: string) => {
+    const target = attendees[index];
+    const name = rawName.trim();
+    if (!target || !name) return;
+
+    const nextAttendees = attendees.map((a, i) =>
+      i === index ? { ...a, name, source: (target.email ? "cache" : "name") as NameSource } : a
+    );
+    if (target.email) {
+      applyWithUndo(
+        nextAttendees,
+        { [target.email]: name },
+        `'${name}' 이름을 저장했어요. 다음 회의부터 자동으로 채워집니다.`
+      );
+    } else {
+      setAttendees(nextAttendees);
     }
   };
 
-  // 추정 이름이 맞을 때 — 수정 없이 현재 이름 그대로 확정(캐시 저장) → 다음 회의에도 적용.
-  // 저장을 사용자가 인지하도록 toast로 알린다.
   const confirmAttendee = (index: number) => {
-    const target = attendees[index];
-    if (!target?.email) return;
-    const nextCache = { ...nameCache, [target.email]: target.name };
-    setNameCache(nextCache);
-    saveNameCache(nextCache);
-    setAttendees((prev) => prev.map((a, i) => (i === index ? { ...a, source: "cache" } : a)));
-    toast.success(`'${target.name}' 이름을 저장했어요 — 다음 회의부터 자동으로 채워집니다.`);
+    commitAttendeeName(index, attendees[index]?.name ?? "");
+  };
+
+  const confirmAllGuessed = () => {
+    const cacheEntries: NameCache = {};
+    const nextAttendees = attendees.map((a) => {
+      const name = a.name.trim();
+      if (!isGuessed(a.source) || !a.email || !name) return a;
+      cacheEntries[a.email] = name;
+      return { ...a, name, source: "cache" as NameSource };
+    });
+    const savedCount = Object.keys(cacheEntries).length;
+    if (savedCount === 0) return;
+    applyWithUndo(
+      nextAttendees,
+      cacheEntries,
+      `이름 ${savedCount}개를 저장했어요. 다음 회의부터 자동으로 채워집니다.`
+    );
   };
 
   const handleConfirm = async () => {
@@ -408,10 +467,25 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
       dur = evt?.duration_min || DEFAULT_DURATION_MIN;
     }
     const source = isManualMode ? "manual" : "calendar";
+
+    // 직접 고친 미확정 추정만 시작 시 캐시 귀속 — 타이핑 자체가 명시 신호. 손 안 댄 추정은 저장 안 함.
+    const editedGuessEntries: NameCache = {};
+    attendees.forEach((a) => {
+      const name = a.name.trim();
+      if (isGuessed(a.source) && a.email && name && a.originalGuess && name !== a.originalGuess) {
+        editedGuessEntries[a.email] = name;
+      }
+    });
+    if (Object.keys(editedGuessEntries).length > 0) {
+      const nextCache = { ...nameCache, ...editedGuessEntries };
+      setNameCache(nextCache);
+      saveNameCache(nextCache);
+    }
+
     // meeting.json·다운스트림은 이름 문자열만 사용 — 이메일은 캐시 귀속에만 쓰고 여기서 흘리지 않음.
     onSelect({
       title,
-      attendees: attendees.map((a) => a.name),
+      attendees: [...new Set(attendees.map((a) => a.name.trim()).filter(Boolean))],
       meetingType,
       duration: dur,
       agenda,
@@ -438,6 +512,10 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
   // 권한은 있는데 오늘 일정이 0건 — "진짜 빈 날"인지 "회의 캘린더 미연동"인지 EventKit으론 구분
   // 불가(iCloud가 기본 연동돼 카운트가 무의미). 단정 대신 차분한 연동 확인 힌트를 곁들인다.
   const calendarEmpty = calPermission === "authorized" && events.length === 0;
+  // 푸터 안내용 — 의도적으로 녹음 시작을 막지 않는다.
+  const unconfirmedGuessCount = attendees.filter(
+    (a) => isGuessed(a.source) && a.email && a.name.trim()
+  ).length;
 
   return (
     <div className={styles.meetingSelector}>
@@ -497,190 +575,224 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
             </button>
           </div>
         )}
-        {calendarActive && (
-          <div className={styles.msEventsHeader}>
-            <span className={styles.msSectionLabel}>
-              {events.length > 0 ? "오늘 일정" : "오늘 일정 없음"}
-            </span>
-            <button
-              type="button"
-              className={styles.msEventsRefresh}
-              onClick={() => loadEvents(true)}
-            >
-              ↻ 새로고침
-            </button>
-          </div>
-        )}
 
-        {/* 오늘 일정 0건 — 직접 입력은 아래 폼(autoFocus)이 자명하게 담당하므로 배너는 캘린더 경로만
-            한 문장으로. "두면"이 외부 계정 연동과 로컬 직접 추가를 모두 포괄(강제 아닌 안내). */}
-        {calendarEmpty && (
-          <div className={styles.msInfo}>
-            <span className={styles.msInfoMsg}>
-              회의 일정을 macOS 캘린더 앱에 두면 제목·참석자를 자동으로 불러옵니다.
-            </span>
-            <button
-              type="button"
-              className={styles.msInfoAction}
-              onClick={() => void addCalendarAccount()}
-            >
-              캘린더 앱 열기
-            </button>
-          </div>
-        )}
-
-        {events.length > 0 && (
-          <div className={styles.msEvents}>
-            {events.map((evt, i) => (
-              <button
-                key={i}
-                className={clsx(
-                  styles.msEvent,
-                  isPastEvent(evt.time, nowMin) && styles.past,
-                  selected === i && !isManualMode && styles.active
-                )}
-                onClick={() => handleSelectEvent(i)}
-              >
-                <span className={styles.msEventTime}>{evt.time}</span>
-                <span className={styles.msEventTitle}>{evt.title}</span>
-              </button>
-            ))}
-            <button
-              className={clsx(styles.msEvent, styles.msManual, isManualMode && styles.active)}
-              onClick={enterManualMode}
-            >
-              <span className={styles.msEventTime}>+</span>
-              <span className={styles.msEventTitle}>직접 입력</span>
-            </button>
-          </div>
-        )}
-
-        {hasSelection && <div className={styles.msDivider} />}
-
-        {isManualMode && (
-          <input
-            className="ms-input"
-            type="text"
-            placeholder="회의 제목"
-            value={manualTitle}
-            onChange={(e) => setManualTitle(e.target.value)}
-            autoFocus
-          />
-        )}
-
-        {/* 회의 유형 */}
-        {hasSelection && (
-          <>
-            <div className={styles.msSectionLabel}>회의 유형</div>
-            <div className={styles.msTypes}>
-              {typeOptions.map((t) => (
+        {/* 좌=이 회의의 사실, 우=기록 방식(회의 선택과 무관한 sticky 설정이라 상시 활성). */}
+        <div className={styles.msColumns}>
+          <div className={styles.msLeft}>
+            {calendarActive && (
+              <div className={styles.msEventsHeader}>
+                <span className={styles.msSectionLabel}>
+                  {events.length > 0 ? "오늘 일정" : "오늘 일정 없음"}
+                </span>
                 <button
-                  key={t.id}
-                  className={clsx(styles.msType, meetingType === t.id && styles.active)}
-                  onClick={() => setMeetingType(t.id)}
+                  type="button"
+                  className={styles.msEventsRefresh}
+                  onClick={() => loadEvents(true)}
                 >
-                  <span className={styles.msTypeLabel}>
-                    {t.emoji && <span className={styles.msTypeEmoji}>{t.emoji}</span>}
-                    {t.label}
-                  </span>
-                  <span className={styles.msTypeDesc}>{t.description}</span>
+                  ↻ 새로고침
                 </button>
-              ))}
-            </div>
-          </>
-        )}
+              </div>
+            )}
 
-        {/* 참석자 관리 — 라벨 없는 섹션이라 wrap에 섹션 간격(margin-top)을 줘 다른 섹션과 정렬 */}
-        {hasSelection && (
-          <div className={styles.msAttendeeWrap}>
-            <AttendeeList
-              // 선택(회의) 전환 시 remount — 스크롤 위치·인라인 편집·페이드 단서를 새 목록 기준으로 초기화.
-              key={isManualMode ? "manual" : `evt-${selected}`}
-              attendees={attendees.map((a) => a.name)}
-              emails={attendees.map((a) => a.email)}
-              guessed={attendees.map((a) => isGuessed(a.source))}
-              onAdd={addAttendee}
-              onRemove={removeAttendee}
-              onRename={renameAttendee}
-              onConfirm={confirmAttendee}
-              addInputRef={attendeeInputRef}
-            />
+            {/* 오늘 일정 0건 — 직접 입력은 아래 폼(autoFocus)이 자명하게 담당하므로 배너는 캘린더 경로만
+            한 문장으로. "두면"이 외부 계정 연동과 로컬 직접 추가를 모두 포괄(강제 아닌 안내). */}
+            {calendarEmpty && (
+              <div className={styles.msInfo}>
+                <span className={styles.msInfoMsg}>
+                  회의 일정을 macOS 캘린더 앱에 두면 제목·참석자를 자동으로 불러옵니다.
+                </span>
+                <button
+                  type="button"
+                  className={styles.msInfoAction}
+                  onClick={() => void addCalendarAccount()}
+                >
+                  캘린더 앱 열기
+                </button>
+              </div>
+            )}
 
-            {attendees.length === 0 && (
-              <p className={styles.msAttendeeHint}>
-                참석자를 입력하면 화자 이름 매핑이 더 정확해져요. 녹음 후 회의 정보에서도 추가할 수
-                있어요.
-              </p>
+            {events.length > 0 && (
+              <div className={styles.msEvents}>
+                {events.map((evt, i) => (
+                  <button
+                    key={i}
+                    className={clsx(
+                      styles.msEvent,
+                      isPastEvent(evt.time, nowMin) && styles.past,
+                      selected === i && !isManualMode && styles.active
+                    )}
+                    onClick={() => handleSelectEvent(i)}
+                  >
+                    <span className={styles.msEventTime}>{evt.time}</span>
+                    <span className={styles.msEventTitle}>{evt.title}</span>
+                  </button>
+                ))}
+                <button
+                  className={clsx(styles.msEvent, styles.msManual, isManualMode && styles.active)}
+                  onClick={enterManualMode}
+                >
+                  <span className={styles.msEventTime}>+</span>
+                  <span className={styles.msEventTitle}>직접 입력</span>
+                </button>
+              </div>
+            )}
+
+            {hasSelection && events.length > 0 && <div className={styles.msDivider} />}
+
+            {isManualMode && (
+              <>
+                <div className={styles.msSectionLabel}>회의 제목</div>
+                <input
+                  className="ms-input"
+                  type="text"
+                  placeholder="회의 제목"
+                  value={manualTitle}
+                  onChange={(e) => setManualTitle(e.target.value)}
+                  autoFocus
+                />
+              </>
+            )}
+
+            {/* 참석자 관리 — 라벨 없는 섹션이라 wrap에 섹션 간격(margin-top)을 줘 다른 섹션과 정렬 */}
+            {hasSelection && (
+              <div className={styles.msAttendeeWrap}>
+                <AttendeeList
+                  // 선택(회의) 전환 시 remount — 스크롤 위치·인라인 편집·페이드 단서를 새 목록 기준으로 초기화.
+                  key={isManualMode ? "manual" : `evt-${selected}`}
+                  items={attendees.map((item) => ({
+                    uid: item.uid,
+                    name: item.name,
+                    email: item.email,
+                    guessed: isGuessed(item.source),
+                    edited: item.originalGuess !== undefined && item.name !== item.originalGuess,
+                  }))}
+                  onAdd={addAttendee}
+                  onRemove={removeAttendee}
+                  onRename={commitAttendeeName}
+                  onNameInput={updateAttendeeName}
+                  onConfirm={confirmAttendee}
+                  addInputRef={attendeeInputRef}
+                />
+
+                {attendees.length === 0 && (
+                  <p className={styles.msAttendeeHint}>
+                    참석자를 입력하면 화자 이름 매핑이 더 정확해져요. 녹음 후 회의 정보에서도 추가할
+                    수 있어요.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* 사전 정보 (아젠다·참고 링크·자료 등 — 회의 전 맥락) */}
+            {hasSelection && (
+              <>
+                <div className={styles.msSectionLabel}>사전 정보</div>
+                <textarea
+                  className={styles.msAgendaInput}
+                  value={agenda}
+                  onChange={(e) => setAgenda(e.target.value)}
+                  placeholder="아젠다, 참고 문서 링크, 사전 자료 등"
+                  rows={4}
+                />
+              </>
             )}
           </div>
-        )}
 
-        {/* 시간·토큰 절약 섹션 — AI 다듬기(ai_polish)·회의록 검증(notes_verification) opt-out 토글 묶음.
-            잘 안 바꾸는 값이라 접을까 고려했으나, 끌지 말지 판단하려면 각 토글이 뭘 하는지 보여야 해
-            상시 노출한다(접힘은 그 설명을 예측 불가하게 숨김). 로컬 AI(mlx)는 두 단계가 모두 없어 효과
-            없는 설정이므로 숨긴다(값은 저장돼도 local_meeting.py가 안 읽음). */}
-        {hasSelection && cliHasAgent(cli) && (
-          <>
-            <div className={styles.msSectionLabel}>시간·토큰 절약</div>
-            {/* 그룹 카드 — 섹션 라벨·토글 제목이 같은 급으로 읽히지 않도록 두 토글을 한 컨테이너로 묶는다. */}
-            <div className={styles.msSaverGroup}>
-              <button
-                type="button"
-                className={clsx(styles.msDetailed, aiPolish && styles.active)}
-                role="switch"
-                aria-checked={aiPolish}
-                onClick={toggleAiPolish}
-              >
-                <span className={styles.msDetailedText}>
-                  <span className={styles.msDetailedTitle}>AI 다듬기</span>
-                  <span className={styles.msDetailedDesc}>
-                    화자 자동 매칭 · 음성 인식 오류 교정
-                  </span>
-                </span>
-                <span className={styles.msDetailedSwitch} aria-hidden="true">
-                  <span className={styles.msDetailedKnob} />
-                </span>
-              </button>
-
-              <button
-                type="button"
-                className={clsx(styles.msDetailed, notesVerification && styles.active)}
-                role="switch"
-                aria-checked={notesVerification}
-                onClick={toggleNotesVerification}
-              >
-                <span className={styles.msDetailedText}>
-                  <span className={styles.msDetailedTitle}>회의록 검증</span>
-                  <span className={styles.msDetailedDesc}>전사와 대조해 이름·날짜·누락 교정</span>
-                </span>
-                <span className={styles.msDetailedSwitch} aria-hidden="true">
-                  <span className={styles.msDetailedKnob} />
-                </span>
-              </button>
+          <div className={styles.msRail}>
+            {/* 상시 라디오 목록이 커스텀 유형 기능의 안내판 — 셀렉트로 접지 않는다(8개 초과 시 재검토). */}
+            <div className={styles.msSectionLabel}>회의 유형</div>
+            <div className={styles.msTypeList} role="radiogroup" aria-label="회의 유형">
+              {typeOptions.map((option) => {
+                const isSelectedType = meetingType === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={isSelectedType}
+                    className={clsx(styles.msTypeRow, isSelectedType && styles.active)}
+                    onClick={() => setMeetingType(option.id)}
+                  >
+                    <span className={styles.msTypeDot} aria-hidden="true" />
+                    <span className={styles.msTypeText}>
+                      <span className={styles.msTypeLabel}>
+                        {option.emoji && <span className={styles.msTypeEmoji}>{option.emoji}</span>}
+                        {option.label}
+                      </span>
+                      {isSelectedType && (
+                        <span className={styles.msTypeDesc}>{option.description}</span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-            <p className={styles.msSaverHint}>
-              끄면 더 빨리·적은 사용량으로 완성돼요. 대신 품질이 조금 아쉬울 수 있어요. 다음
-              회의에도 유지돼요.
-            </p>
-          </>
-        )}
 
-        {/* 사전 정보 (아젠다·참고 링크·자료 등 — 회의 전 맥락) */}
-        {hasSelection && (
-          <>
-            <div className={styles.msSectionLabel}>사전 정보</div>
-            <textarea
-              className={styles.msAgendaInput}
-              value={agenda}
-              onChange={(e) => setAgenda(e.target.value)}
-              placeholder="아젠다, 참고 문서 링크, 사전 자료 등"
-              rows={4}
-            />
-          </>
-        )}
+            {/* 시간·토큰 절약 섹션 — AI 다듬기(ai_polish)·회의록 검증(notes_verification) opt-out
+                토글 묶음. 잘 안 바꾸는 값이라 접을까 고려했으나, 끌지 말지 판단하려면 각 토글이 뭘
+                하는지 보여야 해 상시 노출한다(접힘은 그 설명을 예측 불가하게 숨김). 로컬 AI(mlx)는
+                두 단계가 모두 없어 효과 없는 설정이므로 숨긴다(값은 저장돼도 local_meeting.py가 안
+                읽음). */}
+            {cliHasAgent(cli) && (
+              <>
+                <div className={styles.msSectionLabel}>시간·토큰 절약</div>
+                {/* 그룹 카드 — 섹션 라벨·토글 제목이 같은 급으로 읽히지 않도록 두 토글을 한 컨테이너로 묶는다. */}
+                <div className={styles.msSaverGroup}>
+                  <button
+                    type="button"
+                    className={clsx(styles.msDetailed, aiPolish && styles.active)}
+                    role="switch"
+                    aria-checked={aiPolish}
+                    onClick={toggleAiPolish}
+                  >
+                    <span className={styles.msDetailedText}>
+                      <span className={styles.msDetailedTitle}>AI 다듬기</span>
+                      <span className={styles.msDetailedDesc}>
+                        화자 자동 매칭 · 음성 인식 오류 교정
+                      </span>
+                    </span>
+                    <span className={styles.msDetailedSwitch} aria-hidden="true">
+                      <span className={styles.msDetailedKnob} />
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={clsx(styles.msDetailed, notesVerification && styles.active)}
+                    role="switch"
+                    aria-checked={notesVerification}
+                    onClick={toggleNotesVerification}
+                  >
+                    <span className={styles.msDetailedText}>
+                      <span className={styles.msDetailedTitle}>회의록 검증</span>
+                      <span className={styles.msDetailedDesc}>
+                        전사와 대조해 이름·날짜·누락 교정
+                      </span>
+                    </span>
+                    <span className={styles.msDetailedSwitch} aria-hidden="true">
+                      <span className={styles.msDetailedKnob} />
+                    </span>
+                  </button>
+                </div>
+                <p className={styles.msSaverHint}>
+                  끄면 더 빨리·적은 사용량으로 완성돼요. 대신 품질이 조금 아쉬울 수 있어요. 다음
+                  회의에도 유지돼요.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className={styles.msFooter}>
+        {hasSelection && unconfirmedGuessCount > 0 && (
+          <div className={styles.msFooterHint}>
+            확인 전 추정 이름 {unconfirmedGuessCount}명
+            <button type="button" className={styles.msFooterConfirmAll} onClick={confirmAllGuessed}>
+              모두 맞아요
+            </button>
+          </div>
+        )}
         <button
           className={clsx("btn", "btn-primary", "btn-large", styles.msConfirm)}
           onClick={handleConfirm}

@@ -81,19 +81,18 @@ export default function AttendeeEditor({
         <input
           className={styles.aeInput}
           type="text"
-          placeholder="이름 추가 (예: Bobs, 김길동-외주)"
+          placeholder="이름 입력 후 Enter"
           value={newName}
           onChange={(e) => setNewName(e.target.value.replace(VALID_CHAR_RE, ""))}
-          onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return;
+            if (e.key === "Enter") handleAdd();
+            else if (e.key === "Escape") setNewName("");
+          }}
+          // blur도 커밋 — 새 이름 입력은 놓치면 조용히 사라지는 쪽이 위험(AttendeeList 입력과 동일 규칙).
+          onBlur={handleAdd}
           maxLength={MAX_NAME_LENGTH}
         />
-        <button
-          className="btn btn-secondary btn-small"
-          onClick={handleAdd}
-          disabled={!newName.trim()}
-        >
-          추가
-        </button>
       </div>
     </div>
   );

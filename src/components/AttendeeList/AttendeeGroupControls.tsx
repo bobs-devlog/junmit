@@ -80,27 +80,29 @@ export default function AttendeeGroupControls({
           ref={inputRef}
           className={styles.alInput}
           type="text"
-          placeholder="이름 추가 (예: Bobs, 김길동-외주)"
+          placeholder="이름 입력 후 Enter (쉼표로 여러 명)"
           value={inputValue}
           onFocus={() => !saveOpen && setGroupsOpen(groups.length > 0)}
           onChange={(e) => setInputValue(e.target.value.replace(VALID_INPUT_CHAR_RE, ""))}
           onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return;
             if (e.key === "Enter") handleAdd();
-            else if (e.key === "Escape") setGroupsOpen(false);
+            else if (e.key === "Escape") {
+              if (inputValue) setInputValue("");
+              else setGroupsOpen(false);
+            }
           }}
+          // blur도 커밋 — 새 이름 입력은 놓치면 조용히 사라지는 쪽이 위험(확정 행 편집과 반대 규칙, 의도적).
+          onBlur={handleAdd}
         />
         <button
           type="button"
           className="btn btn-secondary btn-small"
-          onClick={handleAdd}
-          disabled={!inputValue.trim()}
-        >
-          추가
-        </button>
-        <button
-          type="button"
-          className="btn btn-secondary btn-small"
+          // 입력칸 blur 커밋이 목록을 한 줄 키워 이 버튼이 밀리면 클릭이 허공에 떨어진다.
+          // 포커스 이동을 막고(blur 억제) 커밋은 onClick에서 직접 — 입력 중이던 이름도 그룹에 포함.
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
+            handleAdd();
             setGroupsOpen(false);
             setSaveOpen(true);
           }}
