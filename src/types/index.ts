@@ -8,9 +8,16 @@ export type ToastType = "success" | "error" | "info";
 // 가리켜야 하는 안내는 그 위로 띄운다.
 export type ToastPosition = "aboveTerminalInput";
 
+// 토스트 안의 단일 액션 버튼(예: 되돌리기). 클릭 시 onClick 실행 후 토스트가 닫힌다.
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 export interface ToastOptions {
   duration?: number;
   position?: ToastPosition;
+  action?: ToastAction;
 }
 
 export interface ToastData extends ToastOptions {

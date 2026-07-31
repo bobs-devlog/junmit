@@ -57,6 +57,19 @@ export default function Toast({ toast, onDismiss }: ToastProps) {
       onClick={handleClick}
     >
       <span>{toast.message}</span>
+      {toast.action && (
+        <button
+          type="button"
+          className={styles.toastActionBtn}
+          onClick={(e) => {
+            e.stopPropagation();
+            toast.action?.onClick();
+            handleClick();
+          }}
+        >
+          {toast.action.label}
+        </button>
+      )}
     </div>
   );
 }

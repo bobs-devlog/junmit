@@ -19,6 +19,24 @@
   opacity: 1;
 }
 
+/* 액션 버튼 (되돌리기 등) */
+.toast-action-btn {
+  margin-left: 10px;
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.toast-action-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
 /* 에러/경고: 상단 중앙 */
 .toast--error {
   top: 16px;
