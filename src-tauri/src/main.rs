@@ -728,9 +728,19 @@ fn validate_session_filename(filename: &str) -> Result<(), String> {
 #[tauri::command]
 fn cmd_write_session_file(session_path: String, filename: String, content: String) -> Result<(), String> {
     validate_session_filename(&filename)?;
-    let path = std::path::PathBuf::from(&session_path).join(&filename);
-    std::fs::write(&path, &content)
-        .map_err(|e| format!("파일 쓰기 실패: {e}"))
+    let dir = std::path::PathBuf::from(&session_path);
+    let path = dir.join(&filename);
+    // 원자적 쓰기(tmp + rename) — 쓰기 도중 종료·전원차단이 나도 세션 파일이 잘린 채 남지 않게 한다.
+    // meeting.json·speaker_mapping.json 등 단일 진실 원천이 이 경로로 저장되므로 부분 쓰기가 곧 손상이다.
+    let tmp = dir.join(format!(".{filename}.tmp"));
+    std::fs::write(&tmp, &content).map_err(|e| format!("파일 쓰기 실패: {e}"))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("파일 교체 실패: {e}"))
+}
+
+/// 녹음 폐기(중단) 시 스테이징 원본 삭제 — 중단한 녹음의 완전한 원본이 잔존하지 않게 한다.
+#[tauri::command]
+fn cmd_discard_recording_staging() {
+    session::discard_staging();
 }
 
 #[tauri::command]
@@ -824,6 +834,45 @@ fn report_pipeline_failure(session_dir: &str, label: &str, code: Option<i32>) {
     let tail = scrub_diagnostics(&tail, session_dir);
     log::error!("{label} 실패 (exit code: {code:?})\n----- pipeline.log tail -----\n{tail}");
     telemetry::capture_pipeline_failure(label, code, &tail);
+}
+
+/// pipeline.log에서 마지막 err() 라인(`[오류] ...`)의 사람이 읽을 메시지를 뽑는다.
+/// 스크립트는 "화자분리 모델이 없습니다. 앱을 다시 설치해주세요" 같은 조치가 담긴 안내를 내는데
+/// 그동안 로그로만 갔다 — 실패 토스트에 실제 원인·조치를 노출하기 위한 추출. 없으면 None.
+fn last_pipeline_error_message(session_dir: &str) -> Option<String> {
+    let log_path = std::path::PathBuf::from(session_dir).join("pipeline.log");
+    let content = std::fs::read_to_string(&log_path).ok()?;
+    let marker = "[오류]";
+    let lines: Vec<&str> = content.lines().collect();
+    // pipeline.log는 재시도마다 append되므로 현재 실행 구간(마지막 "=== step @ ts ===" 헤더 이후)만
+    // 스캔한다 — 안 그러면 이번 실행이 err 없이 죽었을 때 이전 실행의 오류를 원인으로 오인해 노출한다.
+    let run_start = lines
+        .iter()
+        .rposition(|l| l.contains("===") && l.contains(" @ "))
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let line = lines[run_start..].iter().rev().find(|l| l.contains(marker))?;
+    let msg = strip_ansi_codes(line);
+    let msg = msg.split(marker).nth(1)?.trim().to_string();
+    if msg.is_empty() { None } else { Some(msg) }
+}
+
+/// ANSI 이스케이프(CSI) 제거 — 스크립트 err()가 색 코드를 붙여 stderr로 내므로 사용자 노출 전 정리.
+fn strip_ansi_codes(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            for next in chars.by_ref() {
+                if next.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// cmd_run_pipeline의 종결 상태. 취소는 실패가 아니라 정상 종결의 한 갈래다(로컬 회의록의
@@ -1028,13 +1077,22 @@ async fn cmd_run_pipeline(
     if status.success() {
         // 화자분리는 오디오를 쓰는 마지막 단계 — 끝나면 회의 원본 오디오를 정리한다
         // (기본 삭제=프라이버시, keep_recording 센티넬 시 보존). /meeting·발행은 텍스트만 쓴다.
+        // 단 transcript가 비어 있으면(발화 0) 삭제하지 않는다 — 재처리 여지를 남겨, 빈 산출물에
+        // 원본이 지워지는 복구불가 손실을 막는다(무음 강제작성 등 엣지 방어).
         if step == "diarize" {
-            session::cleanup_recording_audio(&session_dir);
+            let transcript = PathBuf::from(&session_dir).join("transcript.txt");
+            let has_transcript = std::fs::metadata(&transcript).map(|m| m.len() > 0).unwrap_or(false);
+            if has_transcript {
+                session::cleanup_recording_audio(&session_dir);
+            }
         }
         Ok(PipelineRun::Completed)
     } else {
         report_pipeline_failure(&session_dir, &step, status.code());
-        Err(format!("{step} 실패 (exit code: {:?})", status.code()))
+        // exit code 대신 스크립트가 낸 실제 원인·조치를 전파한다(프론트가 "{단계} 실패: {msg}"로 표시).
+        let detail = last_pipeline_error_message(&session_dir)
+            .unwrap_or_else(|| "설정 > 로그 폴더 열기에서 자세한 원인을 확인해주세요.".to_string());
+        Err(detail)
     }
 }
 
@@ -1862,6 +1920,7 @@ fn main() {
             cmd_run_headless_meeting,
             cmd_cancel_headless_meeting,
             cmd_write_session_file,
+            cmd_discard_recording_staging,
             cmd_read_session_file,
             cmd_backup_meeting_notes,
         ])

@@ -1381,6 +1381,14 @@ fn mic_staging_path() -> PathBuf {
     app_data_dir().join("recording_mic_staging.wav")
 }
 
+/// 녹음 폐기(중단) 시 스테이징 원본을 즉시 삭제한다. convert 전에 중단하면 완전한 원본이
+/// app_data_dir에 남는데(다음 녹음의 선삭제 전까지 무기한), 화자분리 후 자동삭제하는 프라이버시
+/// 기본과 어긋난다 — "중단=지운다"라는 사용자 의도에 맞춰 폐기 시점에 정리한다.
+pub fn discard_staging() {
+    let _ = fs::remove_file(mic_staging_path());
+    let _ = fs::remove_file(system_audio_staging_path());
+}
+
 /// 스테이징 파일을 app_data 고정 경로에서 세션 디렉토리로 이동(claim)하고 세션 쪽 경로를 반환.
 /// convert(믹스 경로 ~1분) 동안 스테이징은 회의 오디오의 유일한 사본인데, 이 사이 앱이 죽으면
 /// 다음 녹음 시작의 스테이징 선삭제가 오디오를 복구 불가능하게 지운다. ms 단위 rename으로
