@@ -1293,6 +1293,21 @@ fn cmd_cancel_headless_meeting(state: State<HeadlessMeetingChild>) -> Result<(),
 /// - codex: exec은 승인 프롬프트 자체가 비활성이라 sandbox 플래그만. --skip-git-repo-check는
 ///   release 필수 — .app/Contents/Resources는 git repo가 아니고 exec은 비-git cwd를 거부한다
 ///   (config trust 베이크가 있어도 동일 거부 실측, 0.144.5 — 이 플래그가 유일한 통과 경로).
+/// CLI 버전 문자열 조회 (best-effort). CLI는 사용자 기기에서 자동 업데이트되므로(특히 claude는
+/// 백그라운드 무통보), 실행 시점 버전을 실행 헤더에 남겨야 파손 시 "어느 버전에서 갈라졌나"를
+/// 로그만으로 특정할 수 있다. 실패는 진단 단서 부재일 뿐이라 "unknown"으로 강등.
+fn cli_version(cli: &str) -> String {
+    std::process::Command::new(cli)
+        .arg("--version")
+        .env("PATH", session::get_user_shell_path())
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "unknown".into())
+}
+
 #[tauri::command]
 async fn cmd_run_headless_meeting(
     app: tauri::AppHandle,
@@ -1371,6 +1386,14 @@ async fn cmd_run_headless_meeting(
     if let Some(f) = &log_file {
         let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
         let _ = writeln!(f.lock().unwrap(), "\n=== headless-meeting ({cli}) @ {ts} ===");
+        // 버전 조회는 별도 스레드로 — claude --version이 ~2초라 동기 조회는 매 실행을 그만큼
+        // 늦춘다. 헤더 직후 "cli-version:" 줄로 도착(수 분짜리 실행이라 순서 밀림 실해 없음).
+        let f = Arc::clone(f);
+        let cli_name = cli.clone();
+        std::thread::spawn(move || {
+            let ver = cli_version(&cli_name);
+            let _ = writeln!(f.lock().unwrap(), "cli-version: {cli_name} {ver}");
+        });
     }
     let jsonl_file = OpenOptions::new()
         .create(true)
