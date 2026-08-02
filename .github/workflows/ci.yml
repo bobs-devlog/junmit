@@ -1,0 +1,67 @@
+name: ci
+
+# main 커밋과 PR에서 타입체크·테스트만 돌린다. 번들 빌드는 제외 — whisper.cpp/ffmpeg
+# 소스 빌드가 수십 분이고 pyannote 모델이 HF_TOKEN(gated repo)을 요구하는데 fork PR은
+# 시크릿을 상속받지 못한다. 전체 빌드는 릴리스 경로(release.yml)가 담당.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: macos-14 # Apple Silicon. Swift·Xcode 기본 제공
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node 설치
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 의존성 설치
+        run: npm ci
+
+      # 루트 `tsc --noEmit`은 files:[]라 공허 통과한다. 앱 tsconfig를 명시해야 실제로 검사된다.
+      - name: 타입체크
+        run: npx tsc -p tsconfig.app.json
+
+      # 현재 warning 14건이 있어 --max-warnings 0은 걸지 않는다(error만 차단).
+      # prettier(`npm run format:check`)는 기존 5개 파일이 위반이라 아직 게이트에 못 넣는다.
+      - name: 린트
+        run: npm run lint
+
+      - name: Rust 툴체인
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Rust 빌드 캐시
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # build.rs가 libNative.dylib를 무조건 link하므로 테스트 컴파일에도 필요하다.
+      # sidecar 전체(whisper·ffmpeg·pyannote) 대신 이 dylib 하나만 만든다.
+      - name: libNative.dylib 빌드
+        run: |
+          mkdir -p resources/bin resources/models
+          (cd swift-cli/system && swift build -c release)
+          cp swift-cli/system/.build/release/libNative.dylib resources/bin/
+          install_name_tool -id "@rpath/libNative.dylib" resources/bin/libNative.dylib
+
+      # tauri_build가 bundle.resources의 경로 존재를 검사하므로, gitignored 산출물이
+      # 하나라도 없으면 build.rs 단계에서 컴파일이 실패한다(.codex·.agents·AGENTS.md).
+      - name: 에이전트 스킬 산출물 생성
+        run: bash scripts/gen-agent-skills.sh
+
+      - name: Rust 테스트
+        run: cargo test --manifest-path src-tauri/Cargo.toml
