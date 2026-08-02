@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::ffi::{CStr, CString};
 use std::fs;
 use std::os::raw::c_char;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 #[cfg(not(debug_assertions))]
 use tauri::Manager;
@@ -2384,6 +2384,102 @@ pub fn find_resumable_sessions() -> Result<Vec<ResumableSession>, String> {
     Ok(sessions)
 }
 
+/// 회의 기록 본문 검색의 세션당 결과. source는 표시 배지·정렬 그룹("attendees"|"notes"|"transcript").
+#[derive(Serialize)]
+pub struct SessionSearchHit {
+    pub path: String,
+    pub source: String,
+    pub snippet: String,
+}
+
+/// 회의 기록 본문 검색 — 제목은 프론트가 로드된 목록에서 즉시 필터하므로 여기선 본문만 담당:
+/// 참석자(meeting.json) > 회의록 > 전사(교정본 우선). 회의록·전사 파일은 SPEAKER_XX 원본이라
+/// (이름 치환은 표시 시점) 파일 검색으로는 화자 이름이 안 잡히는데, 그 케이스를 참석자 매칭이 보완.
+/// 결과가 로드된 목록에 없는 세션이면 프론트 교집합에서 자연 탈락하므로 유효성 재검사는 안 한다.
+pub fn search_sessions(query: &str) -> Vec<SessionSearchHit> {
+    let query_lower = query.trim().to_lowercase();
+    // 1글자 질의는 전사에서 사실상 전 세션에 걸린다 — 노이즈 차단(프론트도 같은 하한 공유).
+    if query_lower.chars().count() < 2 {
+        return vec![];
+    }
+    let Ok(entries) = fs::read_dir(output_dir()) else { return vec![] };
+    let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+    entries.sort_by(|a, b| b.file_name().cmp(&a.file_name())); // 최신순 (기록 목록과 동일)
+
+    entries
+        .into_iter()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .filter_map(|path| {
+            let (source, snippet) = search_session_dir(&path, &query_lower)?;
+            Some(SessionSearchHit { path: path.to_string_lossy().into_owned(), source, snippet })
+        })
+        .collect()
+}
+
+/// 세션 하나에서 질의 일치를 찾는다. 첫 일치 소스만 반환(세션당 카드 1장) — (source, snippet).
+fn search_session_dir(path: &Path, query_lower: &str) -> Option<(String, String)> {
+    let attendees = read_meeting_attendees(path);
+    if attendees.iter().any(|name| name.to_lowercase().contains(query_lower)) {
+        return Some(("attendees".into(), format!("참석자: {}", attendees.join(", "))));
+    }
+    if let Some(snippet) = search_file_lines(&path.join("meeting-notes.md"), query_lower, false) {
+        return Some(("notes".into(), snippet));
+    }
+    for transcript in ["transcript_corrected.txt", "transcript.txt"] {
+        if let Some(snippet) = search_file_lines(&path.join(transcript), query_lower, true) {
+            return Some(("transcript".into(), snippet));
+        }
+    }
+    None
+}
+
+/// 파일에서 질의가 포함된 첫 줄을 스니펫으로. strip_speaker=전사 줄의 "[SPEAKER_XX M:SS] "
+/// 접두를 매칭·스니펫 모두에서 제외 — 숫자 질의가 타임스탬프에 걸리는 노이즈를 막는다.
+fn search_file_lines(file: &Path, query_lower: &str, strip_speaker: bool) -> Option<String> {
+    let content = fs::read_to_string(file).ok()?;
+    content
+        .lines()
+        .map(|line| if strip_speaker { strip_speaker_prefix(line) } else { line })
+        .map(str::trim)
+        .find(|text| !text.is_empty() && text.to_lowercase().contains(query_lower))
+        .map(|text| crop_around(text, query_lower))
+}
+
+fn strip_speaker_prefix(line: &str) -> &str {
+    if line.starts_with('[') {
+        if let Some(idx) = line.find("] ") {
+            return &line[idx + 2..];
+        }
+    }
+    line
+}
+
+/// 일치 지점 중심으로 좌우 문맥만 남긴 한 줄 스니펫. char 단위 슬라이스 — UTF-8 경계 안전.
+/// 소문자화는 **글자당 첫 소문자만** 취해 원본과 1:1 정렬을 보장한다 — `String::to_lowercase`는
+/// 'İ'처럼 한 글자를 2글자로 늘려 위치가 밀리고, 그 위치로 원본을 슬라이스하면 start>end로
+/// panic한다(실측 재현). 아래 clamp는 질의 정규화 차이에 대한 2차 방어.
+fn crop_around(text: &str, query_lower: &str) -> String {
+    const CONTEXT_CHARS: usize = 40;
+    let chars: Vec<char> = text.chars().collect();
+    let lower: String = chars.iter().map(|c| c.to_lowercase().next().unwrap_or(*c)).collect();
+    let match_pos = lower
+        .find(query_lower)
+        .map(|byte_pos| lower[..byte_pos].chars().count())
+        .unwrap_or(0);
+    let query_chars = query_lower.chars().count();
+    let end = (match_pos + query_chars + CONTEXT_CHARS).min(chars.len());
+    let start = match_pos.saturating_sub(CONTEXT_CHARS).min(end);
+    let mut snippet: String = chars[start..end].iter().collect();
+    if start > 0 {
+        snippet.insert(0, '…');
+    }
+    if end < chars.len() {
+        snippet.push('…');
+    }
+    snippet
+}
+
 /// 세션 디렉토리 삭제
 pub fn delete_session(session_path: &str) -> Result<(), String> {
     let path = PathBuf::from(session_path);
@@ -2662,6 +2758,64 @@ mod tests {
         fs::create_dir_all(&staging_dir).unwrap();
         fs::create_dir_all(&session).unwrap();
         (staging_dir, session)
+    }
+
+    #[test]
+    fn search_prefers_attendees_then_notes_then_transcript() {
+        let (_, session) = temp_dirs("search-priority");
+        fs::write(
+            session.join("meeting.json"),
+            r#"{"title":"주간회의","attendees":["Bobs","Wayne"]}"#,
+        )
+        .unwrap();
+        fs::write(session.join("meeting-notes.md"), "## 결정\n- 정산 오류는 다음 주 처리\n").unwrap();
+        fs::write(session.join("transcript.txt"), "[SPEAKER_00 0:12] 정산 얘기부터 하시죠\n").unwrap();
+
+        // 참석자 일치가 최우선 (대소문자 무시)
+        let (source, snippet) = search_session_dir(&session, "bobs").unwrap();
+        assert_eq!(source, "attendees");
+        assert!(snippet.contains("Bobs"));
+
+        // 회의록 일치가 전사보다 우선
+        let (source, snippet) = search_session_dir(&session, "정산").unwrap();
+        assert_eq!(source, "notes");
+        assert!(snippet.contains("정산 오류"));
+
+        // 회의록에 없고 전사에만 있으면 전사
+        let (source, _) = search_session_dir(&session, "얘기부터").unwrap();
+        assert_eq!(source, "transcript");
+
+        assert!(search_session_dir(&session, "없는단어").is_none());
+    }
+
+    #[test]
+    fn search_transcript_ignores_speaker_prefix() {
+        let (_, session) = temp_dirs("search-prefix");
+        // 타임스탬프 "12"가 매칭 대상이 되면 숫자 질의가 전 세션에 걸린다 — 접두 제외 확인.
+        fs::write(session.join("transcript.txt"), "[SPEAKER_00 0:12] 내용에는 없는\n").unwrap();
+        assert!(search_session_dir(&session, "12").is_none());
+        // 스니펫에도 접두가 없어야 함
+        let (_, snippet) = search_session_dir(&session, "내용").unwrap();
+        assert!(!snippet.contains("SPEAKER"), "스니펫에 라벨 접두 잔존: {snippet}");
+    }
+
+    #[test]
+    fn crop_around_survives_lowercase_expanding_chars() {
+        // 'İ'는 String::to_lowercase에서 2글자로 늘어난다 — 그 위치로 원본을 슬라이스하면
+        // start>end로 panic했다(실측). 1:1 소문자화 + clamp 이후로는 어떤 입력에도 panic 없음.
+        let text = format!("{}xx", "İ".repeat(90));
+        let snippet = crop_around(&text, "xx");
+        assert!(!snippet.is_empty(), "스니펫이 비었음");
+    }
+
+    #[test]
+    fn crop_around_is_utf8_safe_and_centered() {
+        // 긴 한글 줄의 뒷부분 일치 — 양끝 말줄임 + 일치어 포함 + panic 없음(char 슬라이스).
+        let long_line = format!("{}핵심단어{}", "가나다라마".repeat(30), "바사아자차".repeat(30));
+        let snippet = crop_around(&long_line, "핵심단어");
+        assert!(snippet.contains("핵심단어"));
+        assert!(snippet.starts_with('…') && snippet.ends_with('…'));
+        assert!(snippet.chars().count() < 100);
     }
 
     #[test]

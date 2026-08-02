@@ -693,6 +693,14 @@ fn cmd_delete_session(session_path: String) -> Result<(), String> {
     session::delete_session(&session_path)
 }
 
+/// 회의 기록 본문 검색 (참석자·회의록·전사). 제목 필터는 프론트가 로드된 목록에서 즉시 처리.
+/// async 필수 — sync 커맨드는 메인 스레드에서 실행돼(tauri 매크로 Blocking 분기 실측)
+/// 전 세션 파일 스캔이 타이핑마다 UI를 멈춘다.
+#[tauri::command]
+async fn cmd_search_sessions(query: String) -> Result<Vec<session::SessionSearchHit>, String> {
+    Ok(session::search_sessions(&query))
+}
+
 /// dev 전용: 녹음 끝난 시점으로 세션 초기화 (처리 산출물 삭제). UI 노출은 프론트가
 /// import.meta.env.DEV로 게이팅하므로 release 사용자에겐 호출 경로가 없다.
 #[tauri::command]
@@ -1933,6 +1941,7 @@ fn main() {
             cmd_save_recording,
             cmd_find_sessions,
             cmd_delete_session,
+            cmd_search_sessions,
             cmd_reset_session_to_recording,
             cmd_reset_session_to_diarized,
             cmd_open_path,

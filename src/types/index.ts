@@ -221,6 +221,13 @@ export interface Session {
   [key: string]: unknown;
 }
 
+/** 회의 기록 본문 검색 결과 한 건 (Rust cmd_search_sessions). source는 출처 배지·정렬 그룹. */
+export interface SessionSearchHit {
+  path: string;
+  source: "attendees" | "notes" | "transcript";
+  snippet: string;
+}
+
 // ── Pipeline step (constants.ts와 일치) ──────────
 export interface PipelineStep {
   id: string;

@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-import clsx from "clsx";
-import { visibleSteps } from "@/constants";
 import { useDialog } from "@/contexts/DialogContext";
 import { useToast } from "@/contexts/ToastContext";
 import { invoke } from "@tauri-apps/api/core";
+import useSessionSearch from "@/hooks/useSessionSearch";
+import SessionCard from "./SessionCard";
 import type { Session } from "@/types";
 import styles from "./SessionList.module.css";
 
@@ -13,6 +13,7 @@ interface SessionListProps {
 
 export default function SessionList({ onSelect }: SessionListProps) {
   const [sessions, setSessions] = useState<Session[] | null>(null);
+  const { query, setQuery, results, searching } = useSessionSearch(sessions);
   const { confirm } = useDialog();
   const toast = useToast();
 
@@ -56,51 +57,40 @@ export default function SessionList({ onSelect }: SessionListProps) {
           아직 회의 기록이 없어요. 새 회의를 녹음하면 여기에 표시됩니다.
         </div>
       ) : (
-        <div className={styles.slItems}>
-          {sessions.map((s) => (
-            <div key={s.path} className={styles.slItem} onClick={() => onSelect(s)}>
-              <button
-                type="button"
-                className={styles.slDelete}
-                onClick={(e) => handleDelete(e, s)}
-                aria-label="삭제"
-                title="삭제"
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M3 6h18" />
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                  <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                  <line x1="10" x2="10" y1="11" y2="17" />
-                  <line x1="14" x2="14" y1="11" y2="17" />
-                </svg>
-              </button>
-              <div className={styles.slDate}>
-                {s.date} {s.time}
-              </div>
-              <div className={styles.slTitle}>{s.title}</div>
-              <div className={styles.slSteps}>
-                {visibleSteps(s.ai_polish).map((step) => (
-                  <span
-                    key={step.id}
-                    className={clsx(styles.slStep, s.steps[step.field] && styles.done)}
-                  >
-                    {s.steps[step.field] ? "✓" : "·"} {step.label}
-                  </span>
-                ))}
-              </div>
+        <>
+          <div className={styles.slSearch}>
+            <span aria-hidden="true">🔎</span>
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="제목·회의록·전사 검색"
+              aria-label="회의 기록 검색"
+            />
+          </div>
+
+          {searching && results.length === 0 ? (
+            <div className="ms-loading">&ldquo;{query.trim()}&rdquo;와 일치하는 회의가 없어요</div>
+          ) : (
+            <div className={styles.slItems}>
+              {results.map((result) => (
+                <SessionCard
+                  key={result.session.path}
+                  result={result}
+                  query={searching ? query : ""}
+                  onSelect={onSelect}
+                  onDelete={handleDelete}
+                />
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+
+          {searching && results.length > 0 && (
+            <div className={styles.slCount}>
+              검색 결과 {results.length}건 · 지우면 전체 목록으로 돌아갑니다
+            </div>
+          )}
+        </>
       )}
     </div>
   );
