@@ -735,7 +735,7 @@ def post_process_note(note):
         if re.match(r"^\s*-\s*\[[ xX]?\]", ln):
             # 담당자는 @SPEAKER_XX만 허용 — 그 외 @이름은 전부 추측이므로 제거. 참석자 명단 대조가
             # 아니라 화이트리스트로 거른다(실측: 명단에 없는 오기 "@Bibs"가 명단 대조를 통과했음).
-            # @ 직전이 단어 문자면 이메일(bobs.kim@soomgo.com)의 도메인이므로 건드리지 않는다.
+            # @ 직전이 단어 문자면 이메일(user@example.com)의 도메인이므로 건드리지 않는다.
             ln = re.sub(r"\s*(?<![\w.가-힣])@(?!SPEAKER_\d{2})[A-Za-z가-힣][\w가-힣.]*", "", ln)
             ln = re.sub(r"\s*\(\s*\)", "", ln)  # "(@이름)" 제거 후 남는 빈 괄호 정리
         out.append(ln)

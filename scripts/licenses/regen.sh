@@ -43,6 +43,15 @@ echo "[3/3] $OUT 조립..."
   echo '```'
   cat "$TMP_NPM"
   echo '```'
+  # LGPL-2.1 전문(500줄)은 반드시 맨 뒤에 둔다 — 앱 라이선스 화면(SettingsLicensesScreen)이
+  # "## Rust 의존성 (cargo)" 앞을 "요약"으로 렌더하므로, header.md에 넣으면 토글을 누르기도
+  # 전에 기본 화면이 법률 전문으로 뒤덮인다(실측: 요약 68줄 → 578줄).
+  echo
+  echo "## FFmpeg LGPL-2.1 전문"
+  echo
+  echo '```'
+  cat "$SCRIPT_DIR/lgpl-2.1.txt"
+  echo '```'
 } > "$OUT"
 
 echo "완료: $OUT ($(wc -l < "$OUT" | tr -d ' ')줄)"

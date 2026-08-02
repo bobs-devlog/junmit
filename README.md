@@ -128,7 +128,7 @@ curl -fsSL https://github.com/bobs-devlog/junmit/releases/latest/download/instal
 - **회의 기록.** 지난 회의록을 다시 보거나, 중간에 멈춘 회의를 이어서 진행합니다.
 - **용어 사전.** 팀에서 자주 쓰는 용어·제품명을 등록합니다. 쉼표로 여러 개를 한꺼번에 붙여넣을 수 있고, 사람 이름은 참석자 정보에서 자동 반영되므로 넣지 않아도 됩니다.
 - **회의 유형.** 팀·조직에 맞춘 회의록 양식을 AI와 대화하며 새로 만들거나 다듬습니다.
-- **설정.** 권한 상태 확인, 앱 업데이트, 오픈소스 라이선스 고지.
+- **설정.** 권한 상태 확인, 앱 업데이트, 진단 및 사용 통계 켜기·끄기, 오픈소스 라이선스 고지.
 
 ---
 
@@ -168,7 +168,7 @@ Google 등 외부 캘린더는 macOS에 연결돼 있어야 앱에 보입니다.
 
 **녹음한 내용이 외부로 나가지는 않나요?**
 
-목소리(오디오)는 내 Mac 안에서만 처리되고 처리 후 자동 삭제됩니다. 회의록을 만들 때는 전사된 텍스트만 선택한 AI로 전달되며, 로컬 AI를 선택하면 이 텍스트조차 외부로 나가지 않습니다. 자세한 내용은 [내 데이터는 어디에 저장되나요](#내-데이터는-어디에-저장되나요)를 참고하세요.
+목소리(오디오)는 내 Mac 안에서만 처리되고 처리 후 자동 삭제됩니다. 회의록을 만들 때는 전사된 텍스트만 선택한 AI로 전달되며, 로컬 AI를 선택하면 이 텍스트조차 외부로 나가지 않습니다. 이와 별개로 앱 오류 기록과 익명 사용 통계는 기본으로 전송되지만 회의 내용은 일체 포함되지 않고 설정에서 끌 수 있습니다. 자세한 내용은 [내 데이터는 어디에 저장되나요](#내-데이터는-어디에-저장되나요)를 참고하세요.
 
 ---
 
@@ -185,7 +185,8 @@ Google 등 외부 캘린더는 macOS에 연결돼 있어야 앱에 보입니다.
 
 - **오디오(목소리)는 외부로 나가지 않습니다.** 전사와 화자분리 모두 내 Mac에서 처리되며, 녹음 원본은 화자분리가 끝나면 자동 삭제됩니다.
 - **화자 사전의 음성 정보도 외부로 나가지 않습니다.** 화자 이름을 확정할 때 저장되는 것은 목소리의 특징을 요약한 수치(원본 음성 복원·재생 불가)이며 내 Mac에만 보관됩니다. 사이드바 "화자 사전"에서 사람별로 지우거나 자동 인식을 끌 수 있습니다.
-- 회의록을 만들 때는 **전사된 텍스트**가 선택한 AI 서비스(Claude Code는 Anthropic, Codex는 OpenAI, Antigravity는 Google)로 전달됩니다. **로컬 AI를 선택하면 이 단계도 내 Mac에서 처리되어 아무것도 전달되지 않습니다.**
+- 회의록을 만들 때는 **전사된 텍스트**가 선택한 AI 서비스(Claude Code는 Anthropic, Codex는 OpenAI, Antigravity는 Google)로 전달됩니다. **로컬 AI를 선택하면 이 단계도 내 Mac에서 처리되어 회의 내용이 전혀 전달되지 않습니다.**
+- **오류 진단과 익명 사용 통계는 전송됩니다(기본 켜짐, 끌 수 있습니다).** 앱이 비정상 종료하거나 처리가 실패했을 때의 오류 기록과, 어떤 기능을 얼마나 썼는지에 대한 익명 집계(횟수·유형)입니다. **녹음·전사·회의록·회의 제목 등 회의 내용은 일체 포함되지 않고**, 기기 이름과 계정 이름도 지운 뒤 보냅니다. 녹음 길이처럼 회의를 식별할 여지가 있는 값은 정확한 수치 대신 범위("15~30분")로만 보냅니다. 사이드바 **설정 → 진단 및 사용 통계**를 끄면 이것도 전송되지 않습니다.
 
 앱을 삭제해도 위 데이터 폴더는 남습니다. 완전히 지우려면 터미널에서 다음을 실행하세요.
 
@@ -207,7 +208,7 @@ rm -rf "$HOME/Library/Application Support/app.junmit"
 | [pyannote.audio](https://github.com/pyannote/pyannote-audio) | 화자분리 라이브러리 | MIT |
 | [whisper.cpp](https://github.com/ggerganov/whisper.cpp) | 전사 엔진 (앱 동봉) | MIT |
 | [Whisper large-v3-turbo](https://github.com/openai/whisper) (© OpenAI) | 전사 모델 | MIT |
-| [Gemma 4 12B](https://huggingface.co/google/gemma-4-12b-it) (© Google DeepMind) | 로컬 AI 회의록 모델 (로컬 AI 선택 시 내려받음) | [Apache-2.0](https://ai.google.dev/gemma/docs/gemma_4_license) |
+| [Gemma 4 12B](https://huggingface.co/google/gemma-4-12B-it) (© Google DeepMind) | 로컬 AI 회의록 모델 (로컬 AI 선택 시 내려받음) | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) |
 | [FFmpeg](https://ffmpeg.org) | 오디오 변환·전처리 (앱 동봉, audio-only 빌드) | LGPL-2.1-or-later |
 | [PyTorch](https://github.com/pytorch/pytorch) | 화자분리 모델 실행 런타임 | BSD-3-Clause |
 | [uv](https://github.com/astral-sh/uv) (© Astral) | Python 인터프리터·패키지 관리 (앱 동봉) | Apache-2.0 / MIT |
@@ -251,7 +252,7 @@ rm -rf "$HOME/Library/Application Support/app.junmit"
 ### 첫 빌드
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/bobs-devlog/junmit.git
 cd junmit
 npm run dmg
 # → src-tauri/target/release/bundle/dmg/Junmit_*.dmg

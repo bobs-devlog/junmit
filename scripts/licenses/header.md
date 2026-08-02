@@ -12,9 +12,9 @@ Junmit 자체 코드는 MIT 라이선스(저장소 `LICENSE` 파일)를 따릅�
 ## 앱에 포함·사용하는 구성요소
 
 `.dmg`에 포함되어 재배포되는 것과 설치 시 내려받아 구동되는 것을 모두 적습니다.
-MIT · Apache-2.0 · BSD-3-Clause 전문은 아래 "Rust 의존성 (cargo)" 섹션에 동일하게
-포함되어 있습니다. CC-BY-4.0(pyannote 모델)과 OFL-1.1(D2Coding)은 이 섹션에 따로
-명시합니다.
+MIT · Apache-2.0 · BSD-3-Clause 전문은 아래 "Rust 의존성 (cargo)" 섹션에, LGPL-2.1(FFmpeg)
+전문은 문서 맨 끝에 있습니다. CC-BY-4.0(pyannote 모델)과 OFL-1.1(D2Coding)은 이 섹션에서
+따로 명시합니다.
 
 | 컴포넌트 | 역할 | 저작권 | 라이선스 |
 |---|---|---|---|
@@ -23,7 +23,7 @@ MIT · Apache-2.0 · BSD-3-Clause 전문은 아래 "Rust 의존성 (cargo)" 섹�
 | [whisper.cpp](https://github.com/ggerganov/whisper.cpp) | 전사 엔진 (앱에 포함) | © The ggml authors | MIT |
 | [FFmpeg](https://ffmpeg.org) | 오디오 변환·전처리 (앱에 포함) | © FFmpeg 개발자 | LGPL-2.1-or-later |
 | [Whisper large-v3-turbo](https://github.com/openai/whisper) | 전사 모델 (설치 시 다운로드) | © OpenAI | MIT |
-| [Gemma 4 12B](https://huggingface.co/google/gemma-4-12b-it) | 로컬 회의록 모델 (로컬 AI 선택 시 다운로드) | © Google DeepMind | [Apache-2.0](https://ai.google.dev/gemma/docs/gemma_4_license) |
+| [Gemma 4 12B](https://huggingface.co/google/gemma-4-12B-it) | 로컬 회의록 모델 (로컬 AI 선택 시 `mlx-community` 양자화본 다운로드) | © Google DeepMind | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) |
 | [mlx-lm](https://github.com/ml-explore/mlx-lm) | 로컬 회의록 모델 실행 런타임 (로컬 AI 선택 시 설치) | © Apple Inc. | MIT |
 | [PyTorch (torch · torchaudio)](https://github.com/pytorch/pytorch) | 화자분리 모델 실행 런타임 (설치 시 사용) | © Meta Platforms 외 | BSD-3-Clause |
 | [uv](https://github.com/astral-sh/uv) | Python 인터프리터·패키지 관리 (앱에 포함) | © Astral Software Inc. | Apache-2.0 OR MIT |
@@ -43,8 +43,12 @@ LGPL version 2.1 or later 하에 동봉합니다(`--disable-gpl --disable-nonfre
 코덱 미포함 — Junmit은 오디오만 사용). 동봉 버전은 **n8.1.2**이며 무수정 빌드입니다. 정확한
 빌드 구성·버전은 `scripts/build-binaries.sh`에 공개됩니다. FFmpeg는 앱에 정적 링크되지 않고
 별도 실행 파일(`resources/bin/ffmpeg`)로 동봉되어, 사용자가 동일 인터페이스의 바이너리로
-교체·재빌드할 수 있습니다(LGPL-2.1 대응 소스·재링크 요건 충족). 소스는 https://ffmpeg.org
-에서 받을 수 있고, 라이선스 전문: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+교체·재빌드할 수 있습니다(LGPL-2.1 대응 소스·재링크 요건 충족).
+
+대응 소스는 FFmpeg git tag **n8.1.2**(무수정)이며 https://ffmpeg.org 또는
+https://github.com/FFmpeg/FFmpeg/tree/n8.1.2 에서 받을 수 있습니다. 본 배포일로부터 3년간
+동일 소스 사본의 제공 요청을 받습니다(저장소 이슈로 문의). 라이선스 전문은 이 문서 맨 끝
+"FFmpeg LGPL-2.1 전문"에 수록합니다.
 
 ### D2Coding — SIL Open Font License 1.1
 
