@@ -99,7 +99,6 @@ export default function RecordingScreen() {
       try {
         await recorder.stop();
       } catch {}
-      // 중단한 녹음의 완전한 원본이 스테이징에 잔존하지 않게 정리(프라이버시).
       await invoke("cmd_discard_recording_staging").catch(() => {});
     },
   });
@@ -234,7 +233,6 @@ export default function RecordingScreen() {
     try {
       await recorder.stop();
     } catch {}
-    // 중단한 녹음의 완전한 원본이 스테이징에 잔존하지 않게 정리(프라이버시).
     await invoke("cmd_discard_recording_staging").catch(() => {});
     resetSession();
     navigate("/", { replace: true });

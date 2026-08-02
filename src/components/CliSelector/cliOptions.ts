@@ -71,8 +71,7 @@ export const OPTIONS: CliOption[] = [
 ];
 
 // 로컬 모델 변형의 단일 진실 원천 — id는 Rust(session.rs LOCAL_MODEL_*)·install.sh·
-// local_meeting.py와 일치. 변형별 분기가 필요한 곳은 이 표를 조회한다(이진 삼항 금지 —
-// 3번째 변형 추가가 "표 1행"으로 끝나야 한다).
+// local_meeting.py와 일치. 변형별 분기는 이 표 조회로(이진 삼항 금지).
 // 실행 피크 실측: 표준 ~9.4GB(16GB Mac의 Metal 상한 이내, 구글 공식 "16GB 통합 메모리" 포지셔닝과
 // 일치) / 고품질 ~13GB(24GB+ 전용). recommendRam은 권장 뱃지·경고 분기 기준.
 // diskNeedGb ≈ 기초 엔진(~2GB) + 모델 용량 + 여유. 낮은 사양 → 높은 사양 순서 유지(권장 판정이 의존).
@@ -101,7 +100,7 @@ export const LOCAL_VARIANTS = [
 export type LocalVariant = (typeof LOCAL_VARIANTS)[number];
 export type LocalVariantId = LocalModelId;
 
-// 변형 id → 표의 행. Rust에서 넘어온 문자열이 표 밖이면 undefined — 호출자가 표시 생략으로 강등.
+// id가 표 밖이면 undefined — 호출자가 표시 생략으로 강등.
 export const localVariantOf = (id: string): LocalVariant | undefined =>
   LOCAL_VARIANTS.find((variant) => variant.id === id);
 

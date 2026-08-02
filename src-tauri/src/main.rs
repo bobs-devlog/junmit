@@ -223,8 +223,7 @@ fn cmd_get_app_dir(app: tauri::AppHandle) -> Result<String, String> {
 
 /// LLM 작업을 수행할 CLI 선택. 사용자 영속 선택(`active_cli`) → 없으면 기본 "claude".
 /// 선택 CLI의 junmit 전용 환경 보장 — cmd_get_active_cli(매 기동)·cmd_set_active_cli(명시 선택)
-/// 공유. 새 CLI 추가 시 여기 한 곳만 고친다. 미지 값은 아무것도 하지 않는다 — 과거엔 `_` 폴백이
-/// claude 환경을 조용히 베이크해, 새 CLI를 추가하며 이 매치를 놓치면 무언 폴백 사고가 됐다.
+/// 공유. 미지 값은 아무것도 하지 않는다(claude 폴백 같은 무언 동작 금지).
 fn ensure_cli_environment(app: &tauri::AppHandle, cli: &str) {
     match cli {
         // MCP·신뢰 베이크가 spawn 전에 필요.
@@ -1319,9 +1318,8 @@ fn cmd_cancel_headless_meeting(state: State<HeadlessMeetingChild>) -> Result<(),
 /// - codex: exec은 승인 프롬프트 자체가 비활성이라 sandbox 플래그만. --skip-git-repo-check는
 ///   release 필수 — .app/Contents/Resources는 git repo가 아니고 exec은 비-git cwd를 거부한다
 ///   (config trust 베이크가 있어도 동일 거부 실측, 0.144.5 — 이 플래그가 유일한 통과 경로).
-/// CLI 버전 문자열 조회 (best-effort). CLI는 사용자 기기에서 자동 업데이트되므로(특히 claude는
-/// 백그라운드 무통보), 실행 시점 버전을 실행 헤더에 남겨야 파손 시 "어느 버전에서 갈라졌나"를
-/// 로그만으로 특정할 수 있다. 실패는 진단 단서 부재일 뿐이라 "unknown"으로 강등.
+/// CLI 버전 조회 (best-effort, 실패="unknown"). CLI가 무통보 자동 업데이트되므로 실행 시점
+/// 버전이 로그에 있어야 파손 시 "어느 버전에서 갈라졌나"를 특정할 수 있다.
 fn cli_version(cli: &str) -> String {
     std::process::Command::new(cli)
         .arg("--version")

@@ -113,7 +113,6 @@ export const isCli = (v: string): v is Cli =>
 // CliAvailability의 CLI별 설치/인증 필드 접근 — 평면 struct(와이어 계약)를 유지하면서
 // 호출부의 "claude ? : codex" 삼항 중첩을 막는다. mlx는 CLI 설치가 없는 백엔드라 false가 정답.
 // exhaustive switch(buildCommand와 같은 이유) — 새 Cli 추가 시 여기서 컴파일 에러가 나야 한다.
-// 과거 삼항 연쇄의 꼬리 `: false`는 새 CLI를 조용히 "미설치"로 읽는 무언 폴백이었다.
 export const cliInstalledOf = (availability: CliAvailability, cli: Cli): boolean => {
   switch (cli) {
     case "claude":

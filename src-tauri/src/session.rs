@@ -174,7 +174,6 @@ pub fn revert_local_model_if_missing() {
         return;
     }
     let current = read_local_model();
-    // 설치된 다른 변형으로 복원 — 목록 순회라 변형이 늘어도 이 함수는 불변.
     let installed_other = LOCAL_MODELS
         .iter()
         .find(|model| **model != current && model_present_at(&local_model_dir().join(model)));

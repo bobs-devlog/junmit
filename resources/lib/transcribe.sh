@@ -120,9 +120,8 @@ do_transcribe() {
   if [[ -n "$mean_vol" ]] && awk -v v="$mean_vol" 'BEGIN { exit !(v < -50) }'; then
     no_speech="true"
   fi
-  # 세그먼트 0개(발화 내용 없음 — 음악·소음 등)면 음량과 무관하게 발화 없음으로 처리한다.
-  # 안 그러면 빈 전사가 화자분리로 넘어가 0줄 transcript가 성공 처리되고, 그 시점에 원본이
-  # 자동삭제돼 복구가 불가능해진다(무음 판정이 음량 기반이라 소리는 있는데 발화 0인 경우를 못 걸렀음).
+  # 세그먼트 0개(음악·소음 등)면 음량과 무관하게 발화 없음 — 빈 전사가 화자분리로 넘어가면
+  # 0줄 transcript가 성공 처리되며 원본이 자동삭제돼 복구 불가(음량 판정만으론 못 거름).
   if [[ "$(tr -d '[:space:]' < "$session_dir/segments.json" 2>/dev/null)" == "[]" ]]; then
     no_speech="true"
   fi

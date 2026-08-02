@@ -37,7 +37,6 @@ export default function SaveFileButton({ text, title, loaded }: SaveFileButtonPr
 
     if (!path) return; // 취소
     try {
-      // 파일은 홀로 떠나므로 제목 헤딩을 붙인다 (앱에서는 화면 헤더가 그 역할).
       await invoke<void>("cmd_export_text_file", {
         path,
         content: withTitleHeading(text, title),
