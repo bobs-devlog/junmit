@@ -10,7 +10,8 @@
 
 모델: Gemma 4 12B (Apache 2.0) 2종 중 사용자 선택 — 표준(순수 4bit, 6.8GB, 16GB Mac) /
 고품질(혼합 정밀도, 11GB, 24GB+ Mac). 선택은 `local_model` 파일(단일 진실 원천, Rust가 기록).
-런타임은 mlx-vlm (Gemma 4 unified 아키텍처가 mlx-lm 정식 릴리스에 아직 없음 — 2026-07 실측).
+런타임은 mlx-lm (2026-08 mlx-vlm에서 이전 — 기존 gemma4_unified 가중치를 우회 2건으로
+그대로 로드, 같은 시드에서 두 런타임 생성이 바이트 동일함을 실측. make_generator 주석 참조).
 
 호출: python3 local_meeting.py [session_dir]   (없으면 $APP_SESSION_DIR)
 """
@@ -150,17 +151,28 @@ def load_vocab():
         return ""
 
 
-# ---- 공용 생성 헬퍼 (mlx-vlm) ----
+# ---- 공용 생성 헬퍼 (mlx-lm) ----
 def make_generator():
-    from mlx_vlm import load, stream_generate
-    from mlx_vlm.prompt_utils import apply_chat_template
-    from mlx_vlm.utils import load_config
+    from mlx_lm import load, stream_generate
+    from mlx_lm import utils as lm_utils
+    from mlx_lm.models import gemma4
+    from mlx_lm.sample_utils import make_sampler, make_repetition_penalty
     import mlx.core as mx
 
+    # gemma4_unified(멀티모달 체크포인트)를 mlx-lm gemma4(텍스트)로 읽는 우회 2건 —
+    # ① model_type 별칭: mlx-lm 모델 레지스트리에 gemma4_unified가 없다.
+    # ② vision_embedder.* 가중치 스킵: gemma4.sanitize의 멀티모달 스킵 목록(vision_tower·
+    #    audio_tower·embed_vision 등)에 이 접두어만 빠져 있어 strict 로드가 실패한다.
+    # mlx-lm 상향 시 이 우회가 무의미해지거나(정식 지원) 내부 변화로 깨질 수 있다 — == 고정 유지.
+    lm_utils.MODEL_REMAPPING["gemma4_unified"] = "gemma4"
+    _orig_sanitize = gemma4.Model.sanitize
+    def _sanitize(self, weights):
+        return _orig_sanitize(self, {k: v for k, v in weights.items()
+                                     if not k.startswith("vision_embedder")})
+    gemma4.Model.sanitize = _sanitize
+
     model_path = str(MODEL_DIR / MODEL_NAME)
-    model, processor = load(model_path)
-    config = load_config(model_path)
-    tok = processor.tokenizer if hasattr(processor, "tokenizer") else processor
+    model, tok = load(model_path)
 
     # 주: 생성 가속·메모리 옵션을 실측 후 의도적으로 켜지 않는다 —
     #   kv_bits(KV 양자화): Gemma 4 슬라이딩 윈도우 레이어에서 "RotatingKVCache Quantization
@@ -170,12 +182,17 @@ def make_generator():
     #     결합 시 분포 보존이 깨지는 것으로 추정) — 끄면 일관 양호.
     def gen(system, user, max_tokens, temp, echo=False):
         # Gemma는 system 턴을 첫 user 턴에 병합하는 관례 — 실측 검증된 방식으로 합쳐 전달.
-        prompt = apply_chat_template(processor, config, system + "\n\n" + user, num_images=0)
+        # enable_thinking=False 필수 — 생략하면 mlx-lm TokenizerWrapper가 True를 자동 주입해
+        # 프롬프트가 사고 유도형으로 렌더링되고 본문 대신 사고 채널이 출력된다 (2026-08 실측).
+        prompt = tok.apply_chat_template(
+            [{"role": "user", "content": system + "\n\n" + user}],
+            add_generation_prompt=True, enable_thinking=False)
         mx.reset_peak_memory()
         text = ""
-        for chunk in stream_generate(model, processor, prompt, max_tokens=max_tokens,
-                                     temperature=temp, top_p=0.95,
-                                     repetition_penalty=1.15, repetition_context_size=256):
+        for chunk in stream_generate(model, tok, prompt, max_tokens=max_tokens,
+                                     sampler=make_sampler(temp=temp, top_p=0.95),
+                                     logits_processors=[make_repetition_penalty(
+                                         1.15, context_size=256)]):
             piece = chunk.text if hasattr(chunk, "text") else str(chunk)
             text += piece
             if echo:

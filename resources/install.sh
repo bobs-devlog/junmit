@@ -2,7 +2,7 @@
 # 사용자 머신용 setup. 사용자 데이터(.venv, models, python-runtime)와 캘린더 권한 안내만 책임.
 # AI CLI(claude/codex/antigravity)는 온보딩 "AI 도구 선택" 화면이 설치·로그인을 보장하므로
 # 여기서 할 일이 없다.
-# 단 로컬 AI(mlx)는 CLI가 아니라서 이 스크립트가 런타임(mlx-vlm)·모델 다운로드까지 책임진다
+# 단 로컬 AI(mlx)는 CLI가 아니라서 이 스크립트가 런타임(mlx-lm)·모델 다운로드까지 책임진다
 # (INSTALL_MODE=model, 아래 참조).
 # sidecar 바이너리(whisper-cli, diarize, uv 등)는 앱 번들에 포함되어 있으므로 여기서 빌드하지 않는다.
 # 바이너리 빌드는 scripts/build-binaries.sh (개발자 머신 전용).
@@ -99,8 +99,9 @@ if [[ "$LOCAL_MODEL_NAME" == "gemma-4-12b-qat" ]]; then
 fi
 LOCAL_MODEL_DIR="$MODELS_DIR/mlx/$LOCAL_MODEL_NAME"
 # 로컬 AI 런타임 패키지 (base·model 모드 공유 — 버전 정책은 model 모드 설치부 주석 참조)
-# mlx-vlm·transformers는 == 정확 고정(~= 아님) — 범위 드리프트가 gemma4_unified 로딩을 깬다.
-MLX_RUNTIME_PKGS=("mlx-vlm==0.6.3" "transformers==5.12.1" "truststore" "hf_transfer~=0.1.9")
+# mlx-lm·transformers는 == 정확 고정(~= 아님) — gemma4_unified 우회(local_meeting.py
+# make_generator)가 mlx-lm 내부에 기대므로 범위 드리프트가 로딩을 깰 수 있다.
+MLX_RUNTIME_PKGS=("mlx-lm==0.31.3" "transformers==5.12.1" "truststore" "hf_transfer~=0.1.9")
 
 # uv 바이너리 (앱 번들 또는 워크스페이스 bin/에 있음)
 UV="$SCRIPT_DIR/bin/uv"
@@ -125,16 +126,13 @@ if [[ "$INSTALL_MODE" == "model" ]]; then
   # 런타임 설치는 모델 존재 체크보다 앞 — base 재설치가 venv를 재생성(--clear)하면 모델은
   # 남고 런타임만 사라질 수 있어, 조기 종료가 런타임 복구를 건너뛰면 회의 시점에 터진다.
   # 이미 설치돼 있으면 uv가 수 초 내 no-op.
-  # Gemma 4(unified 아키텍처)는 mlx-lm 정식 릴리스가 아직 미지원 — mlx-vlm이 실행 경로 (2026-07 실측).
-  info "로컬 AI 런타임(mlx-vlm) 설치 중..."
-  # mlx-vlm·transformers는 == 정확 고정 (MLX_RUNTIME_PKGS). ~= 범위는 in-range 신버전이
-  # 새면서 gemma4_unified 프로세서 로딩을 깬다 — 실측 2026-07-07: mlx-vlm 0.6.4가 자체
-  # from_pretrained(video processor를 processor_config.json에서 내부 생성) 경로를 버려
-  # transformers AutoVideoProcessor로 빠지고, 그게 torchvision + video_preprocessor_config.json을
-  # 요구하는데 mlx-community 리포엔 그 파일이 없어 로드 실패. 0.6.3은 동일 모델·transformers로
-  # 정상(torchvision 불필요). transformers 5.13.0도 별건으로 깨짐 — mlx-lm 0.31 토크나이저 등록
-  # (str 키)과 충돌해 import 자체가 죽는다 (AttributeError: 'str' object has no attribute
-  # '__module__', 실측 2026-07-04). 상향은 mlx-lm/mlx-vlm 호환·gemma4_unified 로딩 실측 후 의도적으로.
+  info "로컬 AI 런타임(mlx-lm) 설치 중..."
+  # mlx-lm·transformers는 == 정확 고정 (MLX_RUNTIME_PKGS). gemma4_unified 가중치를
+  # local_meeting.py make_generator의 우회 2건(모델 별칭 + vision_embedder 스킵)으로 읽는데,
+  # mlx-lm 내부(모델 레지스트리·sanitize)에 기대는 부분이라 in-range 신버전이 깰 수 있다.
+  # transformers 5.13.0은 별건으로 mlx-lm 0.31 토크나이저 등록(str 키)과 충돌해 import 자체가
+  # 죽는다 (AttributeError: 'str' object has no attribute '__module__', 실측 2026-07-04).
+  # 상향은 gemma4_unified 로딩·생성 실측 후 의도적으로.
   # truststore: python HTTP가 macOS 키체인을 신뢰하게 주입 — 사내 TLS 프록시(zscaler)가
   # 모델 CDN(us.aws.cdn.hf.co)을 가로채면 기본 인증서 묶음(certifi)으론 SSL 검증이 실패한다
   # (실측 2026-07-04: 주입 전 CERTIFICATE_VERIFY_FAILED / 주입 후 정상. curl·uv는 원래 키체인 사용).
@@ -193,16 +191,15 @@ PY
   echo "  다운로드 완료 (100%)"
 
   # 스모크 테스트 — 현재 런타임에서 로드·생성 가능한지 지금 검증(첫 회의 때 실패 방지).
+  # 실제 실행 경로(local_meeting.make_generator)를 그대로 import — gemma4_unified 우회
+  # 패치가 그 안에 있어 여기서 재구현하면 이중 관리가 된다. 모델 선택은 env로 전달.
   info "모델 호환성 확인 중..."
-  "$VENV_DIR/bin/python3" - "$LOCAL_MODEL_DIR" <<'PY'
+  LOCAL_MODEL_NAME="$LOCAL_MODEL_NAME" "$VENV_DIR/bin/python3" - "$SCRIPT_DIR/lib" <<'PY'
 import sys
-from mlx_vlm import load, generate
-from mlx_vlm.prompt_utils import apply_chat_template
-from mlx_vlm.utils import load_config
-model, processor = load(sys.argv[1])
-config = load_config(sys.argv[1])
-prompt = apply_chat_template(processor, config, "안녕하세요", num_images=0)
-generate(model, processor, prompt, max_tokens=5, verbose=False)
+sys.path.insert(0, sys.argv[1])
+from local_meeting import make_generator
+gen, tok = make_generator()
+gen("간단히 답하세요.", "안녕하세요", max_tokens=5, temp=0.0)
 PY
   echo ""
   ok "로컬 AI 모델 준비 완료 ($LOCAL_MODEL_NAME)"
@@ -270,7 +267,7 @@ fi
 # 프론트는 모델 존재만 보고 model 모드를 건너뛰므로 회의 시점 import 실패로만 표면화되는
 # 복구 불가 막다른 길이 된다 (dev+release venv 재생성 실사고 2026-07-04). 설치돼 있으면 수 초 no-op.
 if [[ "$ACTIVE_CLI" == "mlx" ]]; then
-  info "로컬 AI 런타임(mlx-vlm) 확인 중..."
+  info "로컬 AI 런타임(mlx-lm) 확인 중..."
   "$UV" pip install --python "$VENV_DIR/bin/python3" "${MLX_RUNTIME_PKGS[@]}"
 fi
 

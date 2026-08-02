@@ -24,7 +24,7 @@ MIT · Apache-2.0 · BSD-3-Clause 전문은 아래 "Rust 의존성 (cargo)" 섹�
 | [FFmpeg](https://ffmpeg.org) | 오디오 변환·전처리 (앱에 포함) | © FFmpeg 개발자 | LGPL-2.1-or-later |
 | [Whisper large-v3-turbo](https://github.com/openai/whisper) | 전사 모델 (설치 시 다운로드) | © OpenAI | MIT |
 | [Gemma 4 12B](https://huggingface.co/google/gemma-4-12b-it) | 로컬 회의록 모델 (로컬 AI 선택 시 다운로드) | © Google DeepMind | [Apache-2.0](https://ai.google.dev/gemma/docs/gemma_4_license) |
-| [mlx-vlm](https://github.com/Blaizzy/mlx-vlm) | 로컬 회의록 모델 실행 런타임 (로컬 AI 선택 시 설치) | © Prince Canuma 외 | MIT |
+| [mlx-lm](https://github.com/ml-explore/mlx-lm) | 로컬 회의록 모델 실행 런타임 (로컬 AI 선택 시 설치) | © Apple Inc. | MIT |
 | [PyTorch (torch · torchaudio)](https://github.com/pytorch/pytorch) | 화자분리 모델 실행 런타임 (설치 시 사용) | © Meta Platforms 외 | BSD-3-Clause |
 | [uv](https://github.com/astral-sh/uv) | Python 인터프리터·패키지 관리 (앱에 포함) | © Astral Software Inc. | Apache-2.0 OR MIT |
 | [D2Coding](https://github.com/naver/d2codingfont) | 코드 표시용 글꼴 (앱에 포함) | © Naver Corp. | OFL-1.1 |
