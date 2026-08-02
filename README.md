@@ -8,7 +8,7 @@
 - **추가 비용이 없습니다.** 이미 쓰고 있는 Claude·ChatGPT·Google AI 구독으로 동작하고, 구독이 없다면 무료 로컬 AI로 전부 오프라인 처리할 수 있습니다.
 - **한국어 회의 기준으로 만들었습니다.** 기기 안에서 도는 모델 중 한국어 전사 품질을 기준으로 엔진을 골랐고, 팀 용어 사전으로 받아쓰기 정확도를 높입니다.
 
-https://github.com/user-attachments/assets/bc688e98-08c8-4898-9960-5de9c422a8b9
+https://github.com/user-attachments/assets/51a10f00-45bd-453b-bd44-2cd4faefaf70
 
 ---
 
