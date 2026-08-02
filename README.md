@@ -198,7 +198,10 @@ rm -rf "$HOME/Library/Application Support/app.junmit"
 
 ## 라이선스
 
-[MIT](LICENSE)
+Junmit의 자체 소스 코드는 [MIT](LICENSE)를 따릅니다. 저장소에 포함된 아래 두 가지는 예외로, 각 원저작자의 조건을 따릅니다.
+
+- `public/fonts/D2Coding-Regular.ttf` — © Naver Corp., [SIL Open Font License 1.1](public/fonts/D2Coding-LICENSE.md)
+- [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)와 `scripts/licenses/lgpl-2.1.txt`에 축자 수록된 서드파티 라이선스 전문 — 각 라이선스 문서의 저작권자에게 권리가 있으며, 원문 그대로 복제한 것입니다.
 
 앱은 아래 오픈소스 컴포넌트를 동봉·사용합니다(앱 내 설정 → 오픈소스 라이선스에서도 확인할 수 있습니다).
 
@@ -207,10 +210,11 @@ rm -rf "$HOME/Library/Application Support/app.junmit"
 | [pyannote speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) (© pyannoteAI) | 화자분리 모델 (앱 동봉) | [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/) |
 | [pyannote.audio](https://github.com/pyannote/pyannote-audio) | 화자분리 라이브러리 | MIT |
 | [whisper.cpp](https://github.com/ggerganov/whisper.cpp) | 전사 엔진 (앱 동봉) | MIT |
-| [Whisper large-v3-turbo](https://github.com/openai/whisper) (© OpenAI) | 전사 모델 | MIT |
+| [Whisper large-v3-turbo](https://github.com/openai/whisper) (© OpenAI) | 전사 모델 ([whisper.cpp 배포본](https://huggingface.co/ggerganov/whisper.cpp)의 GGML 변환본을 내려받음) | MIT |
 | [Gemma 4 12B](https://huggingface.co/google/gemma-4-12B-it) (© Google DeepMind) | 로컬 AI 회의록 모델 (로컬 AI 선택 시 내려받음) | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) |
 | [FFmpeg](https://ffmpeg.org) | 오디오 변환·전처리 (앱 동봉, audio-only 빌드) | LGPL-2.1-or-later |
 | [PyTorch](https://github.com/pytorch/pytorch) | 화자분리 모델 실행 런타임 | BSD-3-Clause |
+| [torchaudio](https://github.com/pytorch/audio) | 오디오 입출력 런타임 | BSD-2-Clause |
 | [uv](https://github.com/astral-sh/uv) (© Astral) | Python 인터프리터·패키지 관리 (앱 동봉) | Apache-2.0 / MIT |
 | [D2Coding](https://github.com/naver/d2codingfont) (© Naver) | 코드 표시용 글꼴 (앱 동봉) | OFL-1.1 |
 
