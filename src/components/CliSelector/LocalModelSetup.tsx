@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import clsx from "clsx";
 import { invoke } from "@tauri-apps/api/core";
-import { LOCAL_MODEL_STANDARD, LOCAL_MODEL_HIGH, isLocalModelId } from "@/constants";
+import { LOCAL_MODEL_STANDARD, isLocalModelId } from "@/constants";
 import { useToast } from "@/contexts/ToastContext";
 import { useDialog } from "@/contexts/DialogContext";
 import { LOCAL_VARIANTS, type LocalVariant, type LocalVariantId } from "./cliOptions";
@@ -65,9 +65,11 @@ export default function LocalModelSetup({
       .catch(() => {});
   }, [refreshVariants]);
 
-  // 권장 = RAM 기반 (24GB+ → 고품질, 그 외 표준). 선택 전이면 권장을 따른다.
+  // 권장 = RAM이 감당하는 가장 높은 변형 (표는 낮은 사양 → 높은 사양 순). 선택 전이면 권장을 따른다.
   const recommended: LocalVariantId =
-    capability && capability.ram_gb >= 24 ? LOCAL_MODEL_HIGH : LOCAL_MODEL_STANDARD;
+    (capability &&
+      [...LOCAL_VARIANTS].reverse().find((v) => capability.ram_gb >= v.recommendRam)?.id) ||
+    LOCAL_MODEL_STANDARD;
   const effective = localVariant ?? recommended;
   const chosenVariant = LOCAL_VARIANTS.find((v) => v.id === effective)!;
   // 선택 변형이 실제 설치돼 있는지 — 버튼 라벨("시작" vs "계속"=다운로드) 기준.
@@ -99,8 +101,7 @@ export default function LocalModelSetup({
     }
   };
 
-  // 디스크 필요량 ≈ 기초 엔진(~2GB) + 선택 모델 용량 + 여유
-  const diskNeed = effective === LOCAL_MODEL_HIGH ? 14 : 10;
+  const diskNeed = chosenVariant.diskNeedGb;
 
   return (
     <>

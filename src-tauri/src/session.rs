@@ -89,6 +89,8 @@ pub fn venv_dir() -> PathBuf {
 ///   표준: 순수 4bit 6.8GB(실행 피크 ~9.4GB, 16GB Mac) / 고품질: 혼합 정밀도 11GB(~13GB, 24GB+).
 pub const LOCAL_MODEL_STANDARD: &str = "gemma-4-12b-4bit";
 pub const LOCAL_MODEL_HIGH: &str = "gemma-4-12b-qat";
+/// 변형의 전체 목록 — 변형별 순회(목록·복원)는 이 배열을 쓴다("정확히 2개" 가정 금지).
+pub const LOCAL_MODELS: [&str; 2] = [LOCAL_MODEL_STANDARD, LOCAL_MODEL_HIGH];
 
 fn local_model_file() -> PathBuf {
     app_data_dir().join("local_model")
@@ -99,12 +101,12 @@ pub fn read_local_model() -> String {
     fs::read_to_string(local_model_file())
         .ok()
         .map(|s| s.trim().to_string())
-        .filter(|s| s == LOCAL_MODEL_STANDARD || s == LOCAL_MODEL_HIGH)
+        .filter(|s| LOCAL_MODELS.contains(&s.as_str()))
         .unwrap_or_else(|| LOCAL_MODEL_STANDARD.to_string())
 }
 
 pub fn write_local_model(model: &str) -> Result<(), String> {
-    if model != LOCAL_MODEL_STANDARD && model != LOCAL_MODEL_HIGH {
+    if !LOCAL_MODELS.contains(&model) {
         return Err(format!("알 수 없는 로컬 모델: {model}"));
     }
     fs::create_dir_all(app_data_dir()).map_err(|e| e.to_string())?;
@@ -171,13 +173,13 @@ pub fn revert_local_model_if_missing() {
     if local_model_present() {
         return;
     }
-    let other = if read_local_model() == LOCAL_MODEL_STANDARD {
-        LOCAL_MODEL_HIGH
-    } else {
-        LOCAL_MODEL_STANDARD
-    };
-    if model_present_at(&local_model_dir().join(other)) {
-        let _ = write_local_model(other);
+    let current = read_local_model();
+    // 설치된 다른 변형으로 복원 — 목록 순회라 변형이 늘어도 이 함수는 불변.
+    let installed_other = LOCAL_MODELS
+        .iter()
+        .find(|model| **model != current && model_present_at(&local_model_dir().join(model)));
+    if let Some(model) = installed_other {
+        let _ = write_local_model(model);
     }
 }
 

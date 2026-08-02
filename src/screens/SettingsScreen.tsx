@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
-import { LOCAL_MODEL_HIGH } from "@/constants";
+import { cliRunsLocal } from "@/constants";
+import { localVariantOf } from "@/components/CliSelector/cliOptions";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
@@ -29,9 +30,12 @@ export default function SettingsScreen() {
   // 로컬 AI일 때 선택된 변형(표준/고품질)까지 표기 — 어떤 모델이 도는지 한눈에.
   const [localVariant, setLocalVariant] = useState<string>("");
   useEffect(() => {
-    if (cli !== "mlx") return;
+    if (!cliRunsLocal(cli)) return;
     invoke<string>("cmd_get_local_model")
-      .then((m) => setLocalVariant(m === LOCAL_MODEL_HIGH ? " · 고품질" : " · 표준"))
+      .then((m) => {
+        const variant = localVariantOf(m);
+        setLocalVariant(variant ? ` · ${variant.name}` : "");
+      })
       .catch(() => {});
   }, [cli]);
 
@@ -74,7 +78,7 @@ export default function SettingsScreen() {
               회의록 작성에 사용 중:{" "}
               <span className={styles.settingsCardValue}>
                 {CLI_LABELS[cli]}
-                {cli === "mlx" ? localVariant : ""}
+                {cliRunsLocal(cli) ? localVariant : ""}
               </span>
             </span>
           </div>

@@ -70,15 +70,19 @@ export const OPTIONS: CliOption[] = [
   },
 ];
 
-// 로컬 모델 변형 — id는 Rust(session.rs LOCAL_MODEL_*)·install.sh·local_meeting.py와 일치.
+// 로컬 모델 변형의 단일 진실 원천 — id는 Rust(session.rs LOCAL_MODEL_*)·install.sh·
+// local_meeting.py와 일치. 변형별 분기가 필요한 곳은 이 표를 조회한다(이진 삼항 금지 —
+// 3번째 변형 추가가 "표 1행"으로 끝나야 한다).
 // 실행 피크 실측: 표준 ~9.4GB(16GB Mac의 Metal 상한 이내, 구글 공식 "16GB 통합 메모리" 포지셔닝과
 // 일치) / 고품질 ~13GB(24GB+ 전용). recommendRam은 권장 뱃지·경고 분기 기준.
+// diskNeedGb ≈ 기초 엔진(~2GB) + 모델 용량 + 여유. 낮은 사양 → 높은 사양 순서 유지(권장 판정이 의존).
 export const LOCAL_VARIANTS = [
   {
     id: LOCAL_MODEL_STANDARD,
     name: "표준",
     size: "6.8GB",
     recommendRam: 16,
+    diskNeedGb: 10,
     // 품질 트레이드오프는 부정문 대신 비교 프레임으로 — 고품질 쪽 "더 꼼꼼하고 안정적인"이
     // 차이를 전달하고, "검토하세요"는 쓰는 시점(회의록 완성 배너)이 담당. 실측 근거는
     // memory project_local_llm_spike (표준판 recall 진동).
@@ -89,9 +93,18 @@ export const LOCAL_VARIANTS = [
     name: "고품질",
     size: "11GB",
     recommendRam: 24,
+    diskNeedGb: 14,
     desc: "더 꼼꼼하고 안정적인 회의록 · 메모리 24GB 이상",
   },
 ] as const;
 
 export type LocalVariant = (typeof LOCAL_VARIANTS)[number];
 export type LocalVariantId = LocalModelId;
+
+// 변형 id → 표의 행. Rust에서 넘어온 문자열이 표 밖이면 undefined — 호출자가 표시 생략으로 강등.
+export const localVariantOf = (id: string): LocalVariant | undefined =>
+  LOCAL_VARIANTS.find((variant) => variant.id === id);
+
+// "표준 6.8GB / 고품질 11GB" — 온보딩 카피가 표와 어긋나지 않게 표에서 생성.
+export const localVariantSummary = (): string =>
+  LOCAL_VARIANTS.map((variant) => `${variant.name} ${variant.size}`).join(" / ");

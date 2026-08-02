@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { LOCAL_MODEL_HIGH, isCli } from "@/constants";
+import { cliRunsLocal, isCli } from "@/constants";
+import { localVariantOf, localVariantSummary } from "@/components/CliSelector/cliOptions";
 import { useNavigate, useLocation } from "react-router-dom";
 import clsx from "clsx";
 import { invoke } from "@tauri-apps/api/core";
@@ -29,7 +30,7 @@ export default function SetupScreen({ mode = "base" }: { mode?: "base" | "model"
     ? {
         title: "로컬 AI 모델",
         subtitle: "회의록 작성을 위한 로컬 AI를 준비합니다",
-        desc: "구독 없이 이 기기에서 회의록을 작성할 로컬 AI 모델(Gemma — 표준 6.8GB / 고품질 11GB)을 내려받습니다. 처음 한 번만 받으면 되고, 설치 중에는 이 창을 닫지 말아 주세요.",
+        desc: `구독 없이 이 기기에서 회의록을 작성할 로컬 AI 모델(Gemma — ${localVariantSummary()})을 내려받습니다. 처음 한 번만 받으면 되고, 설치 중에는 이 창을 닫지 말아 주세요.`,
         start: "모델 다운로드",
         // 미도달 — model 모드는 완료 화면 없이 자동 라우팅(handleStartInstall). 타입 대칭용.
         done: "로컬 AI 모델이 준비되었습니다!",
@@ -72,12 +73,13 @@ export default function SetupScreen({ mode = "base" }: { mode?: "base" | "model"
   // 기초 화면에서 미리 알린다 (변형은 이 화면 진입 전에 이미 선택·저장돼 정확한 용량 표기 가능).
   const [localModelNote, setLocalModelNote] = useState("");
   useEffect(() => {
-    if (isModel || session.cli !== "mlx") return;
+    if (isModel || !cliRunsLocal(session.cli)) return;
     invoke<string>("cmd_get_local_model")
       .then((m) => {
-        const high = m === LOCAL_MODEL_HIGH;
+        const variant = localVariantOf(m);
+        if (!variant) return;
         setLocalModelNote(
-          ` 선택한 로컬 AI 모델(${high ? "고품질, 약 11GB" : "표준, 약 6.8GB"})도 이어서 함께 내려받아요.`
+          ` 선택한 로컬 AI 모델(${variant.name}, 약 ${variant.size})도 이어서 함께 내려받아요.`
         );
       })
       .catch(() => {});
@@ -152,7 +154,7 @@ export default function SetupScreen({ mode = "base" }: { mode?: "base" | "model"
       await invoke("cmd_run_install", { mode });
       // 로컬 AI 온보딩이면 모델 다운로드까지 이 화면에서 연속 실행 — 완료 화면·시작하기를
       // 두 번 거치지 않는다. (설정 경유 단독 다운로드·중단 후 재개는 /local-model이 담당)
-      if (!isModel && session.cli === "mlx") {
+      if (!isModel && cliRunsLocal(session.cli)) {
         if (cancelRequestedRef.current) return; // base 완료와 model 시작 사이 취소
         const present = await invoke<boolean>("cmd_check_local_model").catch(() => false);
         if (!present) {

@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { useSession } from "@/contexts/SessionContext";
 import { useToast } from "@/contexts/ToastContext";
-import { cliAuthedOf, cliInstalledOf } from "@/constants";
+import { cliAuthedOf, cliInstalledOf, cliRunsLocal } from "@/constants";
 import type { Cli, CliAvailability, SpawnRequest } from "@/types";
 import { routeAfterCliSelected } from "@/utils/bootstrap";
 import { buildShellRequest } from "@/utils/spawn";
@@ -186,7 +186,7 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
   const needsLogin = (id: Cli) => isInstalled(id) && avail != null && !cliAuthedOf(avail, id);
   // mlx는 CLI 설치/로그인이 없고 "모델 존재"가 곧 준비 완료.
   const isReady = (id: Cli) =>
-    id === "mlx" ? localModel === true : isInstalled(id) && !needsLogin(id);
+    cliRunsLocal(id) ? localModel === true : isInstalled(id) && !needsLogin(id);
 
   // 선택한 CLI를 영속 저장하고 다음 화면으로.
   // chosen은 선택 이력(전환 중단·이미-사용-중·이전 CLI 복원)에만 쓴다. 복귀지는 fromSettings.
@@ -257,7 +257,7 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
       // 이미 로컬 AI 사용 중 — proceed()의 "이미 사용 중" 조기 반환에 걸리므로
       // 변형 변경(다운로드 필요 여부 포함)을 여기서 직접 라우팅한다.
       // busy는 이 분기에서만 직접 관리 (proceed는 자체 busy 가드가 있어 선점 금지).
-      if (chosen && session.cli === "mlx") {
+      if (chosen && cliRunsLocal(session.cli)) {
         setBusy(true);
         try {
           const route = await routeAfterCliSelected();
@@ -298,7 +298,7 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
   // mlx는 준비됐어도 항상 2단계(변형 선택)로 — 설치 후 표준↔고품질을 바꿀 유일한 진입점.
   const chooseCli = (id: Cli) => {
     if (detecting || busy) return;
-    if (id !== "mlx" && isReady(id)) proceed(id);
+    if (!cliRunsLocal(id) && isReady(id)) proceed(id);
     else setSetupFor(id);
   };
 
@@ -331,7 +331,7 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
             /* ── 2단계: 로컬 AI 모델 변형 선택 ── */
             <LocalModelSetup
               busy={busy}
-              mlxActive={chosen && session.cli === "mlx"}
+              mlxActive={chosen && cliRunsLocal(session.cli)}
               onBack={() => setSetupFor(null)}
               onProceed={proceedLocal}
               onModelsChanged={() => void refreshLocalModel()}

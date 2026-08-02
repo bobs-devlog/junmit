@@ -103,6 +103,25 @@ export function buildCodexResumeRequest(
   return { command: "bash", args: ["-c", command], ts: Date.now() };
 }
 
+// resume 빌더 디스패치 — buildCommand와 같은 이유의 exhaustive switch: 새 백엔드가 resume을
+// 얻어 AgentSession["cli"] 유니온이 넓어지면 여기서 컴파일 에러가 나야 한다. 호출부의 삼항
+// 폴백(codex 아니면 claude)은 그 순간 조용히 claude 명령을 만드는 무언 폴백 사고가 된다.
+export function buildResumeRequest(
+  cli: "claude" | "codex",
+  appDir: string | null,
+  sessionId: string,
+  sessionDir: string | null,
+  signalDir: string,
+  request: string
+): SpawnRequest {
+  switch (cli) {
+    case "claude":
+      return buildClaudeResumeRequest(appDir, sessionId, sessionDir, signalDir, request);
+    case "codex":
+      return buildCodexResumeRequest(appDir, sessionId, sessionDir, signalDir, request);
+  }
+}
+
 // Codex 인터랙티브(Claude와 동일하게 PTY 유지·터미널 직접 대화). cwd의 .agents/skills에서 자동 로드.
 export function buildCodexCommand(
   appDir: string | null,

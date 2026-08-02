@@ -98,22 +98,46 @@ export const STEPS: ReadonlyArray<StepInfo> = [
 // 요청(/assist)을 지원하지 않는다. UI 게이팅의 단일 진실 원천.
 export const cliHasAgent = (cli: Cli) => cli !== "mlx";
 
+// 실행 경로 술어 — cliHasAgent(능력)와 별개 개념: 오늘은 값이 우연히 겹치지만 "무엇을 할 수
+// 있나"와 "어떤 경로로 실행되나"는 다른 질문이다. 새 백엔드의 실행 경로 결정은 여기 한 곳만.
+/** Rust cmd_run_headless_meeting(claude -p / codex exec)으로 도는 백엔드.
+ *  antigravity는 PTY 유지 — 이벤트 스트림 부재·headless 권한 soft-deny·격리 홈 부재(1.1.4 실측). */
+export const cliRunsHeadless = (cli: Cli) => cli === "claude" || cli === "codex";
+/** Rust cmd_run_local_meeting(결정론 파이프라인, PTY·에이전트 없음)으로 도는 백엔드. */
+export const cliRunsLocal = (cli: Cli) => cli === "mlx";
+
 // Rust 등 경계에서 넘어온 문자열의 Cli 검증 — 유니온 목록의 단일 진실 원천.
 export const isCli = (v: string): v is Cli =>
   v === "claude" || v === "codex" || v === "mlx" || v === "antigravity";
 
 // CliAvailability의 CLI별 설치/인증 필드 접근 — 평면 struct(와이어 계약)를 유지하면서
-// 호출부의 "claude ? : codex" 삼항 중첩을 막는다. mlx는 감지 대상이 아니므로 false.
-export const cliInstalledOf = (availability: CliAvailability, cli: Cli): boolean =>
-  cli === "claude" ? availability.claude
-  : cli === "codex" ? availability.codex
-  : cli === "antigravity" ? availability.antigravity
-  : false;
-export const cliAuthedOf = (availability: CliAvailability, cli: Cli): boolean =>
-  cli === "claude" ? availability.claude_authed
-  : cli === "codex" ? availability.codex_authed
-  : cli === "antigravity" ? availability.antigravity_authed
-  : false;
+// 호출부의 "claude ? : codex" 삼항 중첩을 막는다. mlx는 CLI 설치가 없는 백엔드라 false가 정답.
+// exhaustive switch(buildCommand와 같은 이유) — 새 Cli 추가 시 여기서 컴파일 에러가 나야 한다.
+// 과거 삼항 연쇄의 꼬리 `: false`는 새 CLI를 조용히 "미설치"로 읽는 무언 폴백이었다.
+export const cliInstalledOf = (availability: CliAvailability, cli: Cli): boolean => {
+  switch (cli) {
+    case "claude":
+      return availability.claude;
+    case "codex":
+      return availability.codex;
+    case "antigravity":
+      return availability.antigravity;
+    case "mlx":
+      return false;
+  }
+};
+export const cliAuthedOf = (availability: CliAvailability, cli: Cli): boolean => {
+  switch (cli) {
+    case "claude":
+      return availability.claude_authed;
+    case "codex":
+      return availability.codex_authed;
+    case "antigravity":
+      return availability.antigravity_authed;
+    case "mlx":
+      return false;
+  }
+};
 
 // 로컬 모델 변형 id — Rust(session.rs LOCAL_MODEL_*)·install.sh·local_meeting.py와 문자열이
 // 일치해야 하는 프로토콜 값(디렉토리명 겸용). 리터럴을 흩뿌리지 말고 반드시 이 상수를 쓸 것.

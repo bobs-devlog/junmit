@@ -8,7 +8,7 @@ import {
   useMemo,
 } from "react";
 import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
-import { Activity, Step, STEPS, cliHasAgent } from "@/constants";
+import { Activity, Step, STEPS, cliHasAgent, cliRunsHeadless, cliRunsLocal } from "@/constants";
 import type { StepId } from "@/constants";
 import type { Cli, Meeting, SessionSteps, SpawnRequest } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
@@ -16,11 +16,7 @@ import { listen } from "@tauri-apps/api/event";
 import { loadMeetingMeta, updateMeetingMeta } from "@/utils/meetingMeta";
 import { loadCorrectedTranscript, loadMeetingNotesMd } from "@/utils/meetingNotes";
 import { killPty, sendAssistRequest, sendSlashCommand } from "@/utils/pty";
-import {
-  buildSpawnRequest,
-  buildClaudeResumeRequest,
-  buildCodexResumeRequest,
-} from "@/utils/spawn";
+import { buildSpawnRequest, buildResumeRequest } from "@/utils/spawn";
 import {
   cancelMeetingWork,
   clearAgentSession,
@@ -311,7 +307,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // Processing(전사·화자분리) 진입 시 로그인 유효성 체크를 병렬 발사 — completeProcessing이 파이프라인
   // 완료 후 이 결과만 await하므로 스폰 직전 대기가 없다. mlx는 auth 불필요라 제외.
   useEffect(() => {
-    if (activity === Activity.Processing && cli !== "mlx") {
+    if (activity === Activity.Processing && !cliRunsLocal(cli)) {
       authCheckRef.current = invoke<boolean>("cmd_is_cli_authed", { cli }).catch(() => true);
     }
   }, [activity, cli]);
@@ -666,13 +662,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [sessionDir, showTabBanner]);
 
-  // headless 경로 판정 — claude(`claude -p`)·codex(`codex exec --json`)는 headless.
-  // antigravity는 PTY 유지 — `-p`가 있지만 이벤트 스트림 부재(진행 패널에 넣을 게 없음)·
-  // headless 권한 soft-deny·격리 홈 부재(전역 ~/.gemini 공유로 conversation id 추정 경합),
-  // 1.1.4 실측. mlx는 애초에 별도 경로(runLocalMeeting).
-  const isHeadlessMeeting = useCallback(() => {
-    return cliRef.current === "claude" || cliRef.current === "codex";
-  }, []);
+  // headless 경로 판정 — 백엔드별 근거는 cliRunsHeadless(constants.ts) 정의부가 단일 서식지.
+  const isHeadlessMeeting = useCallback(() => cliRunsHeadless(cliRef.current), []);
 
   // headless 회의록 실행 — runLocalMeeting과 대칭(Rust 서브프로세스, 진행은 "headless:event",
   // 완료/실패 전환은 스킬의 신호 파일 → app:signal). 차이 두 가지:
@@ -731,7 +722,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // 새 작업 시작이므로 옛 완료 띠 정리.
   const completeProcessing = useCallback(async () => {
     // 로컬 LLM은 교정 단계가 없고 PTY도 안 쓴다 — 바로 Composing + 서브프로세스 실행.
-    if (cli === "mlx") {
+    if (cliRunsLocal(cli)) {
       setActivity(Activity.Composing);
       setDrawerOpen(true);
       setCompletedActivity(null);
@@ -824,7 +815,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // Phase 1 가이드는 transcript_corrected.txt 있으면 1단계 skip하고 회의록 단계로 직진.
   const startComposing = useCallback(async () => {
     // 로컬 LLM은 교정 단계가 없고 PTY도 안 쓴다 — 서브프로세스 실행.
-    if (cli === "mlx") {
+    if (cliRunsLocal(cli)) {
       setActivity(Activity.Composing);
       setDrawerOpen(true);
       setCompletedActivity(null);
@@ -876,7 +867,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setActivity(aiPolish === true ? Activity.Correcting : Activity.Composing);
       setDrawerOpen(true);
       setCompletedActivity(null);
-      if (cli === "mlx") {
+      if (cliRunsLocal(cli)) {
         void runLocalMeeting();
         return;
       }
@@ -1023,9 +1014,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           assistStartedRef.current = true; // 초기 프롬프트가 /assist 진입을 겸함
           setHeadlessActive(false); // resume PTY가 패널 주체
           setSpawnRequest(
-            stored.cli === "codex"
-              ? buildCodexResumeRequest(appDir, stored.sessionId, dir, signalDir ?? "", text)
-              : buildClaudeResumeRequest(appDir, stored.sessionId, dir, signalDir ?? "", text)
+            buildResumeRequest(stored.cli, appDir, stored.sessionId, dir, signalDir ?? "", text)
           );
           setTerminalFocusKey((k) => k + 1); // 키보드 입력이 바로 터미널로 가게 focus 이동.
           return;

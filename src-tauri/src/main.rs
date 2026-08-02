@@ -222,20 +222,28 @@ fn cmd_get_app_dir(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 /// LLM 작업을 수행할 CLI 선택. 사용자 영속 선택(`active_cli`) → 없으면 기본 "claude".
-/// AppShell이 매 기동 시 호출 — 선택된 CLI의 junmit 전용 환경을 여기서 보장
-/// (codex는 미존재 CODEX_HOME이 spawn 하드 실패, claude는 MCP·신뢰 베이크가 spawn 전에 필요).
+/// 선택 CLI의 junmit 전용 환경 보장 — cmd_get_active_cli(매 기동)·cmd_set_active_cli(명시 선택)
+/// 공유. 새 CLI 추가 시 여기 한 곳만 고친다. 미지 값은 아무것도 하지 않는다 — 과거엔 `_` 폴백이
+/// claude 환경을 조용히 베이크해, 새 CLI를 추가하며 이 매치를 놓치면 무언 폴백 사고가 됐다.
+fn ensure_cli_environment(app: &tauri::AppHandle, cli: &str) {
+    match cli {
+        // MCP·신뢰 베이크가 spawn 전에 필요.
+        "claude" => session::ensure_claude_config_dir(app),
+        // 미존재 CODEX_HOME은 spawn 하드 실패.
+        "codex" => session::ensure_codex_home(app),
+        // 격리 홈은 없다. 워크스페이스 신뢰만 베이크(spawn 신뢰 다이얼로그 제거).
+        "antigravity" => session::ensure_antigravity_trust(app),
+        // 로컬 LLM은 CLI 설정 디렉토리 불필요 (모델 존재 확인은 cmd_check_local_model).
+        "mlx" => {}
+        other => log::warn!("알 수 없는 CLI '{other}' — 환경 베이크 생략"),
+    }
+}
+
+/// AppShell이 매 기동 시 호출 — 선택된 CLI의 junmit 전용 환경을 여기서 보장.
 #[tauri::command]
 fn cmd_get_active_cli(app: tauri::AppHandle) -> String {
     let cli = session::read_active_cli().unwrap_or_else(|| "claude".to_string());
-    match cli.as_str() {
-        "codex" => session::ensure_codex_home(&app),
-        "mlx" => {} // 로컬 LLM은 CLI 설정 디렉토리 불필요 (모델 존재 확인은 cmd_check_local_model)
-        // 격리 홈은 없다. 워크스페이스 신뢰만 베이크(spawn 신뢰 다이얼로그 제거).
-        "antigravity" => {
-            session::ensure_antigravity_trust(&app);
-        }
-        _ => session::ensure_claude_config_dir(&app),
-    }
+    ensure_cli_environment(&app, &cli);
     cli
 }
 
@@ -243,14 +251,7 @@ fn cmd_get_active_cli(app: tauri::AppHandle) -> String {
 #[tauri::command]
 fn cmd_set_active_cli(app: tauri::AppHandle, cli: String) -> Result<(), String> {
     session::write_active_cli(&cli)?;
-    match cli.as_str() {
-        "codex" => session::ensure_codex_home(&app),
-        "mlx" => {} // 로컬 LLM은 CLI 설정 디렉토리 불필요
-        "antigravity" => {
-            session::ensure_antigravity_trust(&app);
-        }
-        _ => session::ensure_claude_config_dir(&app),
-    }
+    ensure_cli_environment(&app, &cli);
     Ok(())
 }
 
@@ -282,7 +283,7 @@ fn cmd_revert_local_model_if_missing() {
 /// 설치된 로컬 모델 변형 목록 (완전 설치 판정 기준 — 부분 다운로드 제외).
 #[tauri::command]
 fn cmd_list_local_models() -> Vec<String> {
-    [session::LOCAL_MODEL_STANDARD, session::LOCAL_MODEL_HIGH]
+    session::LOCAL_MODELS
         .iter()
         .filter(|m| session::local_model_present_named(m))
         .map(|m| m.to_string())
@@ -295,7 +296,7 @@ fn cmd_list_local_models() -> Vec<String> {
 /// 복원해 유령 상태를 막는다. 부분 다운로드 잔재(중단된 변형 전환)도 같은 경로라 함께 정리.
 #[tauri::command]
 fn cmd_delete_local_model(model: String) -> Result<(), String> {
-    if model != session::LOCAL_MODEL_STANDARD && model != session::LOCAL_MODEL_HIGH {
+    if !session::LOCAL_MODELS.contains(&model.as_str()) {
         return Err(format!("알 수 없는 로컬 모델: {model}"));
     }
     if model == session::read_local_model()
