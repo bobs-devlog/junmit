@@ -33,7 +33,7 @@
 각 디렉토리 한 줄 정의:
 
 - `swift-cli/` = "빌드되어 `resources/bin/`에 들어가는 Swift sidecar 소스 + 메인 앱에 link되는 dylib 소스 (TCC 권한이 메인 앱 identity로 귀속되어야 하는 경우)"
-- `scripts/` = "개발자가 직접 돌리는 빌드/배포 도구"
+- `scripts/` = "개발자가 직접 돌리는 빌드/배포/진단 도구" (자동 실행 지점이 없는 수동 도구. `cli-canary.sh`=CLI 스트림 계약 점검, `ui-verify/`=UI 작업 시 쓰는 프론트 검증 하네스 — 둘 다 회귀 스위트가 아니라 필요할 때 돌리는 도구)
 - `resources/` = "앱 동봉 자산. PTY cwd가 여기. release 시 번들 Resources/로 복사. IDE Claude Code와 자동 분리되는 자산 격리 영역"
 - `resources/lib/` = "앱이 실행 중에 호출하는 스크립트 (bash 오케스트레이션 + Python ML)"
 - `resources/bin/` = "빌드 산출물 + 동봉 바이너리"

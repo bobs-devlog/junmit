@@ -50,3 +50,9 @@ swift-cli/**/.build/
 swift-cli/**/.swiftpm/
 swift-cli/**/*.xcodeproj
 swift-cli/**/*.xcwo
+
+# UI 검증 하네스 산출물 (scripts/ui-verify/run.sh가 생성)
+scripts/ui-verify/node_modules/
+scripts/ui-verify/package*.json
+scripts/ui-verify/vite.log
+scripts/ui-verify/shot-*.png
