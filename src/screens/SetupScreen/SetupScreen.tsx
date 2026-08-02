@@ -49,7 +49,11 @@ export default function SetupScreen({ mode = "base" }: { mode?: "base" | "model"
   // state가 없는 진입은 재시작 후 부트스트랩 강제 라우팅: 돌아갈 이전 화면이 없으므로
   // "뒤로" 대신 AI 도구 재선택 출구를 연다 (다운로드를 미루고 종료한 사용자가
   // 매 기동 이 화면에 갇혀 구독형 AI로 갈아탈 길을 못 찾는 함정 방지).
-  const navState = location.state as { returnTo?: string; revertCli?: string } | null;
+  const navState = location.state as {
+    returnTo?: string;
+    revertCli?: string;
+    autoStartInstall?: boolean;
+  } | null;
   const isBootEntry = navState?.returnTo == null;
   const returnTo = navState?.returnTo ?? "/select-cli";
   const backLabel = isBootEntry ? "다른 AI 도구 선택" : "뒤로";
@@ -199,6 +203,18 @@ export default function SetupScreen({ mode = "base" }: { mode?: "base" | "model"
     setProgress(null);
     setConfirmCancel(false);
   };
+
+  // "다운로드" 클릭(의도 진입, state.autoStartInstall)은 도착 즉시 설치 시작 — 클릭 한 번의
+  // 약속을 지킨다. 부트 강제 진입(state 없음)은 제외: 자동 시작하면 "다른 AI 도구 선택" 출구를
+  // 누를 새 없이 수 GB 다운로드가 시작된다.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (!navState?.autoStartInstall || autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    void handleStartInstall();
+    // 마운트 1회 — 의도는 진입 시점에만 유효
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 완료 후 "시작하기" — appDir set 후 routeAfterCliSelected로 다음 화면 결정.
   // base 완료 & mlx면 로컬 모델이 아직 없어 /local-model로 이어지고, model 완료면 모두 갖춰져 홈.

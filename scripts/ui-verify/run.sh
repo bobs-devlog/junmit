@@ -74,8 +74,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# 3) 검증 실행
-scripts=("verify-search.mjs" "verify-export.mjs")
+# 3) 검증 실행 — 인자 없으면 verify-*.mjs 전부(자동 발견 — 새 스크립트 추가 시 목록 갱신 불필요)
+scripts=()
+for f in "$HERE"/verify-*.mjs; do
+  scripts+=("$(basename "$f")")
+done
 if [[ $# -gt 0 ]]; then
   scripts=("${1%.mjs}.mjs")
 fi

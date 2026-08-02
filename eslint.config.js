@@ -19,6 +19,8 @@ export default [
       ".deps",
       ".venv",
       "swift-cli",
+      // 개발자 직접 실행 도구(node 스크립트) — 앱 코드 lint 범위 밖 (browser globals 설정과 충돌)
+      "scripts/ui-verify",
     ],
   },
   js.configs.recommended,

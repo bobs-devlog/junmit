@@ -37,7 +37,7 @@ export default function LocalModelSetup({
   const [capability, setCapability] = useState<{ ram_gb: number; disk_free_gb: number } | null>(
     null
   );
-  // 설치 확인된 변형 목록 — "시작"(즉시) vs "계속"(다운로드) 라벨과 미사용 변형 삭제 UI 기준.
+  // 설치 확인된 변형 목록 — 버튼 라벨(시작/다운로드)과 미사용 변형 삭제 UI 기준.
   const [installedList, setInstalledList] = useState<LocalVariantId[]>([]);
   // 영속 선택 변형(local_model 파일) — 삭제 가드(사용 중 변형 삭제 불가) 기준.
   const [persisted, setPersisted] = useState<LocalVariantId | null>(null);
@@ -72,7 +72,7 @@ export default function LocalModelSetup({
     LOCAL_MODEL_STANDARD;
   const effective = localVariant ?? recommended;
   const chosenVariant = LOCAL_VARIANTS.find((v) => v.id === effective)!;
-  // 선택 변형이 실제 설치돼 있는지 — 버튼 라벨("시작" vs "계속"=다운로드) 기준.
+  // 선택 변형이 실제 설치돼 있는지 — 버튼 라벨("시작" vs "다운로드") 기준.
   const variantReady = installedList.includes(effective);
   // mlx가 활성 CLI일 때만 영속 선택 변형이 "사용 중" — 삭제 불가·배지 표기 기준.
   // claude/codex 사용 중엔 로컬 모델이 전혀 안 쓰이므로 어느 변형이든 삭제 가능.
@@ -204,7 +204,7 @@ export default function LocalModelSetup({
           onClick={() => void onProceed(effective, chosenVariant.name)}
           autoFocus
         >
-          {variantReady ? "로컬 AI로 시작" : "계속"}
+          {variantReady ? "로컬 AI로 시작" : "다운로드"}
         </button>
       </div>
     </>

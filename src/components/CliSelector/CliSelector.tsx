@@ -191,7 +191,7 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
   // 선택한 CLI를 영속 저장하고 다음 화면으로.
   // chosen은 선택 이력(전환 중단·이미-사용-중·이전 CLI 복원)에만 쓴다. 복귀지는 fromSettings.
   const proceed = useCallback(
-    async (id: Cli) => {
+    async (id: Cli, autoStartInstall = false) => {
       if (busy) return;
       const name = OPTIONS.find((o) => o.id === id)?.name ?? id;
       // 이미 활성인 CLI 재선택 — 변경이 아니므로 스폰/전환은 하지 않는다. 단 로그인 만료로
@@ -232,7 +232,7 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
           if (chosen) toast.success(`회의록 AI를 ${name}로 변경했습니다.`);
           navigate(fromSettings ? "/settings" : "/", { replace: true });
         } else {
-          navigate(route, { replace: true, state: { returnTo, revertCli } });
+          navigate(route, { replace: true, state: { returnTo, revertCli, autoStartInstall } });
         }
       } catch (e) {
         toast.error(`선택을 저장하지 못했습니다: ${e}`);
@@ -267,7 +267,10 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
           } else {
             navigate(route, {
               replace: true,
-              state: { returnTo: fromSettings ? "/settings" : "/select-cli" },
+              state: {
+                returnTo: fromSettings ? "/settings" : "/select-cli",
+                autoStartInstall: true,
+              },
             });
           }
         } catch (e) {
@@ -276,7 +279,7 @@ export default function CliSelector({ title, dragRegion = false }: CliSelectorPr
         }
         return;
       }
-      await proceed("mlx");
+      await proceed("mlx", true);
     },
     [busy, chosen, session.cli, fromSettings, proceed, navigate, toast]
   );
