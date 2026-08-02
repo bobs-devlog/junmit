@@ -96,9 +96,12 @@ export interface SpeakerSimilarity {
 }
 
 // ── Calendar / Meeting ───────────────────────────
-// 캘린더 참석자 — 이메일(안정 식별자) + EKParticipant.name 원시값.
+// 캘린더 참석자 — 안정 키 + 이메일(확정된 경우만) + EKParticipant.name 원시값.
 // 표시 이름은 프론트엔드가 캐시·휴리스틱으로 해결 (resolveAttendeeName).
 export interface Attendee {
+  /** 이름 캐시 키. 보통 이메일이지만 캘린더가 불투명 값을 주기도 한다. */
+  id: string;
+  /** 이메일로 확정됐을 때만 채워진다(판정은 Swift). 빈 문자열이면 표시·휴리스틱 모두 건너뛴다. */
   email: string;
   name: string;
 }

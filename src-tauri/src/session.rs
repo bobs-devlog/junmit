@@ -1215,10 +1215,17 @@ pub fn strip_own_quarantine() {
 }
 
 
-/// 캘린더 참석자 — 이메일(안정 식별자) + EKParticipant.name 원시값.
+/// 캘린더 참석자 — 안정 키(id) + 이메일(확정된 경우만) + EKParticipant.name 원시값.
 /// 표시 이름 결정(캐시·휴리스틱·fallback)은 프론트엔드가 담당.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Attendee {
+    /// 이름 캐시 키. 보통 이메일이지만 캘린더가 불투명 값을 주기도 한다(Swift `participantIdentifier`).
+    /// default는 id를 모르던 구버전 dylib 대비 — 없으면 파싱이 통째로 실패해 일정이 안 뜬다.
+    /// (dylib이 앱과 함께 배포되므로 다음 릴리스 이후엔 이 fallback을 지워도 된다)
+    #[serde(default)]
+    pub id: String,
+    /// 이메일로 확정됐을 때만 채워진다. 판정은 URL 스킴을 볼 수 있는 Swift에서만 한다.
+    #[serde(default)]
     pub email: String,
     #[serde(default)]
     pub name: String,
@@ -1293,7 +1300,18 @@ pub fn fetch_calendar_events(_app: &tauri::AppHandle) -> Result<Vec<CalendarEven
             CalendarEvent {
                 title: e.title,
                 time: e.time,
-                attendees: e.attendees,
+                // 구버전 dylib은 email 필드 하나만 주고 그게 곧 캐시 키였다. 그 계약으로 되돌려
+                // 이름 캐시를 살린다(이메일 아닌 값이 화면에 다시 보이지만 일정은 뜬다).
+                attendees: e
+                    .attendees
+                    .into_iter()
+                    .map(|mut a| {
+                        if a.id.is_empty() {
+                            a.id = a.email.clone();
+                        }
+                        a
+                    })
+                    .collect(),
                 duration_min,
                 notes: e.notes,
             }

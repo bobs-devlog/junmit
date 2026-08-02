@@ -1,16 +1,20 @@
-// 참석자 이메일 → 표시 이름 해결 + 매핑 캐시 read/write.
+// 참석자 → 표시 이름 해결 + 매핑 캐시 read/write.
 //
 // Google 캘린더는 참석자 displayName을 비워 보내는 경우가 많아(EventKit이 이메일로 fallback),
-// 이메일을 안정 식별자로 삼아 이름을 단계적으로 해결한다. 사용자가 교정한 이름은 캐시에
+// 안정 키(`Attendee.id`)를 기준으로 이름을 단계적으로 해결한다. 사용자가 교정한 이름은 캐시에
 // 영구 보관되어 다음 회의부터 자동 적용된다.
+//
+// 키가 늘 이메일인 건 아니다 — 이메일 여부 판정은 URL 스킴을 볼 수 있는 Swift가 이미 끝냈고,
+// 여기서는 `Attendee.email`이 채워졌는지만 본다(문자열로 되짚지 않는다).
 
 import { invoke } from "@tauri-apps/api/core";
+import type { Attendee } from "@/types";
 
 export type NameCache = Record<string, string>;
 
 // 이름이 어디서 왔는지 — UI가 "확정 vs 추정"을 구분 표시하는 데 사용.
 //   cache: 사용자가 매핑(확정) / name: 캘린더 실제 이름(신뢰)
-//   heuristic: 이메일에서 추정(틀릴 수 있음) / email: 미해결
+//   heuristic: 이메일에서 추정(틀릴 수 있음) / email: 미해결(빈 이름 — 사용자가 채움)
 export type NameSource = "cache" | "name" | "heuristic" | "email";
 
 export interface ResolvedName {
@@ -38,24 +42,20 @@ export function heuristicName(email: string): string {
  * 표시 이름 결정 우선순위:
  *   ① 캐시 hit (사용자가 교정한 이름)
  *   ② EKParticipant.name 원시값 — 이메일꼴이 아니면 실제 이름으로 간주
- *   ③ 이메일 휴리스틱
- *   ④ 이메일 그대로
+ *   ③ 이메일 휴리스틱 (이메일이 있을 때만)
+ *   ④ 빈 이름 (사용자 입력 유도)
  */
-export function resolveAttendeeName(
-  email: string,
-  rawName: string | undefined,
-  cache: NameCache
-): ResolvedName {
-  const cached = cache[email]?.trim();
+export function resolveAttendeeName(attendee: Attendee, cache: NameCache): ResolvedName {
+  const cached = cache[attendee.id]?.trim();
   if (cached) return { name: cached, source: "cache" };
 
-  const raw = rawName?.trim();
+  const raw = attendee.name.trim();
   if (raw && !raw.includes("@")) return { name: raw, source: "name" };
 
-  const local = email.split("@")[0] ?? "";
-  if (local) return { name: heuristicName(email), source: "heuristic" };
+  const email = attendee.email.trim();
+  if (email) return { name: heuristicName(email), source: "heuristic" };
 
-  return { name: email, source: "email" };
+  return { name: "", source: "email" };
 }
 
 export async function loadNameCache(): Promise<NameCache> {

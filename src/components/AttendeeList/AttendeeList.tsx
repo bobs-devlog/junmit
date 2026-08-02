@@ -12,7 +12,11 @@ export interface AttendeeRowItem {
   /** React key용 안정 식별자 — 행 삭제 시 인덱스 key의 포커스·클릭 오귀속 방지. */
   uid: string;
   name: string;
-  /** 캘린더 유래 이메일(수동 추가는 null) — 이름 옆에 상시 표시해 귀속을 검증 가능하게. */
+  /**
+   * 캘린더 유래 이메일 — 이름 옆에 표시해 귀속을 검증 가능하게. 수동 추가이거나 캘린더가
+   * 이메일을 안 준 참석자(계정 소유자 본인 등)는 null이라 표시하지 않는다.
+   * 이름 캐시 키는 별도(`AttendeeItem.id`)이며 화면에 내보내지 않는다.
+   */
   email: string | null;
   /** true면 추정(미확정) — 점선 행 + 입력 필드 + 확정 버튼으로 렌더. */
   guessed: boolean;
@@ -99,6 +103,16 @@ export default function AttendeeList({
     setEditValue("");
   };
 
+  const hasGuess = items.some((item) => item.guessed);
+  const hasConfirmed = items.some((item) => !item.guessed);
+  const hint = [
+    hasGuess && "점선 칸은 확인이 필요한 이름이에요. 맞으면 [맞아요], 아니면 바로 고치세요.",
+    hasConfirmed &&
+      (hasGuess ? "나머지 이름도 클릭하면 고칠 수 있어요." : "이름을 클릭하면 고칠 수 있어요."),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <div className={styles.alContainer}>
       <div className={styles.alLabel}>참석자 ({items.length}명)</div>
@@ -124,6 +138,8 @@ export default function AttendeeList({
                       value={item.name}
                       maxLength={MAX_NAME_LENGTH}
                       aria-label="추정된 참석자 이름"
+                      // 캘린더가 이름도 이메일도 안 준 참석자는 빈 칸으로 열린다.
+                      placeholder="이름 입력"
                       onChange={(e) =>
                         onNameInput(index, e.target.value.replace(VALID_CHAR_RE, ""))
                       }
@@ -152,7 +168,7 @@ export default function AttendeeList({
                     </span>
                   )}
                   {/* 버튼은 stopPropagation 필수 — ×를 안 막으면 삭제 후 버블된 클릭이 다음 행을 편집 모드로 연다. */}
-                  {item.guessed && (
+                  {item.guessed && item.name.trim() !== "" && (
                     <button
                       className={styles.alConfirmBtn}
                       onClick={(e) => {
@@ -186,19 +202,17 @@ export default function AttendeeList({
 
         <div className={clsx(styles.alAddSection, items.length > 0 && styles.alAddSectionDivided)}>
           <AttendeeGroupControls
-            attendees={items.map((item) => item.name)}
+            // 이름이 아직 빈 행(캘린더가 이름·이메일을 안 준 참석자)은 그룹에 넣지 않는다.
+            attendees={items.map((item) => item.name.trim()).filter(Boolean)}
             onAdd={handleAdd}
             inputRef={addInputRef}
           />
         </div>
       </div>
 
-      {/* 추정행이 있을 때만 1회 안내 — 자동 채운 이름임을 행별 배지 대신 리스트에서 알린다. */}
-      {items.some((item) => item.guessed) && (
-        <div className={styles.alHint}>
-          점선 칸은 이메일로 추정한 이름이에요. 맞으면 [맞아요], 아니면 바로 고치세요.
-        </div>
-      )}
+      {/* 리스트 하단 1회 안내 — 자동 채운 이름과 클릭 편집을 행별 배지 대신 여기서 알린다.
+          확정 행의 편집 가능 단서가 hover tooltip뿐이라 문구로 보완. */}
+      {hint && <div className={styles.alHint}>{hint}</div>}
     </div>
   );
 }

@@ -49,17 +49,34 @@ interface MeetingSelectorProps {
 let attendeeUidCounter = 0;
 const makeAttendeeUid = () => `att-${++attendeeUidCounter}`;
 
-// 작업 중 참석자 — 인덱스로 식별(동명 안전). email은 캘린더 유래만 보유(수동 추가는 null).
+// 작업 중 참석자 — 인덱스로 식별(동명 안전). id·email은 캘린더 유래만 보유(수동 추가는 null).
 // source로 "확정(cache/name/수동) vs 추정(heuristic/email)"을 UI에 구분 표시.
 interface AttendeeItem {
   /** React key용 — 인덱스 key는 행 삭제 시 포커스·클릭이 다른 행에 귀속된다. 핸들러는 인덱스 기반. */
   uid: string;
   name: string;
+  /** 이름 캐시 키(`Attendee.id`). 이메일이 아닐 수 있어 화면에 내보내지 않는다. */
+  id: string | null;
+  /** 표시용 이메일. 캘린더가 이메일을 안 준 참석자는 null. */
   email: string | null;
   source: NameSource;
   /** 추정 행의 최초 추정값 — 수정 여부(name !== originalGuess) 판정 기준. 확정 행엔 없음. */
   originalGuess?: string;
 }
+
+/** 캐시 키를 가진 참석자 — 이름을 저장하려면 귀속할 키가 있어야 한다(수동 추가는 없음). */
+type KeyedAttendee = AttendeeItem & { id: string };
+
+/** 이름 캐시에 저장할 수 있는 미확정 추정 — 키와 이름이 모두 있어야 대상이 된다. */
+const isSavableGuess = (a: AttendeeItem): a is KeyedAttendee =>
+  isGuessed(a.source) && !!a.id && a.name.trim() !== "";
+
+/**
+ * 사용자가 직접 고친 추정 — 타이핑 자체가 "이 이름이 맞다"는 명시 신호라 확정 버튼 없이도 저장한다.
+ * originalGuess는 빈 문자열일 수 있어(추정 근거가 없는 참석자) undefined로만 존재를 판별한다.
+ */
+const isEditedGuess = (a: AttendeeItem): a is KeyedAttendee =>
+  isSavableGuess(a) && a.originalGuess !== undefined && a.name.trim() !== a.originalGuess;
 
 export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
   const { cli } = useSession();
@@ -298,15 +315,17 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
   const handleSelectEvent = (idx: number) => {
     const evt = events[idx];
     setSelected(idx);
-    // 캐시 → EKParticipant.name → 휴리스틱 → 이메일 순으로 표시 이름 해결. 이메일은 보관해
+    // 캐시 → EKParticipant.name → 휴리스틱 → 빈 값 순으로 표시 이름 해결. 키는 보관해
     // 인라인 편집 시 캐시에 귀속한다 (인덱스로 식별 — 동명이어도 안전).
     setAttendees(
       evt.attendees.map((a) => {
-        const r = resolveAttendeeName(a.email, a.name, nameCache);
+        const r = resolveAttendeeName(a, nameCache);
         return {
           uid: makeAttendeeUid(),
           name: r.name,
-          email: a.email,
+          // 빈 문자열은 "없음"과 같은 뜻이라 null로 정규화 — 빈 키가 캐시에 새는 걸 막는다.
+          id: a.id || null,
+          email: a.email || null,
           source: r.source,
           ...(isGuessed(r.source) ? { originalGuess: r.name } : {}),
         };
@@ -346,7 +365,7 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
       // 수동 입력은 사용자가 직접 적은 확정 이름 → "추정" 표시 안 함.
       setAttendees((prev) => [
         ...prev,
-        { uid: makeAttendeeUid(), name, email: null, source: "name" },
+        { uid: makeAttendeeUid(), name, id: null, email: null, source: "name" },
       ]);
     }
   };
@@ -393,12 +412,12 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
     if (!target || !name) return;
 
     const nextAttendees = attendees.map((a, i) =>
-      i === index ? { ...a, name, source: (target.email ? "cache" : "name") as NameSource } : a
+      i === index ? { ...a, name, source: (target.id ? "cache" : "name") as NameSource } : a
     );
-    if (target.email) {
+    if (target.id) {
       applyWithUndo(
         nextAttendees,
-        { [target.email]: name },
+        { [target.id]: name },
         `'${name}' 이름을 저장했어요. 다음 회의부터 자동으로 채워집니다.`
       );
     } else {
@@ -413,9 +432,9 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
   const confirmAllGuessed = () => {
     const cacheEntries: NameCache = {};
     const nextAttendees = attendees.map((a) => {
+      if (!isSavableGuess(a)) return a;
       const name = a.name.trim();
-      if (!isGuessed(a.source) || !a.email || !name) return a;
-      cacheEntries[a.email] = name;
+      cacheEntries[a.id] = name;
       return { ...a, name, source: "cache" as NameSource };
     });
     const savedCount = Object.keys(cacheEntries).length;
@@ -468,13 +487,10 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
     }
     const source = isManualMode ? "manual" : "calendar";
 
-    // 직접 고친 미확정 추정만 시작 시 캐시 귀속 — 타이핑 자체가 명시 신호. 손 안 댄 추정은 저장 안 함.
+    // 직접 고친 추정만 시작 시 캐시 귀속 — 손 안 댄 추정은 저장하지 않는다.
     const editedGuessEntries: NameCache = {};
-    attendees.forEach((a) => {
-      const name = a.name.trim();
-      if (isGuessed(a.source) && a.email && name && a.originalGuess && name !== a.originalGuess) {
-        editedGuessEntries[a.email] = name;
-      }
+    attendees.filter(isEditedGuess).forEach((a) => {
+      editedGuessEntries[a.id] = a.name.trim();
     });
     if (Object.keys(editedGuessEntries).length > 0) {
       const nextCache = { ...nameCache, ...editedGuessEntries };
@@ -513,9 +529,7 @@ export default function MeetingSelector({ onSelect }: MeetingSelectorProps) {
   // 불가(iCloud가 기본 연동돼 카운트가 무의미). 단정 대신 차분한 연동 확인 힌트를 곁들인다.
   const calendarEmpty = calPermission === "authorized" && events.length === 0;
   // 푸터 안내용 — 의도적으로 녹음 시작을 막지 않는다.
-  const unconfirmedGuessCount = attendees.filter(
-    (a) => isGuessed(a.source) && a.email && a.name.trim()
-  ).length;
+  const unconfirmedGuessCount = attendees.filter(isSavableGuess).length;
 
   return (
     <div className={styles.meetingSelector}>
