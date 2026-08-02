@@ -288,8 +288,9 @@ else
   # -C -: 이전에 중단된 .tmp를 이어받기 — 재실행 시 870MB를 처음부터 다시 받지 않는다.
   #       실패해도 .tmp는 남겨 다음 실행이 이어받는다 (2026-07 실측: HF CDN Range 지원(206),
   #       .tmp가 이미 완주된 엣지도 curl 8.x가 exit 0으로 통과 — 별도 폴백 불필요).
+  # 리비전 고정: resolve/main은 업스트림이 파일을 교체·삭제하면 그날부터 신규 설치가 전부 깨진다.
   curl -fsSL --retry 3 --retry-delay 2 -C - \
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q8_0.bin" \
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q8_0.bin" \
     -o "$WHISPER_MODEL_TMP" &
   CURL_PID=$!
   progress_du "$WHISPER_MODEL_TMP" 874 "$CURL_PID"
