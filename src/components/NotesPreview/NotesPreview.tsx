@@ -7,6 +7,7 @@ import { copyMarkdownRich } from "@/utils/clipboard";
 import { invoke } from "@tauri-apps/api/core";
 import { useSession } from "@/contexts/SessionContext";
 import { Activity } from "@/constants";
+import SaveFileButton from "./SaveFileButton";
 import type { MeetingTypeOption, SpeakerMapping } from "@/types";
 import styles from "./NotesPreview.module.css";
 
@@ -81,6 +82,7 @@ export default function NotesPreview({
 
   const [currentType, setCurrentType] = useState<string>("free-form");
   const [typeOptions, setTypeOptions] = useState<MeetingTypeOption[]>([FREE_FORM_OPTION]);
+  const [meetingTitle, setMeetingTitle] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -90,6 +92,7 @@ export default function NotesPreview({
         invoke<MeetingTypeOption[]>("cmd_list_meeting_types").catch(() => []),
       ]);
       if (cancelled) return;
+      setMeetingTitle(meta?.title ?? "");
       const type = meta?.type || "free-form";
       setCurrentType(type);
       // type="auto" 케이스만 AUTO 옵션 prepend (안전판 — 마이그레이션 누락 또는 LLM 갱신 직전 케이스)
@@ -197,6 +200,7 @@ export default function NotesPreview({
           ✏️ 편집
         </button>
         <CopyButton text={displayMd} />
+        <SaveFileButton text={displayMd} title={meetingTitle} loaded={loaded} />
         {onRetypeNotes && (
           <>
             <button

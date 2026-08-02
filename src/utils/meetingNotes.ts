@@ -144,3 +144,16 @@ export function substituteNames(
   }
   return fallbackSpeakerLabels(result);
 }
+
+/**
+ * 회의록 앞에 `# {제목}` 헤딩을 붙인다 — 파일로 내보낼 때만 사용.
+ *
+ * 본문에는 보통 제목이 없다(실측: 날짜·참석자 줄로 시작). 앱에서는 화면 헤더가 제목을 보여주니
+ * 문제없지만, 파일은 홀로 떠나므로 제목이 없으면 무슨 회의인지 알 수 없다.
+ * 이미 H1으로 시작하는 회의록(실측: 일부 존재)이나 제목이 없는 경우엔 그대로 둔다 — 중복 방지.
+ */
+export function withTitleHeading(md: string, title: string): string {
+  const trimmedTitle = title.trim();
+  if (!md.trim() || !trimmedTitle || md.trimStart().startsWith("# ")) return md;
+  return `# ${trimmedTitle}\n\n${md}`;
+}

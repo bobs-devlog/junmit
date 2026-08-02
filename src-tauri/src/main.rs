@@ -725,6 +725,23 @@ fn cmd_open_path(path: String) -> Result<(), String> {
         .map_err(|e| format!("열기 실패: {e}"))
 }
 
+/// Finder에서 파일 위치 열기 (`open -R` = reveal). 저장 완료 토스트의 액션이 사용.
+#[tauri::command]
+fn cmd_reveal_in_finder(path: String) -> Result<(), String> {
+    std::process::Command::new("open")
+        .args(["-R", &path])
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("열기 실패: {e}"))
+}
+
+/// 회의록 "파일로 저장" — 네이티브 저장 패널에서 사용자가 고른 경로에 텍스트를 쓴다.
+/// 경로가 세션 밖(사용자 임의 위치)이라 cmd_write_session_file(파일명 검증·세션 한정)과 별도.
+#[tauri::command]
+fn cmd_export_text_file(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, &content).map_err(|e| format!("저장 실패: {e}"))
+}
+
 /// filename이 세션 디렉토리 안에 있는지 검증 (path traversal 방지)
 fn validate_session_filename(filename: &str) -> Result<(), String> {
     if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
@@ -1757,6 +1774,7 @@ fn main() {
         .plugin(tauri_plugin_sentry::init(&_sentry_guard))
         .plugin(build_log_plugin())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init());
@@ -1953,6 +1971,8 @@ fn main() {
             cmd_cancel_headless_meeting,
             cmd_write_session_file,
             cmd_discard_recording_staging,
+            cmd_reveal_in_finder,
+            cmd_export_text_file,
             cmd_read_session_file,
             cmd_backup_meeting_notes,
         ])

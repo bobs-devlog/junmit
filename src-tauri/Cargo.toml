@@ -8,6 +8,7 @@ publish = false  # 애플리케이션 crate — crates.io 발행 대상 아님 (
 [dependencies]
 tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2" # 회의록 "파일로 저장" 네이티브 저장 패널
 tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"  # 자동 업데이트 설치 후 relaunch
