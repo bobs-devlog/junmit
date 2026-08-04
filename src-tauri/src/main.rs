@@ -788,6 +788,12 @@ fn cmd_backup_meeting_notes(session_path: String) -> Result<Option<String>, Stri
     session::backup_meeting_notes(&session_path)
 }
 
+/// 이전 실행의 검증 영수증 제거 (유형 변경 재작성은 cmd_backup_meeting_notes가 겸한다).
+#[tauri::command]
+fn cmd_clear_verification_report(session_path: String) {
+    session::clear_verification_report(&session_path);
+}
+
 #[tauri::command]
 fn cmd_cancel_pipeline(state: State<PipelineChild>) -> Result<(), String> {
     // run_pipeline의 wait()과 경합하지 않도록 child를 먼저 꺼낸다.
@@ -819,11 +825,68 @@ fn strip_ansi(s: &str) -> String {
     out
 }
 
-/// 로그·원격 전송 전 민감정보 스크러빙 — 홈 경로와 회의 제목을 가린다.
+/// whisper stdout의 전사 세그먼트(`[00:00:00.000 --> 00:00:29.980]   발화`). 회의 원문이다.
+fn is_transcript_segment(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with('[') && trimmed.contains(" --> ")
+}
+
+/// result 줄에서 남길 진단 필드. 지울 목록이 아니라 남길 목록인 이유: CLI가 무통보 업데이트로
+/// 자유 텍스트 필드를 늘린다(claude 2.1.220의 `permission_denials`엔 거부된 도구 입력이 실린다).
+const RESULT_DIAGNOSTIC_KEYS: [&str; 11] = [
+    "type",
+    "subtype",
+    "is_error",
+    "num_turns",
+    "duration_ms",
+    "duration_api_ms",
+    "total_cost_usd",
+    "stop_reason",
+    "terminal_reason",
+    "api_error_status",
+    "usage",
+];
+
+/// 회의 내용을 담을 수 있는 줄을 대체한다. 판정이 애매하면(파싱 불가) 생략 쪽으로 기운다.
+fn redact_meeting_content(line: &str) -> String {
+    if is_transcript_segment(line) {
+        return "[전사 세그먼트 생략]".to_string();
+    }
+    if !line.trim_start().starts_with('{') || !line.contains("\"type\":\"result\"") {
+        return line.to_string();
+    }
+    let dropped = "[에이전트 결과 줄 생략]".to_string();
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+        return dropped;
+    };
+    let Some(obj) = parsed.as_object() else {
+        return dropped;
+    };
+    let mut kept = serde_json::Map::new();
+    for key in RESULT_DIAGNOSTIC_KEYS {
+        if let Some(value) = obj.get(key) {
+            kept.insert(key.to_string(), value.clone());
+        }
+    }
+    // 실패 때만 자유 텍스트를 남긴다. 그 경우 본문은 한도 소진·로그인 만료 같은 시스템 메시지다.
+    if obj.get("is_error").and_then(|v| v.as_bool()) == Some(true) {
+        if let Some(value) = obj.get("result") {
+            kept.insert("result".to_string(), value.clone());
+        }
+    }
+    serde_json::to_string(&serde_json::Value::Object(kept)).unwrap_or(dropped)
+}
+
+/// 로그·원격 전송 전 민감정보 스크러빙 — 회의 내용·홈 경로·회의 제목을 가린다.
 /// 세션 디렉토리명이 `{timestamp}_{title}` 형태라 회의 제목이 그대로 들어있어,
 /// 진단 텍스트를 로그/Sentry로 흘리기 전 반드시 통과시킨다. (프라이버시 기본)
+/// 회의 내용 줄 대체가 먼저다: 경로 치환만으론 발화 본문이 그대로 남는다.
 fn scrub_diagnostics(text: &str, session_dir: &str) -> String {
-    let mut out = text.to_string();
+    let mut out = text
+        .lines()
+        .map(redact_meeting_content)
+        .collect::<Vec<_>>()
+        .join("\n");
     // 세션 경로·디렉토리명 → <session> (회의 제목 유출 차단). 홈 치환보다 먼저.
     if let Some(name) = std::path::Path::new(session_dir)
         .file_name()
@@ -1038,8 +1101,12 @@ async fn cmd_run_pipeline(
             }).to_string());
             if let Some(f) = &log_file {
                 if let Ok(mut f) = f.lock() {
-                    let prefix = if stream_name == "stderr" { "[stderr] " } else { "" };
-                    let _ = writeln!(f, "{prefix}{}", strip_ansi(&s));
+                    // 전사 세그먼트는 파일에 안 남긴다(실패 tail이 Sentry로 가는 경로).
+                    // 진단은 whisper-parse의 "N개 세그먼트 전사 완료" 줄로 대신한다.
+                    if !is_transcript_segment(&s) {
+                        let prefix = if stream_name == "stderr" { "[stderr] " } else { "" };
+                        let _ = writeln!(f, "{prefix}{}", strip_ansi(&s));
+                    }
                 }
             }
             line_buf.clear();
@@ -1974,6 +2041,7 @@ fn main() {
             cmd_export_text_file,
             cmd_read_session_file,
             cmd_backup_meeting_notes,
+            cmd_clear_verification_report,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -2006,5 +2074,61 @@ mod tests {
         let json = serde_json::to_string(&db).unwrap();
         let back: session::SpeakerDb = serde_json::from_str(&json).unwrap();
         assert_eq!(back.people[0].name, "Bobs");
+    }
+
+    /// README가 약속한 "회의 내용 일체 미포함"의 회귀 가드. 픽스처는 실제 pipeline.log 형태.
+    #[test]
+    fn scrub_removes_meeting_content_from_diagnostics() {
+        let log = concat!(
+            "=== transcribe @ 2026-08-04 11:20:34 ===\n",
+            "[00:01:00.000 --> 00:01:02.920]   네, 스캔한 내용은 다음 주에 공유드릴게요\n",
+            "  progress = 100%\n",
+            "249개 세그먼트 전사 완료 (환각 2개 제거)\n",
+            "[오류] 음성 인식에 실패했습니다\n",
+        );
+        let out = scrub_diagnostics(log, "/Users/bobs/x/output/2026-08-04_회의제목");
+        assert!(!out.contains("다음 주에 공유드릴게요"), "발화가 남았다: {out}");
+        assert!(out.contains("[전사 세그먼트 생략]"));
+        // 진단에 필요한 줄은 보존한다. 필터가 로그를 통째로 무력화하면 실패 원인을 못 찾는다.
+        assert!(out.contains("249개 세그먼트 전사 완료"));
+        assert!(out.contains("[오류] 음성 인식에 실패했습니다"));
+    }
+
+    #[test]
+    fn scrub_keeps_agent_error_but_drops_success_body() {
+        // 세션명은 실제 형태로. 이름 치환이 부분 문자열 일치라 짧은 가짜 이름은 오탐을 만든다.
+        let session = "/Users/bobs/x/output/2026-08-04_11-20-34_주간회의";
+        // claude 2.1.220의 실제 result 필드 구성(실측)에 회의 내용이 실릴 자리만 채운 픽스처.
+        let ok = concat!(
+            r#"{"type":"result","subtype":"success","is_error":false,"num_turns":33,"#,
+            r#""duration_ms":608420,"total_cost_usd":6.03,"stop_reason":"end_turn","#,
+            r#""usage":{"input_tokens":2215},"session_id":"1b67725f","uuid":"f36d3791","#,
+            r#""result":"✅ 회의록 작성 완료\n주요 결정: 9월 마지막 주 전체 공개","#,
+            r#""permission_denials":[{"tool_name":"Write","tool_input":{"content":"결정사항: 단가 인상"}}]}"#
+        );
+        let scrubbed = scrub_diagnostics(ok, session);
+        assert!(!scrubbed.contains("9월 마지막 주"), "회의록 요약이 남았다: {scrubbed}");
+        assert!(!scrubbed.contains("단가 인상"), "거부된 도구 입력이 남았다: {scrubbed}");
+        assert!(!scrubbed.contains("1b67725f"), "세션 식별자가 남았다: {scrubbed}");
+        // 수치·상태는 보존(실패 원인 추적에 쓴다).
+        assert!(scrubbed.contains("\"num_turns\":33"));
+        assert!(scrubbed.contains("\"duration_ms\":608420"));
+        assert!(scrubbed.contains("\"input_tokens\":2215"));
+
+        let failed = r#"{"type":"result","is_error":true,"result":"Credit balance too low"}"#;
+        assert!(scrub_diagnostics(failed, session).contains("Credit balance too low"));
+
+        // 파싱 불가한 result 줄(잘린 JSONL 등)은 남기지 않는다. 내용 유출 쪽으로 기울지 않게.
+        let broken = r#"{"type":"result","is_error":false,"result":"비밀 논의 내용"#;
+        assert!(!scrub_diagnostics(broken, session).contains("비밀 논의"));
+    }
+
+    #[test]
+    fn transcript_segment_detection_is_narrow() {
+        assert!(is_transcript_segment("[00:00:30.000 --> 00:00:59.980]   발화"));
+        // 스크립트 로그·화자 라벨 줄은 필터에 걸리면 안 된다(진단 가치 있는 줄).
+        assert!(!is_transcript_segment("[오류] 음성 인식에 실패했습니다"));
+        assert!(!is_transcript_segment("[speaker-hint] attendees 11"));
+        assert!(!is_transcript_segment("  progress = 100%"));
     }
 }

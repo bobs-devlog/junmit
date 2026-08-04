@@ -371,10 +371,7 @@ bash -c 'source "$APP_DIR/lib/signal.sh" && app_phase_step_done correct'
 
 회의록 본문 파일은 `$SESSION_DIR/meeting-notes.md`. **유형 가이드 로드·본문 작성은 말없이 진행하세요** — "이제 가이드를 불러와 회의록을 작성합니다" 류의 전환 멘트(영어 `Now let me load the type guide…` 포함)를 출력하면 안 됩니다 ([.claude/CLAUDE.md](../../CLAUDE.md) "도구 호출 직전·직후 중계 금지"). 작성이 끝나면 말없이 5단계(공개)로 넘어가고, 사용자 출력은 5단계의 `✅` 요약 + 6단계 검증 결과 한 줄입니다. 다음 순서로 작성하세요:
 
-0. **사전 로드·정리** — `~/Library/Application Support/app.junmit/vocabulary.json`을 Read (공통 규칙 "음성 인식 오류 교정" 참고). AI 다듬기 OFF에선 전사 텍스트 교정 단계가 없으므로, 작성하면서 vocab·attendees·문맥으로 음성 오인식을 자체 교정해야 합니다 (ON에서도 무해한 추가 안전망). 그리고 재작성·재시도라면 이전 실행의 검증 영수증이 남아 새 본문과 무관한 "검증 N건" 내역을 표시하게 되므로, 본문 작성 전에 말없이 제거합니다 (첫 작성은 파일이 없어 no-op):
-   ```bash
-   bash -c 'rm -f "$APP_SESSION_DIR/notes_verification_report.json"'
-   ```
+0. **사전 로드** — `~/Library/Application Support/app.junmit/vocabulary.json`을 Read (공통 규칙 "음성 인식 오류 교정" 참고). AI 다듬기 OFF에선 전사 텍스트 교정 단계가 없으므로, 작성하면서 vocab·attendees·문맥으로 음성 오인식을 자체 교정해야 합니다 (ON에서도 무해한 추가 안전망). 이전 실행의 검증 영수증 정리는 앱이 맡으므로 여기서 파일을 지우지 마세요.
 1. **품질 경고 확인** — [`notes-rules.md`](notes-rules.md)의 "품질 경고 확인" 절차 적용 (`speaker_mapping.json`의 `_quality_warning`에 따라 분기)
 2. **공통 규칙 적용** — `notes-rules.md`의 SPEAKER_XX sentinel, Action Items 분기, 결론 태그 규칙은 모든 유형에 공통
 3. **유형별 골격 적용** — 3단계에서 결정한 `~/Library/Application Support/app.junmit/templates/{type}.md`의 작성 형식·원칙을 따라 작성. free-form인 경우 `notes-rules.md`의 "Free-form 작성" 절차

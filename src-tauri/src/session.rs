@@ -2726,14 +2726,18 @@ fn chrono_timestamp() -> String {
     Utc::now().with_timezone(&kst).format("%Y-%m-%d_%H-%M-%S").to_string()
 }
 
+/// 검증 영수증 제거. 남기면 새 본문 위에 옛 "검증 N건" 칩이 무관한 내역을 주장한다.
+pub fn clear_verification_report(session_dir: &str) {
+    let path = std::path::PathBuf::from(session_dir).join("notes_verification_report.json");
+    let _ = fs::remove_file(path);
+}
+
 /// 회의록 본문(meeting-notes.md)을 타임스탬프 백업으로 이름 바꾸고 원본 자리는 비운다.
 /// 유형 변경으로 회의록을 재작성할 때 사용. 백업은 같은 디렉토리에 `meeting-notes.bak.{ts}.md`.
 /// 원본이 없으면 Ok(None) — 호출자가 새로 작성될 거라 가정.
 pub fn backup_meeting_notes(session_dir: &str) -> Result<Option<String>, String> {
     let dir = std::path::PathBuf::from(session_dir);
-    // 본문이 교체되는 시점이므로 이전 검증 영수증도 함께 제거 — 남기면 새 본문 위에
-    // 옛 "검증 N건" 칩이 그대로 떠서 무관한 내역을 주장한다(agent·mlx 재작성 공통 경로).
-    let _ = fs::remove_file(dir.join("notes_verification_report.json"));
+    clear_verification_report(session_dir);
     let src = dir.join("meeting-notes.md");
     if !src.exists() {
         return Ok(None);
@@ -2924,5 +2928,24 @@ mod tests {
         assert!(validate_template_frontmatter(&template("")).is_ok(), "emoji는 선택 필드");
         let err = validate_template_frontmatter(&template("emoji: 아홉글자를넘는문장값\n")).unwrap_err();
         assert!(err.contains("emoji"), "emoji 상한 위반을 알려야 함: {err}");
+    }
+
+    /// 유형 변경 재작성이 옛 검증 영수증을 데려가지 않는지. 스킬이 하던 정리를 앱이 맡은 뒤로
+    /// 이 경로가 유일한 보장 지점이다(회의록 검증 OFF면 새 영수증이 덮어쓰지도 않는다).
+    #[test]
+    fn backup_removes_stale_verification_report() {
+        let (_, session) = temp_dirs("backup-receipt");
+        let receipt = session.join("notes_verification_report.json");
+        fs::write(&receipt, r#"{"applied":[{"before":"옛 내역"}]}"#).unwrap();
+        fs::write(session.join("meeting-notes.md"), "# 옛 본문").unwrap();
+
+        let backup = backup_meeting_notes(session.to_str().unwrap()).unwrap();
+        assert!(backup.is_some(), "본문이 있으면 백업 경로를 돌려줘야 함");
+        assert!(!receipt.exists(), "옛 영수증이 남았다");
+
+        // 본문이 없어도(백업할 게 없는 재작성) 영수증은 정리한다.
+        fs::write(&receipt, "{}").unwrap();
+        assert!(backup_meeting_notes(session.to_str().unwrap()).unwrap().is_none());
+        assert!(!receipt.exists(), "본문 없는 경로에서 영수증이 남았다");
     }
 }

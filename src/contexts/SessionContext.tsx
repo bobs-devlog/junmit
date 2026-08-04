@@ -814,6 +814,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // 사용자가 명시 시작(사이드바 Primary). corrected 여부 보고 Correcting/Composing 분기.
   // Phase 1 가이드는 transcript_corrected.txt 있으면 1단계 skip하고 회의록 단계로 직진.
   const startComposing = useCallback(async () => {
+    // 이전 실행의 검증 영수증 정리. 작성 주체가 읽기 전에 지워야 해서 분기 전에 await.
+    // 작성 시작 세 경로 중 여기만 필요하다: restartCompose는 본문 백업이 겸하고,
+    // completeProcessing은 회의록이 있으면 재처리 UI 자체가 없어 영수증이 존재할 수 없다.
+    const dir = sessionDirRef.current;
+    if (dir) {
+      await invoke("cmd_clear_verification_report", { sessionPath: dir }).catch(() => {});
+    }
     // 로컬 LLM은 교정 단계가 없고 PTY도 안 쓴다 — 서브프로세스 실행.
     if (cliRunsLocal(cli)) {
       setActivity(Activity.Composing);

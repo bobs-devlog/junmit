@@ -19,8 +19,8 @@ const PROCESSING_STEPS = STEPS.filter((s) => s.id === Step.Transcribe || s.id ==
 type StepState = "running" | "done" | "error";
 
 // ─── 스크립트 출력 파서 ─────────────────────────────────────
-// 파이프라인 출력 원문은 pipeline.log에 전부 기록되고(진단용 — 설정 > 로그 폴더 열기),
-// 화면엔 아래 파서가 인식한 정보만 사용자 언어로 노출한다(내부 경로·도구명·기술 로그 숨김).
+// 파이프라인 출력은 pipeline.log에 기록되고(진단용 — 설정 > 로그 폴더 열기), 화면엔 아래
+// 파서가 인식한 정보만 사용자 언어로 노출한다(내부 경로·도구명·기술 로그 숨김).
 // 형식 변경 시 transcribe.sh·pyannote_diarize.py·diarize.sh와 함께 수정.
 
 // 전사 진행률 — transcribe.sh가 whisper -pp stderr를 필터한 라인 (디코드 위치, 30초 창마다)
