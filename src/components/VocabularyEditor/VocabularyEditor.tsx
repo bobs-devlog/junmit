@@ -58,8 +58,8 @@ export default function VocabularyEditor({
     <div className={styles.veRoot}>
       <div className={styles.veHeader}>
         <p className={styles.veDescription}>
-          회의에서 자주 나오는 기술·도구·도메인 용어를 등록하면 전사 정확도와 회의록 교정 품질이
-          올라갑니다. 사람 이름은 참석자 목록에서 자동으로 가져오니 따로 안 넣어도 됩니다.
+          회의에서 자주 나오는 기술·도구·도메인 용어를 등록하면 전사본 교정과 회의록의 용어
+          표기가 정확해집니다. 사람 이름은 참석자 목록에서 자동으로 가져오니 따로 안 넣어도 됩니다.
         </p>
 
         <div className={styles.veAddRow}>
