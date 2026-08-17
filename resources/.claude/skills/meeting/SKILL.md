@@ -225,7 +225,7 @@ AI 다듬기 OFF면 이 분류 sub-agent도 spawn하지 않습니다 (1단계 �
 **1. sub-agent foreground 동시 spawn** — Agent tool 호출들을 **같은 응답 안에 함께 넣어** 병렬 실행. **각 Agent 호출의 `description`은 아래 지정 문구를 그대로 사용**합니다 (진행 표시에 그대로 노출되는 사용자 대면 라벨 — 앱 화면 용어와 정렬된 문구라 임의로 바꾸거나 영문으로 쓰지 마세요):
 - `speaker-label-correction` — description: `화자 구분 교정` — diarize 오류 보정 → `transcript_speaker_edits.json`
 - `speaker-mapping` — description: `화자 이름 매칭` — SPEAKER_XX → 이름 매칭 → `speaker_mapping.json` (`notes.json`의 화자 힌트가 있으면 ground-truth 앵커로 최우선 활용 — sub-agent가 자체 처리)
-- `text-correction` — description: `전사본 교정` — 음성 오인식·문맥 교정 → `transcript_text_edits.json`
+- `text-correction` — description: `전사본 교정` — 명백한 음성 오인식 교정 → `transcript_text_edits.json`
 - `meeting-type-classification` — description: `회의 유형 분류` — 회의 유형 결정 → 파일 미작성, **결정을 보고**(`TYPE_DECISION: ...`) (**`type`이 `auto`/비어있을 때만** — 위 "유형 분류 필요 여부 확인" 참고)
 
 각 Agent prompt에 세션 디렉토리 절대 경로를 전달 (`$SESSION_DIR` 값을 inline으로 풀어 보냄):
