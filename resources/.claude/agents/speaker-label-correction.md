@@ -3,6 +3,7 @@ name: speaker-label-correction
 description: 회의 전사본의 자동 화자분리(diarize) 오류를 문맥 기반으로 보정하여 transcript_speaker_edits.json 작성. /meeting 1단계에서 text-correction과 병렬 spawn되는 sub-agent 버전.
 tools: Read, Write, Bash
 model: opus
+effort: medium
 ---
 
 # 회의 전사본 화자 라벨 교정 (sub-agent)
